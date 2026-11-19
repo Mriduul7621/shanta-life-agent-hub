@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { DemoAuthProvider } from './demoProvider';
 import { SupabaseAuthProvider } from './supabaseProvider';
 import { signSsoToken, verifySsoToken } from './jwt';
+import { HUB_PUBLIC_KEY_PEM } from './keys';
+import { broadcastHubSignOut } from '../sso/handoff';
 import type { AuthError, AuthProvider, HubUser } from './types';
 
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
@@ -10,8 +12,14 @@ const SESSION_CHECK_MS = 30_000;
 
 export const isDemoAuthEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
 
-/** DEV-ONLY signing secret. Production tokens are issued server-side — see docs/SSO_TOKEN.md. */
-const devJwtSecret: string | undefined = import.meta.env.VITE_JWT_SECRET as string | undefined;
+/**
+ * DEV-ONLY RS256 signing key (PKCS#8 DER, base64). Signs demo tokens in
+ * dev/QA builds ONLY. Production tokens are issued server-side — the browser
+ * never holds a signing key, and the production-target build guard in
+ * vite.config.ts refuses to build when any VITE_JWT_* variable is set.
+ * See docs/SSO_TOKEN.md and docs/SSO_PRODUCTION.md.
+ */
+const devPrivateKeyB64: string | undefined = import.meta.env.VITE_JWT_PRIVATE_KEY_B64 as string | undefined;
 
 export function selectProvider(): AuthProvider {
   return isDemoAuthEnabled ? new DemoAuthProvider() : new SupabaseAuthProvider();
@@ -54,9 +62,13 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     clearSession();
     setSessionExpired(false);
+    // Tell every still-open joined module to end its session too.
+    broadcastHubSignOut();
   }, [clearSession]);
 
-  // Restore a saved session on load: verify signature + expiry before trusting it.
+  // Restore a saved session on load: verify signature + claims against the
+  // bundled PUBLIC key before trusting it. No signing key is needed to
+  // verify, so restore works in every build.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -66,8 +78,8 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
       } catch {
         saved = null;
       }
-      if (saved && devJwtSecret) {
-        const claims = await verifySsoToken(saved, devJwtSecret);
+      if (saved) {
+        const claims = await verifySsoToken(saved, HUB_PUBLIC_KEY_PEM);
         if (cancelled) return;
         if (claims) {
           setUser({
@@ -82,9 +94,6 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
           clearSession();
           setSessionExpired(true);
         }
-      } else if (saved && !devJwtSecret) {
-        // No secret configured — cannot verify, so fail closed.
-        clearSession();
       }
       if (!cancelled) setRestoring(false);
     })();
@@ -95,12 +104,14 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
 
   // Periodic expiry check: the 1-hour session ends even if the tab stays open.
   useEffect(() => {
-    if (!token || !devJwtSecret) return;
+    if (!token) return;
     const id = window.setInterval(() => {
-      void verifySsoToken(token, devJwtSecret).then((claims) => {
+      void verifySsoToken(token, HUB_PUBLIC_KEY_PEM).then((claims) => {
         if (!claims) {
           clearSession();
           setSessionExpired(true);
+          // Session expiry ends module sessions too, like a sign-out.
+          broadcastHubSignOut();
         }
       });
     }, SESSION_CHECK_MS);
@@ -111,13 +122,31 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
     async (employeeId: string, credential: string) => {
       const result = await provider.signIn(employeeId, credential);
       if (!result.ok) return { ok: false as const, error: result.error };
-      if (!devJwtSecret) {
+      let nextToken: string | null = null;
+      try {
+        if (result.token) {
+          // PRODUCTION PATH: the provider returned a server-issued token.
+          // Verify it (signature + claims) before trusting it, and bind it
+          // to the authenticated user — a token for someone else is rejected.
+          const claims = await verifySsoToken(result.token, HUB_PUBLIC_KEY_PEM);
+          if (!claims || claims.sub !== result.user.employeeId || claims.role !== result.user.role) {
+            return { ok: false as const, error: { code: 'not_configured' as const } };
+          }
+          nextToken = result.token;
+        } else if (devPrivateKeyB64) {
+          // DEV PATH: sign locally with the dev-only key.
+          nextToken = await signSsoToken(
+            { sub: result.user.employeeId, name: result.user.name, role: result.user.role },
+            devPrivateKeyB64,
+          );
+        } else {
+          // No server token and no dev signing key — fail closed.
+          return { ok: false as const, error: { code: 'not_configured' as const } };
+        }
+      } catch {
+        // Signing/verification failure (e.g. a malformed dev key) — fail closed.
         return { ok: false as const, error: { code: 'not_configured' as const } };
       }
-      const nextToken = await signSsoToken(
-        { sub: result.user.employeeId, name: result.user.name, role: result.user.role },
-        devJwtSecret,
-      );
       try {
         sessionStorage.setItem(TOKEN_STORAGE_KEY, nextToken);
       } catch {

@@ -1,39 +1,75 @@
 /**
- * Milestone 1 QA — headless-Chrome checks for the Agent Hub.
+ * Milestone 2 QA — headless-Chrome checks for the Agent Hub.
  *
- * Usage: `npm run build && npm run qa`.
+ * Usage: `npm run qa` — the script performs its own demo-enabled build
+ * (HUB_BUILD_TARGET=qa + VITE_DEMO_AUTH=true, script-forced) so it passes
+ * from a fresh clone. Plain `npm run build` still respects `.env` and
+ * defaults to the production target (see vite.config.ts).
  *
  * Runs against the PRODUCTION build via file:// — the VM's Chrome build
  * hard-blocks loopback navigation (ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS;
  * the standard --disable-features flag does not lift it), so the dev server
  * cannot be driven by headless Chrome here. The app uses a relative Vite base
  * so the same build also runs from file:// and, later, from a Capacitor
- * webview. Override with HUB_QA_URL to point at a live server instead.
+ * webview. Override with HUB_QA_URL to point at a live server instead — in
+ * that mode only the Milestone 1 browser checks run (the M2 checks need the
+ * local QA build). NOTE: window.open from a file:// page to a loopback HTTP
+ * URL DOES work in this Chrome build, which is how the handoff test drives
+ * the local stub module.
  *
- * Checks:
+ * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
  *  2. All 4 demo roles can sign in; a JWT is issued with the documented claims.
  *  3. 5 wrong PINs lock the account (15-minute lockout message).
  *  4. 9990001 first-login forced PIN change works; the new PIN signs in after.
  *  5. Sign-out clears the session token.
- *  6. BN/EN switch changes UI strings.
+ *  6. EN/BN switch changes UI strings.
  *  7. Role views differ (team section only for Team Lead / Manager; Admin sees
  *     the console placeholder on Profile).
  *  8. Screenshots: login + home + profile at 375 / 768 / 1440 px, plus one
  *     home screenshot per role at 1440 px. Each shot also checks for
  *     horizontal overflow (scrollWidth > innerWidth).
  *
+ * Checks (Milestone 2 — 28):
+ *  9. Key sanity: the signing private key matches the public key QA
+ *     verifies with; the kid is the SHA-256(DER) derivation.
+ * 10. The QA build itself succeeds (qa target, demo on, stub override).
+ * 11. RS256: the issued token's header (alg RS256, expected kid), its
+ *     signature verified independently with node:crypto, accepted by the
+ *     app's own verifySsoToken (bundled for Node via esbuild), and a
+ *     sign+verify round-trip through the bundled jwt.ts.
+ * 12. Negative cases, all rejected by verifySsoToken: tampered payload,
+ *     expired token, wrong iss, alg none, alg HS256, unknown kid, empty
+ *     sub, role outside the four values.
+ * 13. Handoff end-to-end against a LOCAL stub module fixture (no live
+ *     URLs): the stub posts hub-ready, receives + verifies the token and
+ *     reports a valid hub session with the right sub/role; the hub header
+ *     + user chip show; Hub sign-out clears the module session.
+ * 14. Tile wiring: ssoJoined modules render as buttons, non-joined enabled
+ *     modules as plain links (read-only — no live navigation).
+ * 15. Production-target guard: a production build with demo auth FAILS, a
+ *     production build with a signing key FAILS, and a clean production
+ *     build (temp copy, no .env) succeeds with no demo users and sign-in
+ *     failing closed.
+ *
  * Exits non-zero if any check fails. Screenshots land in qa/.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
+const ROOT = path.resolve(import.meta.dirname, '..');
+const LOCAL_QA = !process.env.HUB_QA_URL;
 const BASE =
   process.env.HUB_QA_URL ??
-  `file://${path.resolve(import.meta.dirname, '..', 'dist', 'index.html')}`;
+  `file://${path.resolve(ROOT, 'dist', 'index.html')}`;
 const CHROME = '/opt/meta-chromium/chrome';
-const QA_DIR = path.resolve(import.meta.dirname, '..', 'qa');
+const QA_DIR = path.resolve(ROOT, 'qa');
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -41,6 +77,175 @@ function check(name, ok, detail = '') {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
+function summarizeAndExit(code) {
+  const failed = results.filter((r) => !r.ok);
+  console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
+  if (failed.length > 0) {
+    console.log('FAILED:');
+    for (const f of failed) console.log(` - ${f.name} ${f.detail}`);
+  }
+  process.exit(code);
+}
+
+/** Run `npm run build` in `cwd` with exactly `env`. Returns { status, output }. */
+function runBuild(cwd, env) {
+  const res = spawnSync('npm', ['run', 'build'], { cwd, env, encoding: 'utf8', timeout: 300000 });
+  return { status: res.status, output: `${res.stdout ?? ''}${res.stderr ?? ''}` };
+}
+
+// ---------------------------------------------------------------------------
+// Key resolution. QA needs the private key that signs demo tokens and the
+// public key that verifies them. From a fresh clone there is no .env, so QA
+// generates an ephemeral keypair and passes the matching public key + kid to
+// the build via the VITE_HUB_* overrides (public material only). When the
+// dev .env key exists, QA uses it with the bundled dev public key.
+// ---------------------------------------------------------------------------
+function readDotEnvValue(key) {
+  const envPath = path.join(ROOT, '.env');
+  if (!fs.existsSync(envPath)) return undefined;
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith(`${key}=`)) return trimmed.slice(key.length + 1).trim();
+  }
+  return undefined;
+}
+
+function bundledDevKey() {
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'auth', 'keys.ts'), 'utf8');
+  const pemMatch = src.match(/DEV_PUBLIC_KEY_PEM = `([\s\S]*?)`/);
+  const kidMatch = src.match(/DEV_KID = '([0-9a-f]+)'/);
+  if (!pemMatch || !kidMatch) throw new Error('could not extract DEV_PUBLIC_KEY_PEM/DEV_KID from src/auth/keys.ts');
+  return { pem: pemMatch[1], kid: kidMatch[1] };
+}
+
+function kidOfPem(pem) {
+  const der = crypto.createPublicKey(pem).export({ type: 'spki', format: 'der' });
+  return crypto.createHash('sha256').update(der).digest('hex').slice(0, 16);
+}
+
+function publicPemOfPrivate(privateKeyObj) {
+  return crypto.createPublicKey(privateKeyObj).export({ type: 'spki', format: 'pem' });
+}
+
+let privateB64 = readDotEnvValue('VITE_JWT_PRIVATE_KEY_B64');
+let publicPem;
+let kid;
+let keySource;
+const extraBuildEnv = {};
+if (privateB64) {
+  const dev = bundledDevKey();
+  publicPem = dev.pem;
+  kid = dev.kid;
+  keySource = 'dev .env key + bundled dev public key';
+} else {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  publicPem = publicKey.export({ type: 'spki', format: 'pem' });
+  kid = kidOfPem(publicPem);
+  privateB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+  extraBuildEnv.VITE_HUB_PUBLIC_KEY_PEM = publicPem;
+  extraBuildEnv.VITE_HUB_KID = kid;
+  keySource = 'ephemeral keypair (no .env key — fresh-clone path)';
+}
+console.log(`keys: ${keySource} (kid ${kid})`);
+
+// The signing key MUST be PKCS#8 DER, base64 — that is the documented format
+// (PROTOCOL.md, docs/SSO_TOKEN.md) and the only private-key format WebCrypto
+// imports. A PKCS#1 value fails here with a clear message instead of an
+// uncaught stack trace (and instead of silently breaking dev sign-in).
+let privateKeyObj;
+try {
+  privateKeyObj = crypto.createPrivateKey({ key: Buffer.from(privateB64, 'base64'), format: 'der', type: 'pkcs8' });
+} catch {
+  check('keys: signing private key parses as PKCS#8 DER', false, 'not PKCS#8 DER base64');
+  console.log('\nThe signing key is not PKCS#8 DER (base64). Re-export it as PKCS#8, or');
+  console.log('regenerate a keypair with `npm run keygen` (it prints PKCS#8) and update');
+  console.log('src/auth/keys.ts + .env together. (A PKCS#1 value parses in Node but');
+  console.log('WebCrypto cannot import it, so dev sign-in would fail.)');
+  summarizeAndExit(1);
+}
+const publicKeyObj = crypto.createPublicKey(publicPem);
+
+// ---- 9. Key sanity ----
+const derivedPublic = publicPemOfPrivate(privateKeyObj).trim();
+check('keys: signing private key matches the verifying public key', derivedPublic === publicPem.trim());
+check('keys: kid is the SHA-256(DER) first-16-hex derivation', kidOfPem(publicPem) === kid);
+if (results.some((r) => !r.ok)) {
+  console.log('\nKey mismatch: the private key in .env is not the pair of the public key in');
+  console.log('src/auth/keys.ts. Rotate with `npm run keygen` and update BOTH sides, or');
+  console.log('remove the .env key to let QA generate an ephemeral keypair.');
+  summarizeAndExit(1);
+}
+
+// ---- Stub module server (local QA only) ----
+let stubServer = null;
+let STUB_ORIGIN = '';
+let STUB_URL = '';
+if (LOCAL_QA) {
+  const fixture = fs
+    .readFileSync(path.join(ROOT, 'scripts', 'fixtures', 'stub-module.html'), 'utf8')
+    .split('__HUB_PUBLIC_KEY_PEM__')
+    .join(publicPem)
+    .split('__HUB_KID__')
+    .join(kid)
+    // The Hub runs from file:// in QA, whose origin serialises as "null".
+    // A real module allowlists real Hub origins and never "null".
+    .split('__HUB_ORIGINS_JSON__')
+    .join(JSON.stringify(['null']));
+  if (fixture.includes('__HUB_')) throw new Error('stub fixture placeholders not all replaced');
+  stubServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(fixture);
+  });
+  await new Promise((resolve) => stubServer.listen(0, '127.0.0.1', resolve));
+  const stubPort = stubServer.address().port;
+  STUB_ORIGIN = `http://127.0.0.1:${stubPort}`;
+  STUB_URL = `${STUB_ORIGIN}/stub-module.html`;
+  console.log(`stub module: ${STUB_URL}`);
+}
+
+// ---- 10. QA's own demo-enabled build (local QA only) ----
+if (LOCAL_QA) {
+  const qaBuild = runBuild(ROOT, {
+    ...process.env,
+    HUB_BUILD_TARGET: 'qa',
+    VITE_DEMO_AUTH: 'true',
+    VITE_JWT_PRIVATE_KEY_B64: privateB64,
+    VITE_MODULE_URL_OVERRIDES: JSON.stringify({ premiumpulse: STUB_URL }),
+    ...extraBuildEnv,
+  });
+  check('qa build succeeds (HUB_BUILD_TARGET=qa, demo on, stub override)', qaBuild.status === 0, qaBuild.status === 0 ? '' : qaBuild.output.slice(-500));
+  if (qaBuild.status !== 0) {
+    console.log(qaBuild.output);
+    stubServer?.close();
+    summarizeAndExit(1);
+  }
+}
+
+// ---- Bundle the app's jwt.ts for Node (negative-case tests use the REAL code) ----
+let jwtNode = null;
+let jwtBundleDir = null;
+if (LOCAL_QA) {
+  jwtBundleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-jwt-'));
+  const bundlePath = path.join(jwtBundleDir, 'jwt-bundle.mjs');
+  const esbuild = spawnSync(path.join(ROOT, 'node_modules', '.bin', 'esbuild'), [
+    path.join(ROOT, 'src', 'auth', 'jwt.ts'),
+    '--bundle',
+    '--platform=node',
+    '--format=esm',
+    '--target=node20',
+    `--outfile=${bundlePath}`,
+  ], { encoding: 'utf8' });
+  check('jwt bundle builds for Node (esbuild)', esbuild.status === 0, esbuild.status === 0 ? '' : `${esbuild.stdout ?? ''}${esbuild.stderr ?? ''}`.slice(-300));
+  if (esbuild.status !== 0) {
+    stubServer?.close();
+    summarizeAndExit(1);
+  }
+  jwtNode = await import(pathToFileURL(bundlePath).href);
+}
+
+// ---------------------------------------------------------------------------
+// Browser helpers (Milestone 1, unchanged)
+// ---------------------------------------------------------------------------
 async function newPage(browser, width) {
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
@@ -97,13 +302,19 @@ const browser = await puppeteer.launch({
 
 fs.mkdirSync(QA_DIR, { recursive: true });
 
+// The issued token from the 9990002 login, reused by the RS256 checks.
+let issuedToken = null;
+
+// Temp copy used by the clean production-build check (removed in finally).
+let prodTmp = null;
+
 try {
-  // ---- 1. Login page loads, no console errors; BN default ----
+  // ---- 1. Login page loads, no console errors; EN default ----
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
     const title = await page.$eval('h1', (el) => el.textContent);
-    check('login page loads (BN default)', title.includes('এজেন্ট হাবে'), title);
+    check('login page loads (EN default)', title.includes('Sign in to Agent Hub'), title);
     check('login page: no console errors', errors.length === 0, errors.join(' | '));
     await ctx.close();
   }
@@ -130,6 +341,7 @@ try {
       { timeout: 5000 },
     );
     const token = await getToken(page);
+    if (c.id === '9990002' && token) issuedToken = token;
     check(`login ${c.id} (${c.role}): home renders`, !!token);
     if (token) {
       const { header, payload } = decodeJwt(token);
@@ -194,19 +406,19 @@ try {
     await ctx.close();
   }
 
-  // ---- 5. BN/EN switch changes strings ----
+  // ---- 5. EN/BN switch changes strings ----
   {
     const { ctx, page } = await newPage(browser, 1440);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
-    const bnTitle = await page.$eval('h1', (el) => el.textContent);
-    await page.evaluate(() => {
-      [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'EN')?.click();
-    });
-    await page.waitForFunction(() => document.querySelector('h1')?.textContent.includes('Sign in to Agent Hub'), { timeout: 5000 });
     const enTitle = await page.$eval('h1', (el) => el.textContent);
-    check('BN/EN switch changes login title', bnTitle !== enTitle && enTitle.includes('Sign in to Agent Hub'), `${bnTitle} → ${enTitle}`);
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'BN')?.click();
+    });
+    await page.waitForFunction(() => document.querySelector('h1')?.textContent.includes('এজেন্ট হাবে'), { timeout: 5000 });
+    const bnTitle = await page.$eval('h1', (el) => el.textContent);
+    check('EN/BN switch changes login title', bnTitle !== enTitle && bnTitle.includes('এজেন্ট হাবে'), `${enTitle} → ${bnTitle}`);
     const stored = await page.evaluate(() => localStorage.getItem('hub-lang'));
-    check('language persisted in localStorage', stored === 'en', stored);
+    check('language persisted in localStorage', stored === 'bn', stored);
     await ctx.close();
   }
 
@@ -300,14 +512,281 @@ try {
     console.log(`SHOT  ${s.file}`);
     await ctx.close();
   }
+
+  // ---- 11 + 12. RS256 verification + negative cases (local QA only) ----
+  // The negative cases run against the app's REAL verifySsoToken, bundled
+  // for Node via esbuild — not a re-implementation.
+  if (LOCAL_QA) {
+    const b64urlJson = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const signRs256 = (header, payload) => {
+      const input = `${b64urlJson(header)}.${b64urlJson(payload)}`;
+      return `${input}.${crypto.sign('sha256', Buffer.from(input), privateKeyObj).toString('base64url')}`;
+    };
+    const nowSec = () => Math.floor(Date.now() / 1000);
+    const basePayload = {
+      sub: '9990002',
+      name: 'Demo Team Lead',
+      role: 'team_lead',
+      iat: nowSec(),
+      exp: nowSec() + 3600,
+      iss: 'shanta-life-agent-hub',
+    };
+    const baseHeader = { alg: 'RS256', typ: 'JWT', kid };
+    const knownKids = new Set([kid]);
+
+    if (issuedToken) {
+      const { header } = decodeJwt(issuedToken);
+      check(
+        'rs256: issued token header is RS256 + expected kid',
+        header.alg === 'RS256' && header.typ === 'JWT' && header.kid === kid,
+        JSON.stringify(header),
+      );
+      const [h, p, s] = issuedToken.split('.');
+      const sigOk = crypto.verify('sha256', Buffer.from(`${h}.${p}`), publicKeyObj, Buffer.from(s, 'base64url'));
+      check('rs256: node:crypto verifies the issued token signature', sigOk);
+      const claims = await jwtNode.verifySsoToken(issuedToken, publicPem, knownKids);
+      check(
+        'rs256: verifySsoToken accepts the issued token',
+        claims?.sub === '9990002' && claims?.role === 'team_lead',
+        claims ? JSON.stringify(claims) : 'null',
+      );
+      // Tampered payload: same signature, changed claim — valid JSON, bad signature.
+      const tamperedPayload = { ...decodeJwt(issuedToken).payload, name: 'Tampered Name' };
+      const tampered = `${h}.${b64urlJson(tamperedPayload)}.${s}`;
+      check('reject: tampered payload', (await jwtNode.verifySsoToken(tampered, publicPem, knownKids)) === null);
+    } else {
+      check('rs256: issued token header is RS256 + expected kid', false, 'no issued token captured (login failed?)');
+      check('rs256: node:crypto verifies the issued token signature', false, 'no issued token captured');
+      check('rs256: verifySsoToken accepts the issued token', false, 'no issued token captured');
+      check('reject: tampered payload', false, 'no issued token captured');
+    }
+
+    // Round-trip through the bundled jwt.ts (independent of the login token).
+    const roundTrip = await jwtNode.signSsoToken(
+      { sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' },
+      privateB64,
+    );
+    const rtHeader = decodeJwt(roundTrip).header;
+    const rtClaims = await jwtNode.verifySsoToken(roundTrip, publicPem, new Set([rtHeader.kid]));
+    check(
+      'rs256: sign+verify round-trip through the bundled jwt.ts',
+      rtClaims?.sub === '9990002' && rtClaims?.role === 'team_lead',
+      rtClaims ? JSON.stringify(rtClaims) : 'null',
+    );
+
+    // Remaining negative cases: validly signed with node:crypto, one defect each.
+    const neg = [
+      ['reject: expired token', signRs256(baseHeader, { ...basePayload, iat: nowSec() - 7200, exp: nowSec() - 3600 })],
+      ['reject: wrong iss', signRs256(baseHeader, { ...basePayload, iss: 'evil-hub' })],
+      ['reject: alg none', `${b64urlJson({ alg: 'none', typ: 'JWT', kid })}.${b64urlJson(basePayload)}.`],
+      [
+        'reject: alg HS256',
+        (() => {
+          const input = `${b64urlJson({ alg: 'HS256', typ: 'JWT', kid })}.${b64urlJson(basePayload)}`;
+          const mac = crypto.createHmac('sha256', 'whatever-secret').update(input).digest('base64url');
+          return `${input}.${mac}`;
+        })(),
+      ],
+      ['reject: unknown kid', signRs256({ ...baseHeader, kid: '0000000000000000' }, basePayload)],
+      ['reject: empty sub', signRs256(baseHeader, { ...basePayload, sub: '' })],
+      ['reject: role outside the four values', signRs256(baseHeader, { ...basePayload, role: 'superuser' })],
+    ];
+    for (const [name, token] of neg) {
+      check(name, (await jwtNode.verifySsoToken(token, publicPem, knownKids)) === null);
+    }
+  }
+
+  // ---- 13 + 14. Tile wiring + handoff end-to-end (local QA only) ----
+  if (LOCAL_QA) {
+    const { ctx, page } = await newPage(browser, 1440);
+    try {
+      await login(page, '9990002', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+
+      // 14. Tile wiring (read-only — no live navigation).
+      const wiring = await page.evaluate(() => {
+        const names = ['LeadFlow', 'Learning Hub', 'PremiumPulse', 'SDPP Projection', 'Income Calculator', 'Sales Command Center', 'Proposals'];
+        return [...document.querySelectorAll('h3')]
+          .filter((h) => names.includes(h.textContent))
+          .map((h) => {
+            const tile = h.closest('a,button,div');
+            return { name: h.textContent, tag: tile ? tile.tagName : null, href: tile && tile.tagName === 'A' ? tile.getAttribute('href') : null };
+          });
+      });
+      const joinedOk = ['PremiumPulse', 'SDPP Projection', 'Income Calculator'].every(
+        (n) => wiring.find((w) => w.name === n)?.tag === 'BUTTON',
+      );
+      check('tiles: ssoJoined modules render as buttons', joinedOk, JSON.stringify(wiring));
+      const plainOk =
+        wiring.find((w) => w.name === 'LeadFlow')?.tag === 'A' &&
+        wiring.find((w) => w.name === 'LeadFlow')?.href === 'https://lead-flow-jet.vercel.app' &&
+        wiring.find((w) => w.name === 'Learning Hub')?.tag === 'A' &&
+        wiring.find((w) => w.name === 'Learning Hub')?.href === 'https://shanta-life-learning-hub.vercel.app' &&
+        wiring.find((w) => w.name === 'Sales Command Center')?.tag === 'A' &&
+        wiring.find((w) => w.name === 'Sales Command Center')?.href === 'https://training-dashboard-shanta-life.vercel.app';
+      check('tiles: non-joined modules render as plain links', !!plainOk, JSON.stringify(wiring));
+
+      // 13. Handoff end-to-end against the local stub module (no live URLs).
+      const failHandoff = (reason) => {
+        check('handoff: stub module reports a valid hub session', false, reason);
+        check('handoff: stub shows hub header + user chip', false, reason);
+        check('handoff: stub page has no console errors', false, reason);
+        check('handoff: hub sign-out clears the module session', false, reason);
+      };
+      const btnHandle = await page.evaluateHandle(() =>
+        [...document.querySelectorAll('button')].find((b) => b.querySelector('h3')?.textContent === 'PremiumPulse'),
+      );
+      const btn = btnHandle.asElement();
+      check('handoff: PremiumPulse tile is a button (ssoJoined)', !!btn);
+      if (!btn) {
+        failHandoff('tile button missing');
+      } else {
+        let handoffChecksDone = false;
+        try {
+          const popupTargetPromise = browser.waitForTarget((t) => t.url().startsWith(STUB_ORIGIN), { timeout: 10000 });
+          await btn.click();
+          const target = await popupTargetPromise;
+          const popup = await target.page();
+          const popupErrors = [];
+          popup.on('console', (m) => {
+            if (m.type() === 'error') popupErrors.push(m.text());
+          });
+          popup.on('pageerror', (e) => popupErrors.push(String(e)));
+          try {
+            await popup.waitForFunction(
+              () => {
+                const t = document.getElementById('stub-status')?.textContent ?? '';
+                return t.startsWith('hub-session-ok') || t === 'hub-session-invalid' || t === 'hub-signin-prompt';
+              },
+              { timeout: 15000 },
+            );
+          } catch {
+            /* fall through to read the status */
+          }
+          const status = await popup.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
+          check(
+            'handoff: stub module reports a valid hub session',
+            status.startsWith('hub-session-ok') && status.includes('sub=9990002') && status.includes('role=team_lead'),
+            status,
+          );
+          const hubHeader = await popup
+            .evaluate(
+              () =>
+                document.getElementById('hub-header')?.classList.contains('visible') &&
+                (document.getElementById('user-chip')?.textContent ?? '').includes('Demo Team Lead'),
+            )
+            .catch(() => false);
+          check('handoff: stub shows hub header + user chip', !!hubHeader, status);
+          check('handoff: stub page has no console errors', popupErrors.length === 0, popupErrors.join(' | '));
+          handoffChecksDone = true;
+          // Sign-out broadcast: sign out from the Hub, the stub must clear its session.
+          await page.evaluate(() => {
+            [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
+          });
+          await page.waitForFunction(
+            () => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('সাইন আউট') || b.textContent.includes('Sign out')),
+            { timeout: 5000 },
+          );
+          await page.evaluate(() => {
+            [...document.querySelectorAll('button')].find((b) => b.textContent.includes('সাইন আউট') || b.textContent.includes('Sign out'))?.click();
+          });
+          await page.waitForSelector('#employee-id', { timeout: 5000 });
+          let cleared = false;
+          try {
+            await popup.waitForFunction(
+              () => document.getElementById('stub-status')?.textContent === 'hub-session-cleared',
+              { timeout: 5000 },
+            );
+            cleared = true;
+          } catch {
+            /* cleared stays false */
+          }
+          const clearedStatus = await popup.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
+          check('handoff: hub sign-out clears the module session', cleared, clearedStatus);
+        } catch (e) {
+          if (!handoffChecksDone) failHandoff(`handoff threw: ${String(e).slice(0, 200)}`);
+          else check('handoff: hub sign-out clears the module session', false, `sign-out step threw: ${String(e).slice(0, 200)}`);
+        }
+      }
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  // ---- 15. Production-target guard (local QA only) ----
+  if (LOCAL_QA) {
+    const failDemo = runBuild(ROOT, { ...process.env, HUB_BUILD_TARGET: 'production', VITE_DEMO_AUTH: 'true' });
+    check(
+      'guard: production build with demo auth FAILS',
+      failDemo.status !== 0 && /VITE_DEMO_AUTH=true/.test(failDemo.output),
+      `exit=${failDemo.status}`,
+    );
+    const failSigning = runBuild(ROOT, {
+      ...process.env,
+      HUB_BUILD_TARGET: 'production',
+      VITE_DEMO_AUTH: 'false',
+      VITE_JWT_PRIVATE_KEY_B64: privateB64,
+    });
+    check(
+      'guard: production build with signing key FAILS',
+      failSigning.status !== 0 && /signing variable/.test(failSigning.output),
+      `exit=${failSigning.status}`,
+    );
+
+    // Clean production build in a temp copy (no .env — fresh-clone shape) +
+    // fail-closed login check against it.
+    prodTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-prod-'));
+    fs.cpSync(ROOT, prodTmp, {
+      recursive: true,
+      filter: (src) => {
+        const rel = path.relative(ROOT, src);
+        if (!rel) return true;
+        const top = rel.split(path.sep)[0];
+        return !['node_modules', 'dist', '.git', 'qa', '.env', 'scripts', 'supabase', 'docs', 'tsconfig.tsbuildinfo'].includes(top);
+      },
+    });
+    fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(prodTmp, 'node_modules'), 'dir');
+    const prodEnv = { ...process.env };
+    for (const k of Object.keys(prodEnv)) {
+      if (k.startsWith('VITE_') || k === 'HUB_BUILD_TARGET') delete prodEnv[k];
+    }
+    prodEnv.HUB_BUILD_TARGET = 'production';
+    const prodBuild = runBuild(prodTmp, prodEnv);
+    check('production build: clean demo-off build succeeds', prodBuild.status === 0, prodBuild.status === 0 ? '' : prodBuild.output.slice(-400));
+    if (prodBuild.status === 0) {
+      const prodBase = `file://${path.join(prodTmp, 'dist', 'index.html')}`;
+      const { ctx, page } = await newPage(browser, 1440);
+      await page.goto(prodBase, { waitUntil: 'networkidle0' });
+      const demoShown = await page.evaluate(() => document.body.textContent.includes('9990001'));
+      check('production build: no demo users shown', !demoShown);
+      await page.type('#employee-id', '9990002');
+      await page.type('#pin', '123456');
+      await page.click('button[type="submit"]');
+      let alert = '(no alert shown)';
+      try {
+        await page.waitForFunction(() => document.querySelector('[role="alert"]'), { timeout: 5000 });
+        alert = await page.$eval('[role="alert"]', (el) => el.textContent);
+      } catch {
+        /* alert stays '(no alert shown)' */
+      }
+      const prodToken = await page.evaluate(() => sessionStorage.getItem('hub-session-token'));
+      check(
+        'production build: sign-in fails closed (not configured)',
+        /কনফিগার করা হয়নি|not configured/i.test(alert) && prodToken === null,
+        alert,
+      );
+      await ctx.close();
+    } else {
+      check('production build: no demo users shown', false, 'production build failed');
+      check('production build: sign-in fails closed (not configured)', false, 'production build failed');
+    }
+  }
 } finally {
   await browser.close();
+  if (stubServer) await new Promise((resolve) => stubServer.close(resolve));
+  for (const dir of [jwtBundleDir, prodTmp]) {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
-const failed = results.filter((r) => !r.ok);
-console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
-if (failed.length > 0) {
-  console.log('FAILED:');
-  for (const f of failed) console.log(` - ${f.name} ${f.detail}`);
-  process.exit(1);
-}
+summarizeAndExit(results.some((r) => !r.ok) ? 1 : 0);

@@ -1,0 +1,207 @@
+<!doctype html>
+<!--
+  Stub module — QA fixture implementing the MODULE side of the Hub ↔ Module
+  SSO handoff protocol (Milestone 2) for the Hub's own QA suite.
+
+  It is NOT a real calculator: it is a minimal page that (a) posts hub-ready
+  to its opener, (b) receives + verifies the Hub's RS256 token, (c) reports
+  a valid hub session (or a banner / standalone mode), and (d) clears its
+  session on hub-signout. `npm run qa` serves this file from a local HTTP
+  server, points the PremiumPulse tile at it, and asserts the handoff.
+
+  Placeholders (replaced by scripts/qa-screenshots.mjs at QA time):
+    __HUB_PUBLIC_KEY_PEM__  the Hub public key to verify against (SPKI PEM)
+    __HUB_KID__             the kid QA expects
+    __HUB_ORIGINS_JSON__    JSON array of allowed Hub origins. In QA the Hub
+                            runs from file://, whose origin serialises as
+                            "null" — so QA passes ["null"]. A REAL module
+                            allowlists real Hub origins (e.g.
+                            ["http://localhost:5173", "<hub production URL>"])
+                            and NEVER "null" in production.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STUB-MODULE</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f7f2e9; color: #25291f; }
+  #hub-header { display: none; align-items: center; gap: 12px; background: #3c3c3b; color: #fff; padding: 10px 16px; }
+  #hub-header.visible { display: flex; }
+  #hub-header button { background: #f37021; color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  #user-chip { margin-left: auto; font-size: 14px; }
+  #banner { display: none; background: #fff3cd; border: 1px solid #e6c200; border-radius: 8px; margin: 16px; padding: 12px 16px; }
+  #banner.visible { display: block; }
+  main { padding: 16px; }
+  #stub-status { font-family: monospace; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+</style>
+</head>
+<body>
+<header id="hub-header">
+  <span>Shanta Life · Agent Hub</span>
+  <button id="back-to-hub" type="button">← Back to Hub</button>
+  <span id="user-chip"></span>
+</header>
+<div id="banner" role="status">
+  You're not signed in via the Hub — sign in for the full Hub experience.
+  <button id="dismiss-banner" type="button">Dismiss</button>
+</div>
+<main>
+  <h1>Stub Calculator (QA fixture)</h1>
+  <p>A minimal module page. The calculator body stays usable in every mode.</p>
+  <label>Premium <input id="calc-input" type="number" value="1000"></label>
+  <div id="stub-status">booting</div>
+</main>
+<script>
+(function () {
+  var MODULE_ID = 'premiumpulse';
+  var HUB_PUBLIC_KEY_PEM = `__HUB_PUBLIC_KEY_PEM__`;
+  var EXPECTED_KID = '__HUB_KID__';
+  var HUB_ORIGINS = __HUB_ORIGINS_JSON__;
+  var ISSUER = 'shanta-life-agent-hub';
+  var ROLES = ['employee', 'team_lead', 'manager', 'admin'];
+  var CLOCK_SKEW_S = 60;
+  var SESSION_KEY = MODULE_ID + '-hub-session';
+
+  var statusEl = document.getElementById('stub-status');
+  var headerEl = document.getElementById('hub-header');
+  var chipEl = document.getElementById('user-chip');
+  var bannerEl = document.getElementById('banner');
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+    document.title = text;
+  }
+  function showBanner() { bannerEl.classList.add('visible'); }
+  function hideBanner() { bannerEl.classList.remove('visible'); }
+  document.getElementById('dismiss-banner').addEventListener('click', hideBanner);
+  document.getElementById('back-to-hub').addEventListener('click', function () {
+    if (window.opener) { window.close(); return; }
+    window.location.href = 'http://localhost:5173';
+  });
+
+  function b64urlDecode(input) {
+    var s = input.replace(/-/g, '+').replace(/_/g, '/');
+    s += '='.repeat((4 - (s.length % 4)) % 4);
+    var bin = atob(s);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  function b64Decode(input) {
+    var bin = atob(input);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  function pemToDer(pem) {
+    var b64 = pem.replace('-----BEGIN PUBLIC KEY-----', '')
+      .replace('-----END PUBLIC KEY-----', '').replace(/\s+/g, '');
+    return b64Decode(b64);
+  }
+
+  async function verifyToken(token) {
+    try {
+      var parts = token.split('.');
+      if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
+      var header = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[0])));
+      if (header.alg !== 'RS256') return null;
+      if (header.kid !== EXPECTED_KID) return null;
+      var key = await crypto.subtle.importKey(
+        'spki', pemToDer(HUB_PUBLIC_KEY_PEM),
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+      var ok = await crypto.subtle.verify(
+        'RSASSA-PKCS1-v1_5', key, b64urlDecode(parts[2]),
+        new TextEncoder().encode(parts[0] + '.' + parts[1]));
+      if (!ok) return null;
+      var payload = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[1])));
+      if (payload.iss !== ISSUER) return null;
+      if (typeof payload.exp !== 'number') return null;
+      if (Math.floor(Date.now() / 1000) > payload.exp + CLOCK_SKEW_S) return null;
+      if (typeof payload.sub !== 'string' || payload.sub.length === 0) return null;
+      if (ROLES.indexOf(payload.role) === -1) return null;
+      return payload;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function enterHubMode(claims, token) {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ sub: claims.sub, name: claims.name, role: claims.role, exp: claims.exp, token: token }));
+    } catch (e) { /* storage unavailable — session stays in memory only */ }
+    chipEl.textContent = claims.name + ' · ' + claims.role;
+    headerEl.classList.add('visible');
+    hideBanner();
+    setStatus('hub-session-ok sub=' + claims.sub + ' role=' + claims.role);
+  }
+
+  function leaveHubMode(statusText) {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ }
+    headerEl.classList.remove('visible');
+    chipEl.textContent = '';
+    setStatus(statusText);
+  }
+
+  function recheckExpiry() {
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return;
+      var sess = JSON.parse(raw);
+      if (Math.floor(Date.now() / 1000) > sess.exp + CLOCK_SKEW_S) {
+        leaveHubMode('hub-session-expired');
+        showBanner();
+      }
+    } catch (e) { /* ignore */ }
+  }
+  setInterval(recheckExpiry, 30000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) recheckExpiry();
+  });
+
+  if (!window.opener) {
+    // Standalone mode: direct link / bookmark — no header, no gate.
+    setStatus('standalone');
+    return;
+  }
+
+  // Opened from the Hub: announce readiness (no secret in this message).
+  window.opener.postMessage({ type: 'hub-ready', module: MODULE_ID }, '*');
+
+  var settled = false;
+  var promptTimer = setTimeout(function () {
+    if (settled) return;
+    settled = true;
+    showBanner();
+    setStatus('hub-signin-prompt');
+  }, 5000);
+
+  window.addEventListener('message', async function (event) {
+    // Accept ONLY from an allowlisted Hub origin AND from window.opener.
+    if (HUB_ORIGINS.indexOf(event.origin) === -1) return;
+    if (event.source !== window.opener) return;
+    var data = event.data || {};
+    if (data.type === 'hub-signout') {
+      clearTimeout(promptTimer);
+      settled = true;
+      leaveHubMode('hub-session-cleared');
+      return;
+    }
+    if (data.type !== 'hub-token' || typeof data.token !== 'string') return;
+    clearTimeout(promptTimer);
+    var claims = await verifyToken(data.token);
+    if (!claims) {
+      settled = true;
+      showBanner();
+      setStatus('hub-session-invalid');
+      return;
+    }
+    settled = true;
+    enterHubMode(claims, data.token);
+  });
+})();
+</script>
+</body>
+</html>

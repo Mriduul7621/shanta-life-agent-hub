@@ -1,4 +1,6 @@
+import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import { openModule } from '../sso/handoff';
 import type { HubModule } from '../data/modules';
 
 const MARK_BG: Record<HubModule['accent'], string> = {
@@ -8,11 +10,16 @@ const MARK_BG: Record<HubModule['accent'], string> = {
 };
 
 /**
- * One tool tile. Enabled tiles are real links (new tab, Milestone 1 — in-Hub
- * framing is Milestone 2). Disabled tiles are inert, greyed, and say why.
+ * One tool tile.
+ * - Joined modules (ssoJoined: true) open via the SSO handoff
+ *   (src/sso/handoff.ts): a button that calls openModule with the session
+ *   token, so the module receives the signed-in session over postMessage.
+ * - Everything else enabled is a plain link (new tab), as before.
+ * - Disabled tiles are inert, greyed, and say why.
  */
 export function ModuleTile({ module }: { module: HubModule }) {
   const { t } = useI18n();
+  const { token } = useAuth();
   const disabled = !module.url;
 
   const inner = (
@@ -50,6 +57,23 @@ export function ModuleTile({ module }: { module: HubModule }) {
       >
         {inner}
       </div>
+    );
+  }
+
+  if (module.ssoJoined) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          // No token should be possible here (tiles only render signed in),
+          // but fall back to a plain link rather than breaking the tile.
+          if (token) openModule(module, token);
+          else window.open(module.url ?? undefined, '_blank', 'noopener');
+        }}
+        className="block w-full cursor-pointer rounded-2xl border border-cream-dark bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sunset sm:p-5"
+      >
+        {inner}
+      </button>
     );
   }
 

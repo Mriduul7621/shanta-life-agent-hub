@@ -11,22 +11,37 @@ and opens from the Hub. See the full plan in
 `~/workspace/agent-hub-plans/plan-a.html` and the verified tool inventory in
 [`INVENTORY.md`](INVENTORY.md).
 
-> **Status: Milestone 1** — Hub shell + login + home screen. Local build only.
-> Nothing here is deployed, and nothing touches any live system.
+> **Status: Milestone 2** — RS256 SSO + module handoff for the three joined
+> calculators (PremiumPulse, SDPP Projection, Income Calculator). Local build
+> only. Nothing here is deployed, and nothing touches any live system.
 
 ## Run it
 
 ```bash
-cp .env.example .env   # demo auth ON, dev-only JWT secret
+cp .env.example .env   # demo auth OFF by default; dev-only RS256 key (see below)
 npm install
 npm run dev            # http://localhost:5173
-npm run build          # production build into dist/
+npm run build          # build into dist/ (target from HUB_BUILD_TARGET, default production)
 npm run preview        # serve the production build
-npm run qa             # headless-Chrome checks + screenshots (needs a fresh build)
+npm run qa             # performs its own demo-enabled build, then headless-Chrome checks + screenshots
+npm run keygen         # print a fresh RSA-2048 keypair (never writes .env)
 ```
 
-Requirements: Node 20+ (built with Node 24). No other services needed for
-Milestone 1 — the demo provider runs entirely in the browser.
+Requirements: Node 20+ (built with Node 24). No other services needed —
+the demo provider runs entirely in the browser.
+
+For local demo sign-in, set in your `.env` (gitignored):
+
+```bash
+HUB_BUILD_TARGET=dev     # dev builds allow demo auth + local signing
+VITE_DEMO_AUTH=true      # enables the 4 fictional demo users
+VITE_JWT_PRIVATE_KEY_B64=<dev key>   # from `npm run keygen`, or the shared dev key
+```
+
+The private key must be the pair of the public key committed in
+`src/auth/keys.ts`, or token verification fails. `npm run qa` works without
+any of this — it forces its own build env and generates an ephemeral keypair
+when no `.env` key exists, so it passes from a fresh clone.
 
 ## Demo sign-in (dev only)
 
@@ -60,15 +75,18 @@ src/
   auth/
     types.ts               AuthProvider interface, HubUser, errors
     AuthContext.tsx        session restore, JWT issue/verify, sign-out
-    jwt.ts                 HS256 sign/verify (WebCrypto, no deps)
+    jwt.ts                 RS256 sign/verify (WebCrypto, no deps)
+    keys.ts                bundled Hub SSO PUBLIC key + kid (public — safe to commit)
     demoProvider.ts        dev-only demo users, lockout, forced change
-    supabaseProvider.ts    STUB — Milestone 2 wiring
+    supabaseProvider.ts    STUB — Milestone 2 design documented, not wired
+  sso/
+    handoff.ts             Hub → module postMessage handoff + sign-out broadcast
   i18n/
     dictionary.ts          every UI string, Bangla + English
-    I18nContext.tsx        BN default, BN|EN pill, localStorage persistence
+    I18nContext.tsx        EN default, EN|BN pill, localStorage persistence
   data/
     demoData.ts            per-role demo widget data (clearly fictional)
-    modules.ts             module tiles — URLs from INVENTORY.md only
+    modules.ts             module tiles — URLs from INVENTORY.md only, ssoJoined flags
   components/              Layout (sidebar/bottom nav), WidgetCard,
                            ModuleTile, LanguagePill, icons
   pages/                   Login, ForceChange, Home, Module, Profile
@@ -77,28 +95,60 @@ public/
   sw.js                    offline-tolerant app-shell service worker
   icons/                   geometric hub icon (NOT the Shanta logo)
 supabase/schema.sql        prepared Hub auth schema — LOCAL ONLY, never run
-docs/SSO_TOKEN.md          the SSO token: format, claims, verification
-scripts/qa-screenshots.mjs headless-Chrome QA (33 checks + screenshots)
+docs/SSO_TOKEN.md          the SSO token: RS256 format, claims, verification, rotation
+docs/SSO_PRODUCTION.md     production design: server issuer, secrets, rotation runbook, checklist
+scripts/gen-dev-keys.mjs   print a fresh RSA-2048 keypair (never writes .env)
+scripts/fixtures/stub-module.html  QA stub module (module side of the handoff protocol)
+scripts/qa-screenshots.mjs headless-Chrome QA (61 checks + screenshots)
 qa/                        QA screenshots (375 / 768 / 1440 px)
 ```
+
+### Build targets
+
+`HUB_BUILD_TARGET` is `dev` | `qa` | `production`, **default production**.
+Set it in the shell or in `.env`. The guard in `vite.config.ts` makes a
+production-target build FAIL FAST with a clear message if
+`VITE_DEMO_AUTH=true` or any `VITE_JWT_*` signing variable is set — demo
+users and signing keys must never ship in a production bundle. Dev and QA
+builds set the target explicitly; `npm run qa` forces `HUB_BUILD_TARGET=qa`
+itself.
 
 ### Auth providers
 
 `AuthContext` picks a provider by env: `VITE_DEMO_AUTH=true` → the demo
 provider; anything else → the Supabase provider stub, which fails closed
-(`not_configured`) until Milestone 2 wires it. Adding a provider means
-implementing the `AuthProvider` interface in `src/auth/types.ts` — sign-in
-and credential change, nothing else.
+(`not_configured`) until it is wired. Adding a provider means implementing
+the `AuthProvider` interface in `src/auth/types.ts` — sign-in and
+credential change, nothing else. A provider may return a server-issued
+token in `SignInResult.token`; when it does, `AuthContext` uses that token
+instead of signing locally (the production path — the demo provider returns
+none). The Supabase design (Edge Function verify + issue) is documented in
+`src/auth/supabaseProvider.ts` and `docs/SSO_PRODUCTION.md`.
 
 ### SSO token
 
-On successful sign-in the Hub issues a signed JWT (HS256, 1-hour expiry) with
-claims `sub` (Employee ID), `name`, `role`, `iat`, `exp`, `iss`. The token
-lives in `sessionStorage` and is verified (signature + expiry) on session
-restore. **Milestone 1 signs tokens in the browser with a dev-only secret from
-`.env`** so the format can be verified end to end. Production tokens must be
-issued server-side — the browser must never hold the signing secret. Full
-spec, verification steps and rotation notes: [`docs/SSO_TOKEN.md`](docs/SSO_TOKEN.md).
+On successful sign-in the Hub holds a signed JWT (RS256, 1-hour expiry)
+with claims `sub` (Employee ID), `name`, `role`, `iat`, `exp`, `iss`. The
+token lives in `sessionStorage` and is verified (signature + claims) on
+session restore and every 30 seconds. **Dev/QA builds sign tokens in the
+browser with a dev-only private key from `.env`** so the format and the
+handoff are verifiable end to end. Production tokens are issued server-side
+— the browser never holds a signing key. Full spec, verification steps,
+key distribution and rotation: [`docs/SSO_TOKEN.md`](docs/SSO_TOKEN.md);
+production design: [`docs/SSO_PRODUCTION.md`](docs/SSO_PRODUCTION.md).
+
+### Module handoff (Milestone 2)
+
+Modules flagged `ssoJoined: true` in `src/data/modules.ts` — PremiumPulse,
+SDPP Projection and Income Calculator — open via `src/sso/handoff.ts`:
+`window.open` without `noopener`, the module posts `hub-ready`, the Hub
+replies with the token over `postMessage` (strict origin + source checks,
+`targetOrigin` = the module's origin, never `'*'`). A module without join
+code never sends `hub-ready` and runs standalone — that is the graceful
+path, not an error. On Hub sign-out and on session expiry the Hub
+broadcasts `hub-signout` to every still-open joined module window.
+LeadFlow, Learning Hub and the Sales Command Center are NOT joined yet —
+their tiles stay plain links until their join milestone.
 
 ### Roles
 
@@ -133,35 +183,50 @@ milestone.
 |---|---|
 | React 19 + Vite 7 + Tailwind 4 + TS scaffold | Demo auth provider (4 fictional users) |
 | Login, lockout, forced-change, session expiry flows | All home widget numbers (per-role demo data) |
-| JWT format + verification (dev secret) | Supabase provider (stub — no backend) |
-| BN/EN i18n for every UI string | Proposals tile disabled (production portal URL unconfirmed) |
-| Module tiles linking to the 6 verified production URLs | Admin console (placeholder, later milestone) |
-| PWA manifest + service worker + icon | In-Hub framing of modules (Milestone 2 — tiles open new tabs for now) |
-| All-device layouts (phone / tablet / laptop) | Real widget data (Milestones 2–3) |
+| RS256 JWT format + verification (dev keypair) | Supabase provider (stub — no backend) |
+| SSO handoff to the 3 joined calculators | LeadFlow / Learning Hub / Sales Command Center not joined yet (plain links) |
+| Build-target guard (production build fails on demo auth / signing keys) | Proposals tile disabled (production portal URL unconfirmed) |
+| BN/EN i18n for every UI string | Admin console (placeholder, later milestone) |
+| Module tiles linking to the 6 verified production URLs | Real widget data (Milestone 3) |
+| PWA manifest + service worker + icon | |
+| All-device layouts (phone / tablet / laptop) | |
 
-## Follow-ups (not Milestone 1)
+## Follow-ups (not Milestone 2)
 
 1. **Real Shanta logo** — the Hub currently uses a text wordmark ("Shanta
    Life" + "Agent Hub") and a geometric icon. Do not recreate the logo: integrate
    the approved vector asset from the brand guidelines when IT/brand approves.
 2. **Supabase wiring** — implement `supabaseProvider.ts` against the schema in
-   `supabase/schema.sql` (Edge Function for verify + server-side JWT issue).
-   The schema file is prepared locally only; it has never been run anywhere.
+   `supabase/schema.sql` (Edge Function for verify + server-side RS256 issue,
+   per `docs/SSO_PRODUCTION.md`). The schema file is prepared locally only;
+   it has never been run anywhere.
 3. **Proposals portal URL** — only the UAT URL exists in the exploration
    report; the production URL needs IT confirmation. Never link UAT from the Hub.
 4. **Capacitor wrap** for a Play Store / installable build.
-5. **Milestone 2** — in-Hub framing + token sign-in for LeadFlow and Learning
-   Hub; real widget data from LeadFlow / Due & Lapse sheet / Learning Hub.
+5. **Milestone 3** — LeadFlow and Learning Hub join SSO; real widget data
+   from LeadFlow / Due & Lapse sheet / Learning Hub.
 
 ## QA
 
-`npm run qa` runs `scripts/qa-screenshots.mjs` against the production build:
-login for all 4 roles, JWT claim checks, lockout after 5 wrong PINs, the
-forced-change flow, sign-out clearing the session, BN/EN switching, role-view
-differences, and screenshots (login + home + profile at 375 / 768 / 1440 px)
-with a horizontal-overflow check on each. Screenshots live in `qa/`.
+`npm run qa` runs `scripts/qa-screenshots.mjs` — 61 checks. It performs its
+own demo-enabled build first (`HUB_BUILD_TARGET=qa` + `VITE_DEMO_AUTH=true`,
+script-forced, with an ephemeral keypair when no `.env` key exists), so it
+passes from a fresh clone. Coverage: the Milestone 1 suite (login for all 4
+roles, JWT claim checks, lockout after 5 wrong PINs, the forced-change flow,
+sign-out clearing the session, BN/EN switching, role-view differences,
+screenshots at 375 / 768 / 1440 px with horizontal-overflow checks), plus
+Milestone 2: RS256 signature verification of issued tokens (Node `crypto` +
+the app's own `verifySsoToken`), 8 negative cases (tampered payload,
+expired token, wrong `iss`, `alg` none, `alg` HS256, unknown `kid`, empty
+`sub`, bad role), the SSO handoff end-to-end against a local stub module
+fixture (`scripts/fixtures/stub-module.html` — no live URLs), tile wiring,
+and the production-target guard (bad builds fail; a clean production build
+has no demo users and sign-in fails closed). Screenshots live in `qa/`.
 
 Note: the VM's Chrome build hard-blocks loopback navigation
 (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, not lifted by the standard
 flag), so QA runs against `dist/` via `file://` — which is why the app uses a
-relative base. Point `HUB_QA_URL` at a live server to QA over HTTP instead.
+relative base. Point `HUB_QA_URL` at a live server to QA over HTTP instead
+(Milestone 1 checks only in that mode). `window.open` from a `file://` page
+to a loopback HTTP URL does work, which is how the handoff test reaches the
+local stub module.

@@ -20,7 +20,7 @@ function readStoredLang(): Lang {
   } catch {
     /* storage unavailable — fall through to default */
   }
-  return 'bn'; // Bangla default
+  return 'en'; // English default (Mahadi's decision 2026-11-20)
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {

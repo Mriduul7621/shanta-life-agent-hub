@@ -1,23 +1,26 @@
 # Agent Hub SSO token
 
 How the Hub proves "this is Employee X, role Y" to a module (LeadFlow,
-Learning Hub, …) without a second login. Milestone 1 defines and issues the
-token; Milestone 2 modules verify it.
+Learning Hub, the joined calculators, …) without a second login.
 
 ## Format
 
 A standard JWT: `base64url(header) . base64url(payload) . base64url(signature)`.
 
-- **Algorithm:** HS256 (HMAC-SHA-256). Symmetric — one shared secret signs
-  and verifies. (A later milestone may move to RS256 so modules verify with a
-  public key and only the issuer holds the private key.)
-- **Header:** `{"alg":"HS256","typ":"JWT"}`
-- **Transport:** issued at Hub sign-in; stored in `sessionStorage` under
-  `hub-session-token`; handed to a module at open time (Milestone 2 — exact
-  handoff TBD: `Authorization: Bearer <token>` header or a POSTed form field,
-  never a URL query parameter).
-- **Lifetime:** 1 hour (`exp = iat + 3600`). No refresh token in Milestone 1 —
-  after expiry the agent signs in again.
+- **Algorithm:** RS256 (RSASSA-PKCS1-v1_5 + SHA-256). Asymmetric: the Hub
+  (or its server issuer) signs with a PRIVATE key; modules verify with the
+  PUBLIC key. Milestone 1 used HS256 with a shared secret — that was removed
+  entirely in Milestone 2, with no fallback. A shared secret cannot work for
+  the joined calculators: they are static sites with no backend, so the
+  secret would have to ship in their bundles and would be public by
+  definition. RS256 fixes it — the public key is safe to bundle.
+- **Header:** `{"alg":"RS256","typ":"JWT","kid":"c804e3560b5c8059"}` (`kid` =
+  first 16 hex chars of the SHA-256 of the public key's DER encoding).
+- **Transport:** `postMessage` only, at module-open time (see
+  `src/sso/handoff.ts` and the Milestone 2 protocol). NEVER a URL query
+  parameter, NEVER localStorage (sessionStorage only), NEVER logged.
+- **Lifetime:** 1 hour (`exp = iat + 3600`). No refresh token — after expiry
+  the agent signs in again.
 
 ## Claims
 
@@ -35,7 +38,7 @@ A standard JWT: `base64url(header) . base64url(payload) . base64url(signature)`.
 Header:
 
 ```json
-{"alg": "HS256", "typ": "JWT"}
+{"alg": "RS256", "typ": "JWT", "kid": "c804e3560b5c8059"}
 ```
 
 Payload:
@@ -51,46 +54,90 @@ Payload:
 }
 ```
 
-Verified end to end in QA (`npm run qa`): all four demo roles receive a token
-with these claims and `exp − iat = 3600`.
+Verified end to end in QA (`npm run qa`): all four demo roles receive a
+token with these claims and `exp − iat = 3600`; the RS256 signature is
+verified independently with Node `crypto` + the dev public key, and the
+negative cases below are all rejected.
 
-## Verification steps (for a module, Milestone 2)
+## Keys and key distribution
 
-1. Split on `.` — exactly three parts.
-2. Decode the header; reject unless `alg` is exactly `HS256` (never accept
-   `none`, and never accept an algorithm other than the one configured).
-3. Recompute `HMAC-SHA256(secret, header.payload)` and compare with the
-   signature in constant time. Reject on mismatch.
-4. Decode the payload; reject unless `iss === "shanta-life-agent-hub"`.
-5. Reject if `exp` is in the past (allow ≤ 60 s clock skew).
-6. Require `sub` (non-empty string) and `role` (one of the four values).
-7. Trust `sub` + `role` as the authenticated identity; do not re-ask for a
-   password. Apply the module's own role rules from there.
+- **Dev keypair** (generated 2026-11-20, kid `c804e3560b5c8059`): the PUBLIC
+  key is committed in `src/auth/keys.ts` and bundled in the Hub and in every
+  joined module — it is public, so committing it is safe. The PRIVATE key
+  (PKCS#8 DER, base64) lives ONLY in the developer's local `.env` as
+  `VITE_JWT_PRIVATE_KEY_B64` (gitignored) and signs demo tokens in dev/QA
+  builds. It is NEVER a production key.
+- **Production keypair:** generated on the server / in the secret manager.
+  The private key stays in server secrets (Supabase Edge Function secrets);
+  the public key is bundled in the Hub and in each joined module at deploy
+  time (replace the bundled key, or build with the `VITE_HUB_PUBLIC_KEY_PEM`
+  / `VITE_HUB_KID` overrides). The browser never holds a signing key.
+  Full production design: [`docs/SSO_PRODUCTION.md`](SSO_PRODUCTION.md).
+- **Generate a keypair:** `node scripts/gen-dev-keys.mjs` (or
+  `npm run keygen`) prints a fresh RSA-2048 keypair — public PEM, private
+  DER base64, kid, and the exact `.env` line. It never writes any file.
+- **Why RS256 for static modules:** a static site has no backend to hold a
+  secret, so anything it needs to verify with must be public. RS256's public
+  key is public by design; HS256's shared secret would be public by
+  accident. The Hub header in a module is UI chrome, not a security
+  boundary; the verified token is the boundary.
 
-Reference implementation: `verifySsoToken()` in `src/auth/jwt.ts` (WebCrypto,
-no dependencies) — the Hub uses it on session restore.
+## Verification steps (for a module — and what the Hub itself does)
 
-## Secrets and rotation
+Reference implementation: `verifySsoToken()` in `src/auth/jwt.ts`
+(WebCrypto, no dependencies). Joined modules implement the same checks.
+Strictly reject — fail closed — on ANY of these:
 
-- **Milestone 1 (dev only):** the token is signed in the browser with
-  `VITE_JWT_SECRET` from `.env`. This exists only so the format is verifiable
-  end to end. A secret shipped to the browser is public by definition — it
-  must never be treated as a production secret, and it must never be the same
-  value as any production secret.
-- **Production (Milestone 2):** tokens are issued server-side by the Hub auth
-  service (Supabase Edge Function) with a secret stored in the project's
-  server-side secrets. The browser never sees it. Modules verify with the same
-  secret, held server-side on their own backends (or via a shared verification
-  endpoint — TBD in Milestone 2 design).
-- **Rotation:** keep two secrets live during rotation (`current` + `previous`):
-  issue with `current`, verify against either; after one token lifetime (1 h)
-  all tokens signed with `previous` have expired, so it can be retired. No
-  downtime, no forced sign-out beyond the normal 1-hour expiry.
-- **Leak response:** if a signing secret is ever exposed, rotate immediately
-  (all live tokens die at rotation — agents sign in again) and treat it as a
-  security incident, not a routine change.
-- **Never** put the secret in Git, in chat, in a screenshot, or in any client
-  bundle. `.env` is gitignored; `.env.example` carries only the dev placeholder.
+1. Not exactly three parts, or any part undecodable / not JSON.
+2. Header `alg` anything other than exactly `RS256`. Never accept `none`,
+   never accept `HS256`, never accept any other algorithm — one algorithm,
+   no fallback.
+3. Header `kid` missing or unknown (Milestone 2: the single dev kid above;
+   during rotation, current + previous kids).
+4. Signature mismatch: verify `RSASSA-PKCS1-v1_5 + SHA-256` over
+   `header.payload` with the public key for that `kid`.
+5. `iss` anything other than `shanta-life-agent-hub`.
+6. `exp` missing, not a number, or in the past (allow ≤ 60 s clock skew).
+7. `iat` missing or not a number.
+8. `sub` missing or empty; `role` outside the four values.
+9. (Module side only) the token arrived from an origin outside the Hub
+   origin allowlist, or from a window other than `window.opener` — see the
+   handoff protocol. The Hub side applies the mirror checks: `hub-ready`
+   only from the module's origin and the exact window it opened, token
+   posted with `targetOrigin` = the module's origin, never `'*'`.
+
+On success, trust `sub` + `role` as the authenticated identity; do not
+re-ask for a password. Apply the module's own role rules from there.
+
+## Rotation (with kid)
+
+1. Generate a new keypair (`npm run keygen`). New `kid`, new public key.
+2. Deploy the new public key + kid to the Hub and to every joined module
+   (add the kid to `KNOWN_KIDS` in `src/auth/keys.ts`; modules add it to
+   their known-kid list). Verification now accepts BOTH kids.
+3. Switch the issuer to sign with the new private key (new `kid` in the
+   header). Old tokens keep verifying until they expire.
+4. After one token lifetime (1 hour) all tokens signed with the old key
+   have expired: remove the old kid + key everywhere. No downtime, no
+   forced sign-out beyond the normal 1-hour expiry.
+5. **Leak response:** if a PRIVATE key is ever exposed, rotate immediately
+   (all live tokens die at rotation — agents sign in again) and treat it as
+   a security incident, not a routine change. A PUBLIC key "leaking" is not
+   an incident — it is public by design.
+
+## Handoff and sign-out
+
+- The Hub hands the token to a joined module over `postMessage` after the
+  module posts `hub-ready` (strict origin + source checks both ways).
+  Modules without join code never send `hub-ready` and simply run
+  standalone — that is the graceful path, not an error. See
+  `src/sso/handoff.ts` and the Milestone 2 protocol.
+- On Hub sign-out AND on session expiry, the Hub broadcasts
+  `{type:'hub-signout'}` to every still-open joined module window, which
+  clears its session. Modules also re-check token expiry on a 30 s timer.
+- A module opened from the Hub but without a valid token shows a
+  dismissible "not signed in via the Hub" banner and REMAINS USABLE — the
+  gate lives in the Hub (tiles need a Hub login), not in the calculator.
 
 ## What the token is NOT
 
@@ -98,5 +145,14 @@ no dependencies) — the Hub uses it on session restore.
 - It does not carry permissions beyond `role` — each module enforces its own
   visibility rules (reporting tree) from `sub` + `role`.
 - It is not a session cookie: signing out of the Hub deletes it from
-  sessionStorage, and Milestone 2 modules must also end their own sessions on
-  Hub sign-out (exact mechanism TBD — likely a sign-out broadcast).
+  sessionStorage and broadcasts sign-out to joined modules.
+
+## Never
+
+- Never put the token in a URL, in localStorage, or in any log.
+- Never put the PRIVATE key in Git, in chat, in a screenshot, or in any
+  client bundle. `.env` is gitignored; `.env.example` carries only the
+  placeholder. The production-target build guard (`vite.config.ts`)
+  refuses to build when any `VITE_JWT_*` signing variable is set.
+- Never accept `alg: none` or any algorithm other than `RS256`.
+- Never accept a token from an origin outside the allowlist.

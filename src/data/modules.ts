@@ -19,9 +19,39 @@ export interface HubModule {
   /** Short label shown on the tile (initials, not a logo). */
   mark: string;
   accent: 'orange' | 'olive' | 'charcoal';
+  /**
+   * True when the module has joined Hub SSO (Milestone 2): its tile opens
+   * via the postMessage handoff in src/sso/handoff.ts instead of a plain
+   * link. Absent/false for everything else — LeadFlow, Learning Hub and
+   * the Sales Command Center join in a later milestone, and disabled tiles
+   * never open at all.
+   */
+  ssoJoined?: boolean;
 }
 
-export const MODULES: HubModule[] = [
+/**
+ * QA-only URL overrides: VITE_MODULE_URL_OVERRIDES is a JSON map of module
+ * id → URL (e.g. {"premiumpulse":"http://127.0.0.1:PORT/stub-module.html"}).
+ * `npm run qa` sets it to point a tile at a local stub module so the SSO
+ * handoff can be tested without any live URL. Never set in a real build.
+ */
+function moduleUrlOverrides(): Record<string, string> {
+  try {
+    const raw = import.meta.env.VITE_MODULE_URL_OVERRIDES as string | undefined;
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'string' && v.length > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+const MODULE_DEFS: HubModule[] = [
   {
     id: 'leadflow',
     name: 'LeadFlow',
@@ -48,6 +78,7 @@ export const MODULES: HubModule[] = [
     url: 'https://premium-illustrator.vercel.app',
     mark: 'PP',
     accent: 'orange',
+    ssoJoined: true,
   },
   {
     id: 'sdpp',
@@ -57,6 +88,7 @@ export const MODULES: HubModule[] = [
     url: 'https://sdpp-value-projection.vercel.app',
     mark: 'SP',
     accent: 'olive',
+    ssoJoined: true,
   },
   {
     id: 'income',
@@ -66,6 +98,7 @@ export const MODULES: HubModule[] = [
     url: 'https://incomecalculator-delta.vercel.app',
     mark: 'IC',
     accent: 'orange',
+    ssoJoined: true,
   },
   {
     id: 'sales-command-center',
@@ -87,6 +120,13 @@ export const MODULES: HubModule[] = [
     accent: 'charcoal',
   },
 ];
+
+const URL_OVERRIDES = moduleUrlOverrides();
+
+/** Module tiles, with any QA-only URL overrides applied. */
+export const MODULES: HubModule[] = MODULE_DEFS.map((m) =>
+  URL_OVERRIDES[m.id] ? { ...m, url: URL_OVERRIDES[m.id] } : m,
+);
 
 export const GROUP_ORDER: ModuleGroup[] = ['leads', 'learning', 'calculators', 'dashboard', 'proposals'];
 
