@@ -1,5 +1,5 @@
 /**
- * Milestone 2 QA — headless-Chrome checks for the Agent Hub.
+ * Milestone 3 QA — headless-Chrome checks for the Agent Hub.
  *
  * Usage: `npm run qa` — the script performs its own demo-enabled build
  * (HUB_BUILD_TARGET=qa + VITE_DEMO_AUTH=true, script-forced) so it passes
@@ -16,6 +16,13 @@
  * local QA build). The handoff test navigates same-tab to a temp file://
  * stub fixture, so it needs no loopback server at all.
  *
+ * NOTE (Milestone 3): this VM's headless Chrome has no external network, so
+ * the Dashboard's live gviz fetch cannot succeed here — the dashboard QA
+ * below asserts the page reaches a terminal state (live KPIs OR the error
+ * state with retry + SCC link) and records which path was taken. The live
+ * path itself is verified by `npm run qa:scc-live`, which runs the Hub's
+ * own parser + aggregation code against the real gviz CSVs from Node.
+ *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
  *  2. All 4 demo roles can sign in; a JWT is issued with the documented claims.
@@ -25,9 +32,10 @@
  *  6. EN/BN switch changes UI strings.
  *  7. Role views differ (team section only for Team Lead / Manager; Admin sees
  *     the console placeholder on Profile).
- *  8. Screenshots: login + home + profile at 375 / 768 / 1440 px, plus one
- *     home screenshot per role at 1440 px. Each shot also checks for
- *     horizontal overflow (scrollWidth > innerWidth).
+ *  8. Screenshots: login + home + profile + dashboard at 375 / 768 / 1440 px,
+ *     plus one home screenshot per role at 1440 px. Each shot also checks for
+ *     horizontal overflow (scrollWidth > innerWidth). (Dashboard shots are
+ *     Milestone 3 — 3 of its 22 checks.)
  *
  * Checks (Milestone 2 — 31):
  *  9. Key sanity: the signing private key matches the public key QA
@@ -56,6 +64,14 @@
  *     production build with a signing key FAILS, and a clean production
  *     build (temp copy, no .env) succeeds with no demo users and sign-in
  *     failing closed.
+ *
+ * Checks (Milestone 3 — 22):
+ * 16. Dashboard page: reaches a terminal state (live KPIs or error state
+ *     with retry), shows the SCC link, and has a Refresh button; the ready
+ *     state renders against a synthetic session cache with exact figures.
+ * 17. Due-premium widget: present on Home with the DEMO badge + note and
+ *     demo rows for Team Lead; "showing 5 of 31" for Manager team; empty
+ *     state for Admin.
  *
  * Exits non-zero if any check fails. Screenshots land in qa/.
  */
@@ -285,6 +301,38 @@ async function overflowCheck(page) {
   }));
 }
 
+async function clickNav(page, bn, en) {
+  await page.evaluate(
+    (labels) => {
+      const btns = [...document.querySelectorAll('nav button')];
+      btns.find((b) => labels.some((l) => b.textContent.includes(l)))?.click();
+    },
+    [bn, en],
+  );
+}
+
+/**
+ * Dashboard terminal state: live KPIs rendered OR the error state rendered.
+ * Returns 'live' | 'error'. The live path needs external network, which this
+ * VM's headless Chrome lacks — so 'error' is the expected outcome here, and
+ * the live path is verified separately by scripts/qa-scc-live.mjs.
+ */
+async function waitForDashboardTerminal(page) {
+  await page.waitForFunction(
+    () =>
+      document.body.textContent.includes('লাইভ ড্যাশবোর্ড লোড করা যায়নি') ||
+      document.body.textContent.includes('Could not load the live dashboard') ||
+      document.body.textContent.includes('নতুন প্রিমিয়াম') ||
+      document.body.textContent.includes('New premium'),
+    { timeout: 30000 },
+  );
+  return page.evaluate(() =>
+    document.body.textContent.includes('নতুন প্রিমিয়াম') ||
+    document.body.textContent.includes('New premium')
+      ? 'live'
+      : 'error',
+  );
+}
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
@@ -487,6 +535,13 @@ try {
     const profOv = await overflowCheck(page);
     check(`screenshot profile-${width}: no horizontal overflow`, !profOv.overflow, `scrollWidth=${profOv.scrollWidth} innerWidth=${profOv.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, `profile-${width}.png`), fullPage: true });
+    // Dashboard (M3) — terminal state (live or error), overflow, screenshot
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    await new Promise((r) => setTimeout(r, 300));
+    const dashOv = await overflowCheck(page);
+    check(`screenshot dashboard-${width}: no horizontal overflow (${dashPath})`, !dashOv.overflow, `scrollWidth=${dashOv.scrollWidth} innerWidth=${dashOv.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, `dashboard-${width}.png`), fullPage: true });
     await ctx.close();
   }
 
@@ -509,6 +564,150 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     await page.screenshot({ path: path.join(QA_DIR, s.file), fullPage: true });
     console.log(`SHOT  ${s.file}`);
+    await ctx.close();
+  }
+
+  // ---- 16. Dashboard page (M3): terminal state, SCC link, refresh ----
+  {
+    const { ctx, page, errors } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error', `path=${dashPath}`);
+    const sccLink = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('a')].find((el) =>
+        el.href.includes('training-dashboard-shanta-life.vercel.app'),
+      );
+      return a ? a.href : null;
+    });
+    check('dashboard: full SCC link present', !!sccLink, sccLink || 'missing');
+    const hasRefresh = await page.evaluate(() =>
+      [...document.querySelectorAll('button')].some(
+        (b) => b.textContent.includes('রিফ্রেশ') || b.textContent.includes('Refresh'),
+      ),
+    );
+    check('dashboard: refresh button present', hasRefresh);
+    if (dashPath === 'error') {
+      const hasRetry = await page.evaluate(() =>
+        [...document.querySelectorAll('button')].some(
+          (b) => b.textContent.includes('আবার চেষ্টা করুন') || b.textContent.includes('Try again'),
+        ),
+      );
+      check('dashboard (error path): retry button present', hasRetry);
+    } else {
+      const hasLeaders = await page.evaluate(
+        () =>
+          document.body.textContent.includes('শীর্ষ জেনারেল ম্যানেজার') ||
+          document.body.textContent.includes('Top General Managers'),
+      );
+      check('dashboard (live path): leaders section present', hasLeaders);
+    }
+    // Chrome logs a failed fetch as a console error ("Failed to load
+    // resource") even when the app catches it — and the Dashboard handles a
+    // failed fetch by design (error state + retry). Resource-load logs are
+    // therefore excluded here; uncaught JS errors (pageerror / console.error
+    // from the app) still fail the check.
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('dashboard: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    await ctx.close();
+  }
+
+  // ---- 16b. Dashboard ready state (M3): synthetic cache, exact figures ----
+  // Synthetic producers/sessions (fictional names, hand-computed KPIs):
+  // new premium 175,000 · policies 17 · lifetime 825,000 · active FAs 3 ·
+  // avg premium/FA 58,333 · avg policies/FA 5.7 · sessions 2 · participants
+  // 50 · cost 8,000 · trained 2 of 3 (66.7%) · gap 1 (33.3%) · leaders:
+  // Test GM One (150,000) then Test GM Two (25,000) · 1 unassigned row.
+  {
+    const { ctx, page, errors } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    const producerCsv = [
+      '"EMPID OLD","PRODUCER NAME","TIER","STATUS ACTIVITY","No of New Policy","New Policy Premium","Life Time Premium","GM Name","Basic Training","Review Session","Foundation Training"',
+      '"F001","Test FA One","FA","Active","10","100000","500000","Test GM One","Yes","No","No"',
+      '"F002","Test FA Two","FA","Active","5","50000","200000","Test GM One","No","No","No"',
+      '"F003","Test FA Three","FA","Active","2","25000","25000","Test GM Two","Yes","Yes","Yes"',
+      '"F004","Test FA Four","FA","Inactive","0","0","100000","Test GM Two","No","No","No"',
+      '"M001","Test Manager","GM","Active","0","0","0","#N/A","No","No","No"',
+    ].join('\n');
+    const sessionCsv = [
+      '"Training Date","Training Name","Type of Training","Attendees","Training Cost"',
+      '"01 Jan 26","Test Session One","Basic Training","30","5000"',
+      '"02 Jan 26","Test Session Two","Review Session","20","3000"',
+    ].join('\n');
+    await page.evaluate(
+      (cache) => sessionStorage.setItem('hub-scc-cache-v1', JSON.stringify(cache)),
+      { producerCsv, sessionCsv, syncedAt: Date.now() },
+    );
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    check('dashboard (synthetic cache): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    const body = await page.evaluate(() => document.body.textContent);
+    check('dashboard ready: new premium ৳1,75,000', body.includes('৳1,75,000'));
+    check('dashboard ready: policies 17 + lifetime ৳8,25,000', body.includes('17') && body.includes('৳8,25,000'));
+    check('dashboard ready: FA trained 66.7%', body.includes('66.7%'));
+    check('dashboard ready: training gap 1 FA', body.includes('1 জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন') || body.includes('1 active FA not yet trained'));
+    check('dashboard ready: leaders ranked (Test GM One)', body.includes('Test GM One') && body.includes('Test GM Two'));
+    check('dashboard ready: unassigned line present', body.includes('বরাদ্দহীন') || body.includes('Unassigned'));
+    const readyOv = await overflowCheck(page);
+    check('dashboard ready: no horizontal overflow', !readyOv.overflow, `scrollWidth=${readyOv.scrollWidth} innerWidth=${readyOv.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'dashboard-ready-1440.png'), fullPage: true });
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('dashboard ready: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    await ctx.close();
+  }
+  // ---- 17. Due-premium widget (M3) ----
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    const widget = await page.evaluate(() => {
+      const sections = [
+        ...document.querySelectorAll(
+          'section[aria-label="বকেয়া প্রিমিয়াম"], section[aria-label="Due premiums"]',
+        ),
+      ];
+      return { count: sections.length, text: sections[0] ? sections[0].textContent : '' };
+    });
+    check('due widget: present on team-lead home (own + team)', widget.count === 2, `sections=${widget.count}`);
+    check(
+      'due widget: DEMO badge + note',
+      (widget.text.includes('DEMO DATA') && widget.text.includes('live dues')) ||
+        (widget.text.includes('ডেমো ডেটা') && widget.text.includes('লাইভ বকেয়া')),
+      widget.text.slice(0, 120),
+    );
+    check('due widget: demo rows with DEMO- policies', /DEMO-\d+/.test(widget.text));
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990003', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Manager'), { timeout: 5000 });
+    const showing = await page.evaluate(
+      () =>
+        document.body.textContent.includes('31টি বকেয়ার মধ্যে 5টি') ||
+        document.body.textContent.includes('Showing 5 of 31 dues'),
+    );
+    check('due widget (manager team): "showing 5 of 31" line', showing);
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990004', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
+    const adminWidget = await page.evaluate(() => {
+      const el = document.querySelector(
+        'section[aria-label="বকেয়া প্রিমিয়াম"], section[aria-label="Due premiums"]',
+      );
+      return el ? el.textContent : '';
+    });
+    check(
+      'due widget (admin): empty state says so plainly',
+      adminWidget.includes('এই সপ্তাহে কোনো প্রিমিয়াম বকেয়া নেই') ||
+        adminWidget.includes('No premiums due this week'),
+      adminWidget.slice(0, 120),
+    );
     await ctx.close();
   }
 

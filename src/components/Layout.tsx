@@ -19,18 +19,26 @@ interface NavItem {
   view: View;
   labelKey: DictKey;
   icon: ReactNode;
-  /** Shown in the mobile bottom nav (5 items max). */
+  /** Shown in the mobile bottom nav (6 items). */
   mobile: boolean;
+  /**
+   * Short label for the bottom nav. At 375px each of the 6 columns is ~62px
+   * wide, so the full labels ("Calculators", "Dashboard") truncated; the
+   * short labels fit without truncation. Desktop sidebar keeps full labels.
+   */
+  mobileLabelKey?: DictKey;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { view: 'home', labelKey: 'navHome', icon: <IconHome />, mobile: true },
-  { view: 'leads', labelKey: 'navLeads', icon: <IconLeads />, mobile: true },
-  { view: 'learning', labelKey: 'navLearning', icon: <IconLearning />, mobile: true },
-  { view: 'calculators', labelKey: 'navCalculators', icon: <IconCalculator />, mobile: true },
-  { view: 'dashboard', labelKey: 'navDashboard', icon: <IconDashboard />, mobile: false },
+  { view: 'home', labelKey: 'navHome', icon: <IconHome />, mobile: true, mobileLabelKey: 'navHomeShort' },
+  { view: 'leads', labelKey: 'navLeads', icon: <IconLeads />, mobile: true, mobileLabelKey: 'navLeadsShort' },
+  { view: 'learning', labelKey: 'navLearning', icon: <IconLearning />, mobile: true, mobileLabelKey: 'navLearningShort' },
+  { view: 'calculators', labelKey: 'navCalculators', icon: <IconCalculator />, mobile: true, mobileLabelKey: 'navCalculatorsShort' },
+  // Dashboard joined the bottom nav in Milestone 3: it is the home dashboard
+  // (Plan A §06) and must be reachable on a phone, not just the desktop sidebar.
+  { view: 'dashboard', labelKey: 'navDashboard', icon: <IconDashboard />, mobile: true, mobileLabelKey: 'navDashboardShort' },
   { view: 'proposals', labelKey: 'navProposals', icon: <IconProposals />, mobile: false },
-  { view: 'profile', labelKey: 'navProfile', icon: <IconProfile />, mobile: true },
+  { view: 'profile', labelKey: 'navProfile', icon: <IconProfile />, mobile: true, mobileLabelKey: 'navProfileShort' },
 ];
 
 function Wordmark() {
@@ -121,7 +129,7 @@ export function Layout({ view, onNavigate, children }: LayoutProps) {
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-30 border-t border-cream-dark bg-white pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <div className="mx-auto grid max-w-xl grid-cols-5">
+        <div className="mx-auto grid max-w-xl grid-cols-6">
           {mobileItems.map((item) => {
             const active = view === item.view;
             return (
@@ -130,12 +138,13 @@ export function Layout({ view, onNavigate, children }: LayoutProps) {
                 type="button"
                 onClick={() => onNavigate(item.view)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-semibold leading-tight ${
+                aria-label={t(item.labelKey)}
+                className={`flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-semibold leading-tight sm:text-[11px] ${
                   active ? 'text-sunset' : 'text-charcoal/55 hover:text-charcoal'
                 }`}
               >
                 <span className="flex h-6 items-center justify-center">{item.icon}</span>
-                <span className="max-w-full truncate">{t(item.labelKey)}</span>
+                <span className="max-w-full truncate">{t(item.mobileLabelKey ?? item.labelKey)}</span>
                 {active && <span aria-hidden className="h-1 w-6 rounded-full bg-sunset" />}
               </button>
             );

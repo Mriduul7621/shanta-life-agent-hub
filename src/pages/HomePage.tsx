@@ -4,6 +4,7 @@ import { DEMO_DASHBOARDS, formatBdt } from '../data/demoData';
 import type { WidgetData } from '../data/demoData';
 import { GROUP_ORDER, GROUP_TITLE_KEY, MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
+import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
 import { ModuleTile } from '../components/ModuleTile';
 import { IconCheck, IconCoin, IconLearning, IconPhone } from '../components/icons';
 
@@ -84,6 +85,9 @@ export function HomePage() {
       {/* Own widgets — every role */}
       <WidgetGrid data={dashboard.own} />
 
+      {/* Due premiums — own dues (demo data, see DuePremiumsWidget) */}
+      <DuePremiumsWidget data={dashboard.own} />
+
       {/* Team section — Team Lead and Manager only */}
       {dashboard.team && (
         <section aria-label={t('teamSectionTitle')}>
@@ -95,6 +99,9 @@ export function HomePage() {
           </div>
           <p className="mb-3 text-sm text-charcoal/60">{t('teamSectionSubtitle')}</p>
           <WidgetGrid data={dashboard.team} />
+          <div className="mt-3 sm:mt-4">
+            <DuePremiumsWidget data={dashboard.team} />
+          </div>
         </section>
       )}
 

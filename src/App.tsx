@@ -6,6 +6,7 @@ import type { View } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { ForceChangePage } from './pages/ForceChangePage';
 import { HomePage } from './pages/HomePage';
+import { DashboardPage } from './pages/DashboardPage';
 import { ModulePage } from './pages/ModulePage';
 import { ProfilePage } from './pages/ProfilePage';
 
@@ -27,10 +28,10 @@ function Shell() {
   return (
     <Layout view={view} onNavigate={setView}>
       {view === 'home' && <HomePage />}
+      {view === 'dashboard' && <DashboardPage />}
       {(view === 'leads' ||
         view === 'learning' ||
         view === 'calculators' ||
-        view === 'dashboard' ||
         view === 'proposals') && <ModulePage view={view} />}
       {view === 'profile' && <ProfilePage />}
     </Layout>

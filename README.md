@@ -11,11 +11,12 @@ and opens from the Hub. See the full plan in
 `~/workspace/agent-hub-plans/plan-a.html` and the verified tool inventory in
 [`INVENTORY.md`](INVENTORY.md).
 
-> **Status: Milestone 2** — RS256 SSO + module handoff for the three joined
-> calculators (PremiumPulse, SDPP Projection, Income Calculator), with
-> same-tab navigation for all module tiles (Mahadi's decision 2026-11-20).
+> **Status: Milestone 3** — Dashboard page (live Sales Command Center
+> summary) + due-premium widget on Home, on top of Milestone 2's RS256 SSO
+> + module handoff for the three joined calculators, with same-tab
+> navigation for all module tiles (Mahadi's decision 2026-11-20).
 > Local build only. Nothing here is deployed, and nothing touches any live
-> system.
+> system (the Dashboard only *reads* the SCC's public sheet — see below).
 
 ## Run it
 
@@ -26,11 +27,14 @@ npm run dev            # http://localhost:5173
 npm run build          # build into dist/ (target from HUB_BUILD_TARGET, default production)
 npm run preview        # serve the production build
 npm run qa             # performs its own demo-enabled build, then headless-Chrome checks + screenshots
+npm run qa:scc-live    # live SCC data check (Node; fetches the real gviz CSVs)
 npm run keygen         # print a fresh RSA-2048 keypair (never writes .env)
 ```
 
 Requirements: Node 20+ (built with Node 24). No other services needed —
-the demo provider runs entirely in the browser.
+the demo provider runs entirely in the browser. Milestone 3's Dashboard
+fetches the Sales Command Center's public sheet at runtime (see "Dashboard
+data" below); without network it shows an error state, never fake numbers.
 
 For local demo sign-in, set in your `.env` (gitignored):
 
@@ -89,9 +93,11 @@ src/
   data/
     demoData.ts            per-role demo widget data (clearly fictional)
     modules.ts             module tiles — URLs from INVENTORY.md only, ssoJoined flags
+    sccParse.ts            SCC CSV parser + KPI aggregation (pure, no browser APIs)
+    sccData.ts             SCC live gviz fetch + session cache
   components/              Layout (sidebar/bottom nav), WidgetCard,
-                           ModuleTile, LanguagePill, icons
-  pages/                   Login, ForceChange, Home, Module, Profile
+                           ModuleTile, DuePremiumsWidget, LanguagePill, icons
+  pages/                   Login, ForceChange, Home, Module, Dashboard, Profile
 public/
   manifest.webmanifest     PWA manifest (installable)
   sw.js                    offline-tolerant app-shell service worker
@@ -101,7 +107,8 @@ docs/SSO_TOKEN.md          the SSO token: RS256 format, claims, verification, ro
 docs/SSO_PRODUCTION.md     production design: server issuer, secrets, rotation runbook, checklist
 scripts/gen-dev-keys.mjs   print a fresh RSA-2048 keypair (never writes .env)
 scripts/fixtures/stub-module.html  QA stub module (module side of the handoff protocol)
-scripts/qa-screenshots.mjs headless-Chrome QA (64 checks + screenshots)
+scripts/qa-screenshots.mjs headless-Chrome QA (86 checks + screenshots)
+scripts/qa-scc-live.mjs   live SCC data check (Node; real gviz CSVs)
 qa/                        QA screenshots (375 / 768 / 1440 px)
 ```
 
@@ -174,6 +181,25 @@ is the default; the BN|EN pill in the header and on Profile switches language
 and persists the choice in localStorage. Bangla renders from the system font
 stack (Noto Sans Bengali / Nirmala UI / Kohinoor Bangla) — no font downloads.
 
+### Dashboard data
+
+The Dashboard page (`src/pages/DashboardPage.tsx`) loads the Sales Command
+Center's own Google Sheet live, as public gviz CSV — the same tabs
+(`Producer info`, `Training Data`), the same header-alias mapping and the
+same KPI formulas the SCC app itself uses. No secret is involved: the sheet
+is link-shared and the fetch runs in the browser. The parser and the
+aggregation are pure functions in `src/data/sccParse.ts` (no browser APIs),
+so the Node check `npm run qa:scc-live` runs the exact production code
+against the real CSVs. Details, including the verified mapping and the two
+documented deviations from the SCC (quote-aware CSV parsing; GM leaderboard
+with the orphan rule, because the live sheet has no BE columns), live in
+`~/workspace/agent-hub-m2/M3_DESIGN.md`.
+
+The Dashboard is organisation-wide for every role and labelled as such —
+per-team scoping needs a verified Employee-ID ↔ producer-code join, which
+does not exist yet. If the fetch fails, the page shows an error state with
+Retry and the link to the full SCC; it never substitutes demo numbers.
+
 ### PWA / Capacitor
 
 The app ships a web manifest, a service worker (app-shell caching, registered
@@ -187,16 +213,17 @@ milestone.
 | Real | Demo / placeholder |
 |---|---|
 | React 19 + Vite 7 + Tailwind 4 + TS scaffold | Demo auth provider (4 fictional users) |
-| Login, lockout, forced-change, session expiry flows | All home widget numbers (per-role demo data) |
+| Login, lockout, forced-change, session expiry flows | Home widget numbers (per-role demo data) |
+| Dashboard KPIs — live SCC sheet (public gviz CSV) | Due-premium widget rows (demo — the Due & Lapse sheet needs a service-account secret; see M3_DESIGN.md §2.6) |
 | RS256 JWT format + verification (dev keypair) | Supabase provider (stub — no backend) |
-| SSO handoff to the 3 joined calculators | LeadFlow / Learning Hub / Sales Command Center not joined yet (plain links) |
+| SSO handoff to the 3 joined calculators | LeadFlow / Learning Hub not joined yet (plain links) |
 | Build-target guard (production build fails on demo auth / signing keys) | Proposals tile disabled (production portal URL unconfirmed) |
 | BN/EN i18n for every UI string | Admin console (placeholder, later milestone) |
-| Module tiles linking to the 6 verified production URLs | Real widget data (Milestone 3) |
+| Module tiles linking to the 6 verified production URLs | Real LeadFlow / Learning Hub widget data (later milestones) |
 | PWA manifest + service worker + icon | |
 | All-device layouts (phone / tablet / laptop) | |
 
-## Follow-ups (not Milestone 2)
+## Follow-ups (not Milestone 3)
 
 1. **Real Shanta logo** — the Hub currently uses a text wordmark ("Shanta
    Life" + "Agent Hub") and a geometric icon. Do not recreate the logo: integrate
@@ -208,12 +235,16 @@ milestone.
 3. **Proposals portal URL** — only the UAT URL exists in the exploration
    report; the production URL needs IT confirmation. Never link UAT from the Hub.
 4. **Capacitor wrap** for a Play Store / installable build.
-5. **Milestone 3** — LeadFlow and Learning Hub join SSO; real widget data
-   from LeadFlow / Due & Lapse sheet / Learning Hub.
+5. **LeadFlow and Learning Hub SSO join** — in-Hub framing + token sign-in;
+   real widget data from LeadFlow / Learning Hub.
+6. **Due-premium real data** — needs a Hub-side server endpoint holding the
+   Google service-account key, or a scoped CORS-enabled due feed from the
+   Retail Dashboard. Neither exists yet; the widget stays demo-marked until
+   one does.
 
 ## QA
 
-`npm run qa` runs `scripts/qa-screenshots.mjs` — 64 checks. It performs its
+`npm run qa` runs `scripts/qa-screenshots.mjs` — 86 checks. It performs its
 own demo-enabled build first (`HUB_BUILD_TARGET=qa` + `VITE_DEMO_AUTH=true`,
 script-forced, with an ephemeral keypair when no `.env` key exists), so it
 passes from a fresh clone. Coverage: the Milestone 1 suite (login for all 4
@@ -231,7 +262,16 @@ returns to the still-signed-in Hub, and an expired token clears the module
 session (same-tab has no cross-window sign-out broadcast — expiry is the
 mechanism, by design), tile wiring (all enabled tiles are same-tab links),
 and the production-target guard (bad builds fail; a clean production build
-has no demo users and sign-in fails closed). Screenshots live in `qa/`.
+has no demo users and sign-in fails closed), plus Milestone 3: the Dashboard
+page (terminal state + SCC link + refresh, and the ready state against a
+synthetic session cache with exact figures) and the due-premium widget (DEMO
+badge + note, demo rows, empty state), with dashboard screenshots at
+375 / 768 / 1440 px and horizontal-overflow checks. Screenshots live in `qa/`.
+
+`npm run qa:scc-live` runs `scripts/qa-scc-live.mjs`: it fetches the SCC's
+real gviz CSVs and runs the Hub's own parser + aggregation against them —
+the live-data proof for the Dashboard, since this VM's headless Chrome has
+no external network and the in-browser fetch cannot succeed here.
 
 Note: the VM's Chrome build hard-blocks loopback navigation
 (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, not lifted by the standard

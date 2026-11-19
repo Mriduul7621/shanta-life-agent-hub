@@ -10,6 +10,12 @@ export type DictKey =
   | 'navDashboard'
   | 'navProposals'
   | 'navProfile'
+  | 'navHomeShort'
+  | 'navLeadsShort'
+  | 'navLearningShort'
+  | 'navCalculatorsShort'
+  | 'navDashboardShort'
+  | 'navProfileShort'
   | 'loginTitle'
   | 'loginSubtitle'
   | 'employeeId'
@@ -96,7 +102,63 @@ export type DictKey =
   | 'teamMembers'
   | 'teamLearningInProgress'
   | 'demoRoleNote'
-  | 'demoFirstLoginChange';
+  | 'demoFirstLoginChange'
+  // Milestone 3 — Dashboard (Sales Command Center summary)
+  | 'dashboardLiveFrom'
+  | 'dashboardOrgWide'
+  | 'dashboardLastSynced'
+  | 'dashboardRefresh'
+  | 'dashboardRefreshing'
+  | 'dashboardSalesTitle'
+  | 'dashboardSalesSubtitle'
+  | 'dashboardTrainingTitle'
+  | 'dashboardTrainingSubtitle'
+  | 'dashboardLeadersTitle'
+  | 'dashboardLeadersSubtitle'
+  | 'dashboardUnassigned'
+  | 'dashboardUnassignedNote'
+  | 'dashboardOpenFull'
+  | 'dashboardLoading'
+  | 'dashboardLoadError'
+  | 'dashboardLoadErrorDetail'
+  | 'dashboardRetry'
+  | 'dashboardRefreshFailed'
+  | 'dashboardSessionsUnavailable'
+  | 'dashboardNoLeaders'
+  | 'kpiNewPremium'
+  | 'kpiPolicyQty'
+  | 'kpiLifetimePremium'
+  | 'kpiActiveProducers'
+  | 'kpiAvgPremiumFa'
+  | 'kpiAvgPolicyFa'
+  | 'kpiTotalSessions'
+  | 'kpiTotalParticipants'
+  | 'kpiTotalCost'
+  | 'kpiFaTrained'
+  | 'kpiSubAllProducers'
+  | 'kpiSubNewPolicies'
+  | 'kpiSubAllTime'
+  | 'kpiSubFaActive'
+  | 'kpiSubPerActiveFa'
+  | 'kpiSubAllSessions'
+  | 'kpiSubTotalTrained'
+  | 'kpiSubFaTrained'
+  | 'trainingDetailTitle'
+  | 'trainingBasic'
+  | 'trainingReview'
+  | 'trainingFoundation'
+  | 'trainingGap'
+  | 'trainingGapSub'
+  | 'trainingGapSubOne'
+  | 'leadersPolicies'
+  // Milestone 3 — Due-premium widget (demo data)
+  | 'dueWidgetTitle'
+  | 'dueWidgetDemoNote'
+  | 'dueWidgetDueThisWeek'
+  | 'dueWidgetOverdue'
+  | 'dueWidgetShowing'
+  | 'dueWidgetBacklog'
+  | 'dueWidgetDueOn';
 
 export const dict: Record<Lang, Record<DictKey, string>> = {
   en: {
@@ -109,6 +171,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     navDashboard: 'Dashboard',
     navProposals: 'Proposals',
     navProfile: 'Profile',
+    navHomeShort: 'Home',
+    navLeadsShort: 'Leads',
+    navLearningShort: 'Learn',
+    navCalculatorsShort: 'Calc',
+    navDashboardShort: 'Dash',
+    navProfileShort: 'Profile',
     loginTitle: 'Sign in to Agent Hub',
     loginSubtitle: 'One login for all your tools',
     employeeId: 'Employee ID',
@@ -198,6 +266,62 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamLearningInProgress: '{count} team members learning in progress',
     demoRoleNote: 'Demo view for this role — real data arrives in a later milestone.',
     demoFirstLoginChange: 'first-login PIN change',
+    dashboardLiveFrom: 'Live from Sales Command Center',
+    dashboardOrgWide: 'Organisation-wide',
+    dashboardLastSynced: 'Last synced {time}',
+    dashboardRefresh: 'Refresh',
+    dashboardRefreshing: 'Refreshing…',
+    dashboardSalesTitle: 'Sales',
+    dashboardSalesSubtitle: 'All producers · all time',
+    dashboardTrainingTitle: 'Training',
+    dashboardTrainingSubtitle: 'Sessions and field-force training',
+    dashboardLeadersTitle: 'Top General Managers',
+    dashboardLeadersSubtitle: 'By new premium · active producers only',
+    dashboardUnassigned: 'Unassigned',
+    dashboardUnassignedNote: 'Premiums with no GM recorded',
+    dashboardOpenFull: 'Open the full dashboard',
+    dashboardLoading: 'Loading live dashboard…',
+    dashboardLoadError: 'Could not load the live dashboard.',
+    dashboardLoadErrorDetail:
+      'Check your connection and try again, or open the full Sales Command Center.',
+    dashboardRetry: 'Try again',
+    dashboardRefreshFailed: 'Refresh failed — showing data from {time}',
+    dashboardSessionsUnavailable: 'Session data unavailable',
+    dashboardNoLeaders: 'No ranked managers yet',
+    kpiNewPremium: 'New premium',
+    kpiPolicyQty: 'Policies',
+    kpiLifetimePremium: 'Lifetime premium',
+    kpiActiveProducers: 'Active producers',
+    kpiAvgPremiumFa: 'Avg premium / FA',
+    kpiAvgPolicyFa: 'Avg policies / FA',
+    kpiTotalSessions: 'Training sessions',
+    kpiTotalParticipants: 'Participants',
+    kpiTotalCost: 'Training cost',
+    kpiFaTrained: 'FAs trained',
+    kpiSubAllProducers: 'All producers',
+    kpiSubNewPolicies: 'New policies',
+    kpiSubAllTime: 'All time',
+    kpiSubFaActive: 'FA tier, active status',
+    kpiSubPerActiveFa: 'Per active FA',
+    kpiSubAllSessions: 'All sessions',
+    kpiSubTotalTrained: 'Total trained',
+    kpiSubFaTrained: '{count} of {total} active FAs',
+    trainingDetailTitle: 'Training detail',
+    trainingBasic: 'Basic done',
+    trainingReview: 'Review done',
+    trainingFoundation: 'Foundation done',
+    trainingGap: 'Training gap',
+    trainingGapSub: '{count} active FAs not yet trained',
+    trainingGapSubOne: '1 active FA not yet trained',
+    leadersPolicies: '{count} policies',
+    dueWidgetTitle: 'Due premiums',
+    dueWidgetDemoNote:
+      'Demo data — live dues arrive with the Due & Lapse connection in a later milestone.',
+    dueWidgetDueThisWeek: 'Due this week',
+    dueWidgetOverdue: 'Overdue',
+    dueWidgetShowing: 'Showing {shown} of {total} dues',
+    dueWidgetBacklog: 'Backlog {amount}',
+    dueWidgetDueOn: 'Due {date}',
   },
   bn: {
     appName: 'এজেন্ট হাব',
@@ -209,6 +333,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     navDashboard: 'ড্যাশবোর্ড',
     navProposals: 'প্রপোজাল',
     navProfile: 'প্রোফাইল',
+    navHomeShort: 'হোম',
+    navLeadsShort: 'লিডস',
+    navLearningShort: 'লার্ন',
+    navCalculatorsShort: 'ক্যালক',
+    navDashboardShort: 'ড্যাশ',
+    navProfileShort: 'প্রোফাইল',
     loginTitle: 'এজেন্ট হাবে সাইন ইন করুন',
     loginSubtitle: 'সব টুলের জন্য একটি লগইন',
     employeeId: 'কর্মচারী আইডি',
@@ -298,5 +428,61 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamLearningInProgress: '{count} জন টিম মেম্বার শিখছেন',
     demoRoleNote: 'এই ভূমিকার ডেমো ভিউ — বাস্তব ডেটা পরের মাইলস্টোনে আসবে।',
     demoFirstLoginChange: 'প্রথম সাইন-ইনে পিন পরিবর্তন',
+    dashboardLiveFrom: 'সেলস কমান্ড সেন্টার থেকে লাইভ',
+    dashboardOrgWide: 'সারা প্রতিষ্ঠানজুড়ে',
+    dashboardLastSynced: 'সর্বশেষ সিঙ্ক {time}',
+    dashboardRefresh: 'রিফ্রেশ',
+    dashboardRefreshing: 'রিফ্রেশ হচ্ছে…',
+    dashboardSalesTitle: 'সেলস',
+    dashboardSalesSubtitle: 'সব প্রোডিউসার · সর্বমোট',
+    dashboardTrainingTitle: 'ট্রেনিং',
+    dashboardTrainingSubtitle: 'সেশন ও ফিল্ড ফোর্স ট্রেনিং',
+    dashboardLeadersTitle: 'শীর্ষ জেনারেল ম্যানেজার',
+    dashboardLeadersSubtitle: 'নতুন প্রিমিয়াম অনুযায়ী · শুধুমাত্র সক্রিয় প্রোডিউসার',
+    dashboardUnassigned: 'বরাদ্দহীন',
+    dashboardUnassignedNote: 'যেসব প্রিমিয়ামের জিএম রেকর্ড নেই',
+    dashboardOpenFull: 'পূর্ণ ড্যাশবোর্ড খুলুন',
+    dashboardLoading: 'লাইভ ড্যাশবোর্ড লোড হচ্ছে…',
+    dashboardLoadError: 'লাইভ ড্যাশবোর্ড লোড করা যায়নি।',
+    dashboardLoadErrorDetail:
+      'আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন, অথবা পূর্ণ সেলস কমান্ড সেন্টার খুলুন।',
+    dashboardRetry: 'আবার চেষ্টা করুন',
+    dashboardRefreshFailed: 'রিফ্রেশ ব্যর্থ — {time}-এর ডেটা দেখানো হচ্ছে',
+    dashboardSessionsUnavailable: 'সেশন ডেটা পাওয়া যায়নি',
+    dashboardNoLeaders: 'এখনো কোনো র‍্যাঙ্ক করা ম্যানেজার নেই',
+    kpiNewPremium: 'নতুন প্রিমিয়াম',
+    kpiPolicyQty: 'পলিসি',
+    kpiLifetimePremium: 'লাইফটাইম প্রিমিয়াম',
+    kpiActiveProducers: 'সক্রিয় প্রোডিউসার',
+    kpiAvgPremiumFa: 'গড় প্রিমিয়াম / এফএ',
+    kpiAvgPolicyFa: 'গড় পলিসি / এফএ',
+    kpiTotalSessions: 'ট্রেনিং সেশন',
+    kpiTotalParticipants: 'অংশগ্রহণকারী',
+    kpiTotalCost: 'ট্রেনিং খরচ',
+    kpiFaTrained: 'প্রশিক্ষিত এফএ',
+    kpiSubAllProducers: 'সব প্রোডিউসার',
+    kpiSubNewPolicies: 'নতুন পলিসি',
+    kpiSubAllTime: 'সর্বমোট',
+    kpiSubFaActive: 'এফএ টিয়ার, সক্রিয়',
+    kpiSubPerActiveFa: 'সক্রিয় এফএ প্রতি',
+    kpiSubAllSessions: 'সব সেশন',
+    kpiSubTotalTrained: 'মোট প্রশিক্ষিত',
+    kpiSubFaTrained: '{total} জন সক্রিয় এফএর মধ্যে {count} জন',
+    trainingDetailTitle: 'ট্রেনিং বিস্তারিত',
+    trainingBasic: 'বেসিক সম্পন্ন',
+    trainingReview: 'রিভিউ সম্পন্ন',
+    trainingFoundation: 'ফাউন্ডেশন সম্পন্ন',
+    trainingGap: 'ট্রেনিং ঘাটতি',
+    trainingGapSub: '{count} জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন',
+    trainingGapSubOne: '1 জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন',
+    leadersPolicies: '{count}টি পলিসি',
+    dueWidgetTitle: 'বকেয়া প্রিমিয়াম',
+    dueWidgetDemoNote:
+      'ডেমো ডেটা — লাইভ বকেয়া পরের মাইলস্টোনে ডিউ অ্যান্ড ল্যাপস সংযোগের সঙ্গে আসবে।',
+    dueWidgetDueThisWeek: 'এই সপ্তাহে বকেয়া',
+    dueWidgetOverdue: 'মেয়াদোত্তীর্ণ',
+    dueWidgetShowing: '{total}টি বকেয়ার মধ্যে {shown}টি দেখানো হচ্ছে',
+    dueWidgetBacklog: 'বকেয়া {amount}',
+    dueWidgetDueOn: '{date}-এ বকেয়া',
   },
 };
