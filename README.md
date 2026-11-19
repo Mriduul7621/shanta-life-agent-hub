@@ -12,8 +12,10 @@ and opens from the Hub. See the full plan in
 [`INVENTORY.md`](INVENTORY.md).
 
 > **Status: Milestone 2** — RS256 SSO + module handoff for the three joined
-> calculators (PremiumPulse, SDPP Projection, Income Calculator). Local build
-> only. Nothing here is deployed, and nothing touches any live system.
+> calculators (PremiumPulse, SDPP Projection, Income Calculator), with
+> same-tab navigation for all module tiles (Mahadi's decision 2026-11-20).
+> Local build only. Nothing here is deployed, and nothing touches any live
+> system.
 
 ## Run it
 
@@ -80,7 +82,7 @@ src/
     demoProvider.ts        dev-only demo users, lockout, forced change
     supabaseProvider.ts    STUB — Milestone 2 design documented, not wired
   sso/
-    handoff.ts             Hub → module postMessage handoff + sign-out broadcast
+    handoff.ts             Hub → module fragment-URL handoff (same-tab)
   i18n/
     dictionary.ts          every UI string, Bangla + English
     I18nContext.tsx        EN default, EN|BN pill, localStorage persistence
@@ -99,7 +101,7 @@ docs/SSO_TOKEN.md          the SSO token: RS256 format, claims, verification, ro
 docs/SSO_PRODUCTION.md     production design: server issuer, secrets, rotation runbook, checklist
 scripts/gen-dev-keys.mjs   print a fresh RSA-2048 keypair (never writes .env)
 scripts/fixtures/stub-module.html  QA stub module (module side of the handoff protocol)
-scripts/qa-screenshots.mjs headless-Chrome QA (61 checks + screenshots)
+scripts/qa-screenshots.mjs headless-Chrome QA (64 checks + screenshots)
 qa/                        QA screenshots (375 / 768 / 1440 px)
 ```
 
@@ -137,16 +139,19 @@ handoff are verifiable end to end. Production tokens are issued server-side
 key distribution and rotation: [`docs/SSO_TOKEN.md`](docs/SSO_TOKEN.md);
 production design: [`docs/SSO_PRODUCTION.md`](docs/SSO_PRODUCTION.md).
 
-### Module handoff (Milestone 2)
+### Module handoff (Milestone 2, same-tab)
 
-Modules flagged `ssoJoined: true` in `src/data/modules.ts` — PremiumPulse,
-SDPP Projection and Income Calculator — open via `src/sso/handoff.ts`:
-`window.open` without `noopener`, the module posts `hub-ready`, the Hub
-replies with the token over `postMessage` (strict origin + source checks,
-`targetOrigin` = the module's origin, never `'*'`). A module without join
-code never sends `hub-ready` and runs standalone — that is the graceful
-path, not an error. On Hub sign-out and on session expiry the Hub
-broadcasts `hub-signout` to every still-open joined module window.
+Every enabled module tile is a plain same-tab link (Mahadi's decision
+2026-11-20 — same tab over new tab and over iframe). Modules flagged
+`ssoJoined: true` in `src/data/modules.ts` — PremiumPulse, SDPP
+Projection and Income Calculator — link to the module URL with the SSO
+token in the URL fragment (`<module-url>#hub-token=<JWT>`, built by
+`src/sso/handoff.ts`). A fragment is never sent to the server, and the
+module strips it immediately on load. A module without join code ignores
+the fragment and runs standalone — that is the graceful path, not an
+error. **Sign-out limitation (expected):** same-tab navigation has no
+second window to notify, so Hub sign-out does not reach a module the
+agent already navigated to — module sessions end at token expiry (≤ 1 h).
 LeadFlow, Learning Hub and the Sales Command Center are NOT joined yet —
 their tiles stay plain links until their join milestone.
 
@@ -208,7 +213,7 @@ milestone.
 
 ## QA
 
-`npm run qa` runs `scripts/qa-screenshots.mjs` — 61 checks. It performs its
+`npm run qa` runs `scripts/qa-screenshots.mjs` — 64 checks. It performs its
 own demo-enabled build first (`HUB_BUILD_TARGET=qa` + `VITE_DEMO_AUTH=true`,
 script-forced, with an ephemeral keypair when no `.env` key exists), so it
 passes from a fresh clone. Coverage: the Milestone 1 suite (login for all 4
@@ -219,7 +224,12 @@ Milestone 2: RS256 signature verification of issued tokens (Node `crypto` +
 the app's own `verifySsoToken`), 8 negative cases (tampered payload,
 expired token, wrong `iss`, `alg` none, `alg` HS256, unknown `kid`, empty
 `sub`, bad role), the SSO handoff end-to-end against a local stub module
-fixture (`scripts/fixtures/stub-module.html` — no live URLs), tile wiring,
+fixture (`scripts/fixtures/stub-module.html` — no live URLs): the joined
+tile's href carries a valid token in `#hub-token=`, the stub verifies it
+and reports a valid hub session, the fragment is stripped, Back to Hub
+returns to the still-signed-in Hub, and an expired token clears the module
+session (same-tab has no cross-window sign-out broadcast — expiry is the
+mechanism, by design), tile wiring (all enabled tiles are same-tab links),
 and the production-target guard (bad builds fail; a clean production build
 has no demo users and sign-in fails closed). Screenshots live in `qa/`.
 
@@ -227,6 +237,5 @@ Note: the VM's Chrome build hard-blocks loopback navigation
 (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, not lifted by the standard
 flag), so QA runs against `dist/` via `file://` — which is why the app uses a
 relative base. Point `HUB_QA_URL` at a live server to QA over HTTP instead
-(Milestone 1 checks only in that mode). `window.open` from a `file://` page
-to a loopback HTTP URL does work, which is how the handoff test reaches the
-local stub module.
+(Milestone 1 checks only in that mode). The handoff test navigates same-tab
+to a temp `file://` stub fixture, so it needs no loopback server.

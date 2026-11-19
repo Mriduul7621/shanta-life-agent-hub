@@ -58,7 +58,7 @@ export type DictKey =
   | 'modulesTitle'
   | 'modulesSubtitle'
   | 'openTool'
-  | 'opensInNewTab'
+  | 'opensInThisTab'
   | 'comingSoon'
   | 'proposalsSoon'
   | 'profileTitle'
@@ -157,9 +157,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamSectionTitle: 'Your team',
     teamSectionSubtitle: 'Team totals for your downline.',
     modulesTitle: 'Your tools',
-    modulesSubtitle: 'Everything opens in a new tab for now.',
+    modulesSubtitle: 'Everything opens in this tab.',
     openTool: 'Open',
-    opensInNewTab: 'Opens in a new tab',
+    opensInThisTab: 'Opens in this tab',
     comingSoon: 'Coming soon',
     proposalsSoon: 'Link to confirm with IT',
     profileTitle: 'Profile',
@@ -257,9 +257,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamSectionTitle: 'আপনার টিম',
     teamSectionSubtitle: 'আপনার ডাউনলাইনের টিম মোট।',
     modulesTitle: 'আপনার টুলস',
-    modulesSubtitle: 'আপাতত সবকিছু নতুন ট্যাবে খুলবে।',
+    modulesSubtitle: 'সবকিছু এই ট্যাবেই খুলবে।',
     openTool: 'খুলুন',
-    opensInNewTab: 'নতুন ট্যাবে খুলবে',
+    opensInThisTab: 'এই ট্যাবেই খুলবে',
     comingSoon: 'শীঘ্রই আসছে',
     proposalsSoon: 'লিংক আইটির সঙ্গে নিশ্চিত করতে হবে',
     profileTitle: 'প্রোফাইল',

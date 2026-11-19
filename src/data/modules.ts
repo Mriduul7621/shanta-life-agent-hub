@@ -20,11 +20,11 @@ export interface HubModule {
   mark: string;
   accent: 'orange' | 'olive' | 'charcoal';
   /**
-   * True when the module has joined Hub SSO (Milestone 2): its tile opens
-   * via the postMessage handoff in src/sso/handoff.ts instead of a plain
-   * link. Absent/false for everything else — LeadFlow, Learning Hub and
-   * the Sales Command Center join in a later milestone, and disabled tiles
-   * never open at all.
+   * True when the module has joined Hub SSO (Milestone 2): its tile links
+   * to the module URL with the SSO token in the fragment
+   * (src/sso/handoff.ts) instead of a plain link. Absent/false for
+   * everything else — LeadFlow, Learning Hub and the Sales Command Center
+   * join in a later milestone, and disabled tiles never open at all.
    */
   ssoJoined?: boolean;
 }

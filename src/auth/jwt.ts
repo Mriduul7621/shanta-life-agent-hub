@@ -19,8 +19,10 @@
  *   the same checks (see the Milestone 2 protocol). It fails closed — any
  *   malformed input, unknown kid, wrong issuer, expired token, or bad
  *   signature returns null.
- * - The token is NEVER put in a URL, in localStorage, or in any log.
- *   Transport to a module is postMessage only (see ../sso/handoff.ts).
+ * - The token is NEVER put in a URL query parameter, in localStorage, or
+ *   in any log. Transport to a module is the URL fragment
+ *   (`#hub-token=<JWT>`, see ../sso/handoff.ts) — a fragment is never sent
+ *   to the server, and the module strips it immediately on load.
  */
 import { HUB_KID, KNOWN_KIDS } from './keys';
 

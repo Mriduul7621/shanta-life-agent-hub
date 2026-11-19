@@ -16,9 +16,15 @@ A standard JWT: `base64url(header) . base64url(payload) . base64url(signature)`.
   definition. RS256 fixes it — the public key is safe to bundle.
 - **Header:** `{"alg":"RS256","typ":"JWT","kid":"c804e3560b5c8059"}` (`kid` =
   first 16 hex chars of the SHA-256 of the public key's DER encoding).
-- **Transport:** `postMessage` only, at module-open time (see
-  `src/sso/handoff.ts` and the Milestone 2 protocol). NEVER a URL query
-  parameter, NEVER localStorage (sessionStorage only), NEVER logged.
+- **Transport:** the URL **fragment** only, at module-open time (see
+  `src/sso/handoff.ts` and the protocol): the joined tile links to
+  `<module-url>#hub-token=<JWT>`. A fragment is never sent to the server,
+  and the module strips it immediately on load via `history.replaceState`.
+  NEVER a URL query parameter (it would land in server logs), NEVER
+  localStorage (sessionStorage only), NEVER logged. Milestone 2 originally
+  used `postMessage`; the same-tab decision (Mahadi, 2026-11-20) replaced
+  it with the fragment flow — the token format and verification are
+  unchanged.
 - **Lifetime:** 1 hour (`exp = iat + 3600`). No refresh token — after expiry
   the agent signs in again.
 
@@ -100,11 +106,13 @@ Strictly reject — fail closed — on ANY of these:
 6. `exp` missing, not a number, or in the past (allow ≤ 60 s clock skew).
 7. `iat` missing or not a number.
 8. `sub` missing or empty; `role` outside the four values.
-9. (Module side only) the token arrived from an origin outside the Hub
-   origin allowlist, or from a window other than `window.opener` — see the
-   handoff protocol. The Hub side applies the mirror checks: `hub-ready`
-   only from the module's origin and the exact window it opened, token
-   posted with `targetOrigin` = the module's origin, never `'*'`.
+9. (Module side only) the token arrived in the URL fragment and the
+   RS256 signature is the trust anchor — there is no origin check on the
+   token itself, because the fragment is only ever written by a Hub tile
+   link and a forged token fails signature verification. The Hub origin
+   allowlist still gates the *referrer-based* sign-in prompt (a module
+   opened from a Hub origin without a valid token shows the banner). See
+   the handoff protocol.
 
 On success, trust `sub` + `role` as the authenticated identity; do not
 re-ask for a password. Apply the module's own role rules from there.
@@ -127,14 +135,19 @@ re-ask for a password. Apply the module's own role rules from there.
 
 ## Handoff and sign-out
 
-- The Hub hands the token to a joined module over `postMessage` after the
-  module posts `hub-ready` (strict origin + source checks both ways).
-  Modules without join code never send `hub-ready` and simply run
-  standalone — that is the graceful path, not an error. See
-  `src/sso/handoff.ts` and the Milestone 2 protocol.
-- On Hub sign-out AND on session expiry, the Hub broadcasts
-  `{type:'hub-signout'}` to every still-open joined module window, which
-  clears its session. Modules also re-check token expiry on a 30 s timer.
+- The Hub hands the token to a joined module in the URL fragment:
+  the tile links to `<module-url>#hub-token=<JWT>` in the same tab.
+  The module reads the fragment on load, verifies the RS256 signature,
+  then strips the fragment immediately via `history.replaceState`
+  (keeping path + query). Modules without join code ignore the fragment
+  and simply run standalone — that is the graceful path, not an error.
+  See `src/sso/handoff.ts` and the protocol.
+- **Sign-out limitation (expected, not a failure):** same-tab navigation
+  means there is no second window to notify, so Hub sign-out does NOT
+  reach a module the agent already navigated to. A module session ends
+  at token expiry (≤ 1 h) — modules re-check expiry on a 30 s timer and
+  on visibility change. Hub sign-out still clears the Hub's own session
+  immediately.
 - A module opened from the Hub but without a valid token shows a
   dismissible "not signed in via the Hub" banner and REMAINS USABLE — the
   gate lives in the Hub (tiles need a Hub login), not in the calculator.
@@ -145,14 +158,19 @@ re-ask for a password. Apply the module's own role rules from there.
 - It does not carry permissions beyond `role` — each module enforces its own
   visibility rules (reporting tree) from `sub` + `role`.
 - It is not a session cookie: signing out of the Hub deletes it from
-  sessionStorage and broadcasts sign-out to joined modules.
+  sessionStorage. It does not broadcast sign-out to modules — same-tab
+  navigation has no second window to notify, so a module session ends at
+  token expiry (≤ 1 h).
 
 ## Never
 
-- Never put the token in a URL, in localStorage, or in any log.
+- Never put the token in a URL query parameter, in localStorage, or in
+  any log. The URL fragment (`#hub-token=`) is the one sanctioned URL
+  transport — it is never sent to the server, and the module strips it
+  immediately on load.
 - Never put the PRIVATE key in Git, in chat, in a screenshot, or in any
   client bundle. `.env` is gitignored; `.env.example` carries only the
   placeholder. The production-target build guard (`vite.config.ts`)
   refuses to build when any `VITE_JWT_*` signing variable is set.
 - Never accept `alg: none` or any algorithm other than `RS256`.
-- Never accept a token from an origin outside the allowlist.
+- Never accept a token whose signature fails, whatever its origin.

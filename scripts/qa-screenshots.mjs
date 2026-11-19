@@ -13,9 +13,8 @@
  * so the same build also runs from file:// and, later, from a Capacitor
  * webview. Override with HUB_QA_URL to point at a live server instead — in
  * that mode only the Milestone 1 browser checks run (the M2 checks need the
- * local QA build). NOTE: window.open from a file:// page to a loopback HTTP
- * URL DOES work in this Chrome build, which is how the handoff test drives
- * the local stub module.
+ * local QA build). The handoff test navigates same-tab to a temp file://
+ * stub fixture, so it needs no loopback server at all.
  *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
@@ -30,7 +29,7 @@
  *     home screenshot per role at 1440 px. Each shot also checks for
  *     horizontal overflow (scrollWidth > innerWidth).
  *
- * Checks (Milestone 2 — 28):
+ * Checks (Milestone 2 — 31):
  *  9. Key sanity: the signing private key matches the public key QA
  *     verifies with; the kid is the SHA-256(DER) derivation.
  * 10. The QA build itself succeeds (qa target, demo on, stub override).
@@ -42,11 +41,17 @@
  *     expired token, wrong iss, alg none, alg HS256, unknown kid, empty
  *     sub, role outside the four values.
  * 13. Handoff end-to-end against a LOCAL stub module fixture (no live
- *     URLs): the stub posts hub-ready, receives + verifies the token and
- *     reports a valid hub session with the right sub/role; the hub header
- *     + user chip show; Hub sign-out clears the module session.
- * 14. Tile wiring: ssoJoined modules render as buttons, non-joined enabled
- *     modules as plain links (read-only — no live navigation).
+ *     URLs, same-tab fragment flow): the joined tile's href carries a
+ *     valid token in #hub-token=; clicking it navigates the same tab to
+ *     the stub, which verifies the token and reports a valid hub session
+ *     with the right sub/role; the hub header + user chip show; the
+ *     fragment is stripped from the URL; Back to Hub returns to the
+ *     still-signed-in Hub; re-entering the tile restores the hub session;
+ *     and a token past expiry clears the module session (same-tab has no
+ *     cross-window sign-out broadcast — expiry is the mechanism, by design).
+ * 14. Tile wiring: ALL enabled modules render as same-tab links
+ *     (no target=_blank); ssoJoined tiles carry #hub-token= in the href,
+ *     non-joined tiles are plain links (read-only — no live navigation).
  * 15. Production-target guard: a production build with demo auth FAILS, a
  *     production build with a signing key FAILS, and a clean production
  *     build (temp copy, no .env) succeeds with no demo users and sign-in
@@ -56,7 +61,6 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -176,9 +180,12 @@ if (results.some((r) => !r.ok)) {
   summarizeAndExit(1);
 }
 
-// ---- Stub module server (local QA only) ----
-let stubServer = null;
-let STUB_ORIGIN = '';
+// ---- Stub module fixture (local QA only) ----
+// Same-tab navigation means the handoff test navigates the Hub page itself
+// to the stub — and this Chrome build blocks loopback navigation, so the
+// stub is a temp file:// page (WebCrypto works on file://). The QA build
+// points the PremiumPulse tile at it via VITE_MODULE_URL_OVERRIDES.
+let stubTmpDir = null;
 let STUB_URL = '';
 if (LOCAL_QA) {
   const fixture = fs
@@ -187,19 +194,13 @@ if (LOCAL_QA) {
     .join(publicPem)
     .split('__HUB_KID__')
     .join(kid)
-    // The Hub runs from file:// in QA, whose origin serialises as "null".
-    // A real module allowlists real Hub origins and never "null".
-    .split('__HUB_ORIGINS_JSON__')
-    .join(JSON.stringify(['null']));
+    .split('__HUB_URL__')
+    .join(BASE);
   if (fixture.includes('__HUB_')) throw new Error('stub fixture placeholders not all replaced');
-  stubServer = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(fixture);
-  });
-  await new Promise((resolve) => stubServer.listen(0, '127.0.0.1', resolve));
-  const stubPort = stubServer.address().port;
-  STUB_ORIGIN = `http://127.0.0.1:${stubPort}`;
-  STUB_URL = `${STUB_ORIGIN}/stub-module.html`;
+  stubTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-stub-'));
+  const stubPath = path.join(stubTmpDir, 'stub-module.html');
+  fs.writeFileSync(stubPath, fixture);
+  STUB_URL = pathToFileURL(stubPath).href;
   console.log(`stub module: ${STUB_URL}`);
 }
 
@@ -216,7 +217,6 @@ if (LOCAL_QA) {
   check('qa build succeeds (HUB_BUILD_TARGET=qa, demo on, stub override)', qaBuild.status === 0, qaBuild.status === 0 ? '' : qaBuild.output.slice(-500));
   if (qaBuild.status !== 0) {
     console.log(qaBuild.output);
-    stubServer?.close();
     summarizeAndExit(1);
   }
 }
@@ -237,7 +237,6 @@ if (LOCAL_QA) {
   ], { encoding: 'utf8' });
   check('jwt bundle builds for Node (esbuild)', esbuild.status === 0, esbuild.status === 0 ? '' : `${esbuild.stdout ?? ''}${esbuild.stderr ?? ''}`.slice(-300));
   if (esbuild.status !== 0) {
-    stubServer?.close();
     summarizeAndExit(1);
   }
   jwtNode = await import(pathToFileURL(bundlePath).href);
@@ -598,7 +597,7 @@ try {
 
   // ---- 13 + 14. Tile wiring + handoff end-to-end (local QA only) ----
   if (LOCAL_QA) {
-    const { ctx, page } = await newPage(browser, 1440);
+    const { ctx, page, errors } = await newPage(browser, 1440);
     try {
       await login(page, '9990002', '123456');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
@@ -610,102 +609,176 @@ try {
           .filter((h) => names.includes(h.textContent))
           .map((h) => {
             const tile = h.closest('a,button,div');
-            return { name: h.textContent, tag: tile ? tile.tagName : null, href: tile && tile.tagName === 'A' ? tile.getAttribute('href') : null };
+            return {
+              name: h.textContent,
+              tag: tile ? tile.tagName : null,
+              href: tile && tile.tagName === 'A' ? tile.getAttribute('href') : null,
+              target: tile && tile.tagName === 'A' ? tile.getAttribute('target') : null,
+            };
           });
       });
-      const joinedOk = ['PremiumPulse', 'SDPP Projection', 'Income Calculator'].every(
-        (n) => wiring.find((w) => w.name === n)?.tag === 'BUTTON',
+      // Never log a token: redact the fragment JWT from the wiring detail.
+      const wiringSummary = JSON.stringify(wiring, (_k, v) =>
+        typeof v === 'string' && v.includes('#hub-token=')
+          ? `${v.split('#hub-token=')[0]}#hub-token=<jwt>`
+          : v,
       );
-      check('tiles: ssoJoined modules render as buttons', joinedOk, JSON.stringify(wiring));
+      const joinedOk = ['PremiumPulse', 'SDPP Projection', 'Income Calculator'].every((n) => {
+        const w = wiring.find((x) => x.name === n);
+        return w?.tag === 'A' && typeof w.href === 'string' && w.href.includes('#hub-token=') && !w.target;
+      });
+      check('tiles: ssoJoined modules render as same-tab links carrying #hub-token=', joinedOk, wiringSummary);
       const plainOk =
         wiring.find((w) => w.name === 'LeadFlow')?.tag === 'A' &&
         wiring.find((w) => w.name === 'LeadFlow')?.href === 'https://lead-flow-jet.vercel.app' &&
+        !wiring.find((w) => w.name === 'LeadFlow')?.target &&
         wiring.find((w) => w.name === 'Learning Hub')?.tag === 'A' &&
         wiring.find((w) => w.name === 'Learning Hub')?.href === 'https://shanta-life-learning-hub.vercel.app' &&
+        !wiring.find((w) => w.name === 'Learning Hub')?.target &&
         wiring.find((w) => w.name === 'Sales Command Center')?.tag === 'A' &&
-        wiring.find((w) => w.name === 'Sales Command Center')?.href === 'https://training-dashboard-shanta-life.vercel.app';
-      check('tiles: non-joined modules render as plain links', !!plainOk, JSON.stringify(wiring));
+        wiring.find((w) => w.name === 'Sales Command Center')?.href === 'https://training-dashboard-shanta-life.vercel.app' &&
+        !wiring.find((w) => w.name === 'Sales Command Center')?.target;
+      check('tiles: non-joined modules render as plain same-tab links (no target)', !!plainOk, wiringSummary);
 
       // 13. Handoff end-to-end against the local stub module (no live URLs).
-      const failHandoff = (reason) => {
-        check('handoff: stub module reports a valid hub session', false, reason);
-        check('handoff: stub shows hub header + user chip', false, reason);
-        check('handoff: stub page has no console errors', false, reason);
-        check('handoff: hub sign-out clears the module session', false, reason);
+      // Same-tab: clicking the tile navigates THIS page to the stub, and
+      // Back to Hub navigates it back. Console errors are counted only
+      // from the moment the tile is clicked (the Hub page itself may
+      // already have logged before that). failHandoff only records checks
+      // not already recorded, so a mid-flow throw never double-counts.
+      const HANDOFF_CHECK_NAMES = [
+        'handoff: tile href carries a valid token in #hub-token=',
+        'handoff: stub module reports a valid hub session',
+        'handoff: stub shows hub header + user chip',
+        'handoff: fragment stripped from the stub URL',
+        'handoff: stub page has no console errors',
+        'handoff: Back to Hub returns to the signed-in Hub',
+        'handoff: re-entering the tile restores the hub session',
+        'handoff: expired token clears the module session',
+      ];
+      const doneHandoffChecks = new Set();
+      const handoffCheck = (name, ok, detail = '') => {
+        doneHandoffChecks.add(name);
+        check(name, ok, detail);
       };
-      const btnHandle = await page.evaluateHandle(() =>
-        [...document.querySelectorAll('button')].find((b) => b.querySelector('h3')?.textContent === 'PremiumPulse'),
-      );
-      const btn = btnHandle.asElement();
-      check('handoff: PremiumPulse tile is a button (ssoJoined)', !!btn);
-      if (!btn) {
-        failHandoff('tile button missing');
-      } else {
-        let handoffChecksDone = false;
+      const failHandoff = (reason) => {
+        for (const name of HANDOFF_CHECK_NAMES) {
+          if (!doneHandoffChecks.has(name)) check(name, false, reason);
+        }
+      };
+      const clickTile = () =>
+        page.evaluate(() => {
+          const a = [...document.querySelectorAll('a')].find(
+            (el) => el.querySelector('h3')?.textContent === 'PremiumPulse',
+          );
+          if (!a) return false;
+          a.click();
+          return true;
+        });
+      const waitForStubStatus = async (timeoutMs = 15000) => {
         try {
-          const popupTargetPromise = browser.waitForTarget((t) => t.url().startsWith(STUB_ORIGIN), { timeout: 10000 });
-          await btn.click();
-          const target = await popupTargetPromise;
-          const popup = await target.page();
-          const popupErrors = [];
-          popup.on('console', (m) => {
-            if (m.type() === 'error') popupErrors.push(m.text());
-          });
-          popup.on('pageerror', (e) => popupErrors.push(String(e)));
-          try {
-            await popup.waitForFunction(
-              () => {
-                const t = document.getElementById('stub-status')?.textContent ?? '';
-                return t.startsWith('hub-session-ok') || t === 'hub-session-invalid' || t === 'hub-signin-prompt';
-              },
-              { timeout: 15000 },
-            );
-          } catch {
-            /* fall through to read the status */
-          }
-          const status = await popup.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
-          check(
+          await page.waitForFunction(
+            () => {
+              const t = document.getElementById('stub-status')?.textContent ?? '';
+              return t.startsWith('hub-session-ok') || t === 'hub-session-invalid' || t === 'hub-session-expired';
+            },
+            { timeout: timeoutMs },
+          );
+        } catch {
+          /* fall through to read the status */
+        }
+        return page.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
+      };
+
+      const tileHref = wiring.find((w) => w.name === 'PremiumPulse')?.href ?? '';
+      const fragmentToken = tileHref.includes('#hub-token=') ? tileHref.split('#hub-token=')[1] : '';
+      let tokenClaims = null;
+      if (fragmentToken) {
+        try {
+          tokenClaims = await jwtNode.verifySsoToken(fragmentToken, publicPem, new Set([kid]));
+        } catch {
+          tokenClaims = null;
+        }
+      }
+      handoffCheck(
+        'handoff: tile href carries a valid token in #hub-token=',
+        tokenClaims?.sub === '9990002' && tokenClaims?.role === 'team_lead',
+        tokenClaims ? JSON.stringify(tokenClaims) : 'no verifiable token in href',
+      );
+      if (!fragmentToken) {
+        failHandoff('tile href has no fragment token');
+      } else {
+        try {
+          const errorsBeforeClick = errors.length;
+          if (!(await clickTile())) throw new Error('PremiumPulse tile link not found');
+          const status = await waitForStubStatus();
+          handoffCheck(
             'handoff: stub module reports a valid hub session',
             status.startsWith('hub-session-ok') && status.includes('sub=9990002') && status.includes('role=team_lead'),
             status,
           );
-          const hubHeader = await popup
+          const hubHeader = await page
             .evaluate(
               () =>
                 document.getElementById('hub-header')?.classList.contains('visible') &&
                 (document.getElementById('user-chip')?.textContent ?? '').includes('Demo Team Lead'),
             )
             .catch(() => false);
-          check('handoff: stub shows hub header + user chip', !!hubHeader, status);
-          check('handoff: stub page has no console errors', popupErrors.length === 0, popupErrors.join(' | '));
-          handoffChecksDone = true;
-          // Sign-out broadcast: sign out from the Hub, the stub must clear its session.
-          await page.evaluate(() => {
-            [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
-          });
-          await page.waitForFunction(
-            () => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('সাইন আউট') || b.textContent.includes('Sign out')),
-            { timeout: 5000 },
+          handoffCheck('handoff: stub shows hub header + user chip', !!hubHeader, status);
+          const hashAfter = await page.evaluate(() => window.location.hash).catch(() => '(unreadable)');
+          handoffCheck('handoff: fragment stripped from the stub URL', hashAfter === '', `hash=${hashAfter}`);
+          const stubErrors = errors.slice(errorsBeforeClick);
+          handoffCheck('handoff: stub page has no console errors', stubErrors.length === 0, stubErrors.join(' | '));
+
+          // Back to Hub: same-tab navigation back to the Hub home, still signed in.
+          await page.evaluate(() => document.getElementById('back-to-hub')?.click());
+          await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 10000 });
+          const tokenAfterBack = await getToken(page);
+          handoffCheck('handoff: Back to Hub returns to the signed-in Hub', tokenAfterBack !== null);
+
+          // Re-enter the tile: the stub must reach hub mode again.
+          if (!(await clickTile())) throw new Error('PremiumPulse tile link not found on re-entry');
+          const status2 = await waitForStubStatus();
+          handoffCheck(
+            'handoff: re-entering the tile restores the hub session',
+            status2.startsWith('hub-session-ok') && status2.includes('sub=9990002'),
+            status2,
           );
+
+          // Expiry (same-tab has NO cross-window sign-out broadcast — a
+          // module session ends at token expiry, by design): rewrite the
+          // stored session's expiry to the past and trigger the stub's
+          // visibility-change re-check; the session must clear + banner show.
           await page.evaluate(() => {
-            [...document.querySelectorAll('button')].find((b) => b.textContent.includes('সাইন আউট') || b.textContent.includes('Sign out'))?.click();
+            const key = 'premiumpulse-hub-session';
+            const sess = JSON.parse(sessionStorage.getItem(key));
+            sess.exp = Math.floor(Date.now() / 1000) - 3600;
+            sessionStorage.setItem(key, JSON.stringify(sess));
+            document.dispatchEvent(new Event('visibilitychange'));
           });
-          await page.waitForSelector('#employee-id', { timeout: 5000 });
-          let cleared = false;
+          let expiredStatus = '(status unreadable)';
           try {
-            await popup.waitForFunction(
-              () => document.getElementById('stub-status')?.textContent === 'hub-session-cleared',
+            await page.waitForFunction(
+              () => document.getElementById('stub-status')?.textContent === 'hub-session-expired',
               { timeout: 5000 },
             );
-            cleared = true;
+            expiredStatus = await page.$eval('#stub-status', (el) => el.textContent);
           } catch {
-            /* cleared stays false */
+            expiredStatus = await page.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
           }
-          const clearedStatus = await popup.$eval('#stub-status', (el) => el.textContent).catch(() => '(status unreadable)');
-          check('handoff: hub sign-out clears the module session', cleared, clearedStatus);
+          const bannerAfterExpiry = await page
+            .evaluate(() => document.getElementById('banner')?.classList.contains('visible'))
+            .catch(() => false);
+          const sessionAfterExpiry = await page
+            .evaluate(() => sessionStorage.getItem('premiumpulse-hub-session'))
+            .catch(() => '(unreadable)');
+          handoffCheck(
+            'handoff: expired token clears the module session',
+            expiredStatus === 'hub-session-expired' && bannerAfterExpiry && sessionAfterExpiry === null,
+            `${expiredStatus} banner=${bannerAfterExpiry} session=${sessionAfterExpiry}`,
+          );
         } catch (e) {
-          if (!handoffChecksDone) failHandoff(`handoff threw: ${String(e).slice(0, 200)}`);
-          else check('handoff: hub sign-out clears the module session', false, `sign-out step threw: ${String(e).slice(0, 200)}`);
+          failHandoff(`handoff threw: ${String(e).slice(0, 200)}`);
         }
       }
     } finally {
@@ -783,8 +856,7 @@ try {
   }
 } finally {
   await browser.close();
-  if (stubServer) await new Promise((resolve) => stubServer.close(resolve));
-  for (const dir of [jwtBundleDir, prodTmp]) {
+  for (const dir of [jwtBundleDir, prodTmp, stubTmpDir]) {
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   }
 }

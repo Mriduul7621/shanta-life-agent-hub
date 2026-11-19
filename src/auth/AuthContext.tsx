@@ -4,7 +4,6 @@ import { DemoAuthProvider } from './demoProvider';
 import { SupabaseAuthProvider } from './supabaseProvider';
 import { signSsoToken, verifySsoToken } from './jwt';
 import { HUB_PUBLIC_KEY_PEM } from './keys';
-import { broadcastHubSignOut } from '../sso/handoff';
 import type { AuthError, AuthProvider, HubUser } from './types';
 
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
@@ -62,8 +61,10 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     clearSession();
     setSessionExpired(false);
-    // Tell every still-open joined module to end its session too.
-    broadcastHubSignOut();
+    // Same-tab navigation (Milestone 2 follow-up): there is no second
+    // window to notify, so Hub sign-out cannot reach a module the agent
+    // already navigated to. Module sessions end at token expiry (≤ 1 h) —
+    // see src/sso/handoff.ts. This is expected, not a failure.
   }, [clearSession]);
 
   // Restore a saved session on load: verify signature + claims against the
@@ -110,8 +111,8 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
         if (!claims) {
           clearSession();
           setSessionExpired(true);
-          // Session expiry ends module sessions too, like a sign-out.
-          broadcastHubSignOut();
+          // Same-tab: no module window to notify (see signOut above).
+          // Module sessions end at the same token expiry.
         }
       });
     }, SESSION_CHECK_MS);

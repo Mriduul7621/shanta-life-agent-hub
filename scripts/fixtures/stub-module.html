@@ -1,23 +1,21 @@
 <!doctype html>
 <!--
   Stub module — QA fixture implementing the MODULE side of the Hub ↔ Module
-  SSO handoff protocol (Milestone 2) for the Hub's own QA suite.
+  SSO handoff protocol (same-tab fragment flow) for the Hub's own QA suite.
 
-  It is NOT a real calculator: it is a minimal page that (a) posts hub-ready
-  to its opener, (b) receives + verifies the Hub's RS256 token, (c) reports
-  a valid hub session (or a banner / standalone mode), and (d) clears its
-  session on hub-signout. `npm run qa` serves this file from a local HTTP
-  server, points the PremiumPulse tile at it, and asserts the handoff.
+  It is NOT a real calculator: it is a minimal page that (a) reads the SSO
+  token from the URL fragment (#hub-token=<JWT>) on load, (b) verifies the
+  Hub's RS256 token, (c) strips the fragment immediately via replaceState,
+  (d) reports a valid hub session (or a banner / standalone mode), and
+  (e) clears its session at token expiry. `npm run qa` writes this file
+  (placeholders replaced) to a temp file:// URL, points the PremiumPulse
+  tile at it, and asserts the handoff — all over file://, since this
+  Chrome build blocks loopback navigation.
 
   Placeholders (replaced by scripts/qa-screenshots.mjs at QA time):
     __HUB_PUBLIC_KEY_PEM__  the Hub public key to verify against (SPKI PEM)
     __HUB_KID__             the kid QA expects
-    __HUB_ORIGINS_JSON__    JSON array of allowed Hub origins. In QA the Hub
-                            runs from file://, whose origin serialises as
-                            "null" — so QA passes ["null"]. A REAL module
-                            allowlists real Hub origins (e.g.
-                            ["http://localhost:5173", "<hub production URL>"])
-                            and NEVER "null" in production.
+    __HUB_URL__             the Hub home URL for "Back to Hub"
 -->
 <html lang="en">
 <head>
@@ -57,11 +55,12 @@
   var MODULE_ID = 'premiumpulse';
   var HUB_PUBLIC_KEY_PEM = `__HUB_PUBLIC_KEY_PEM__`;
   var EXPECTED_KID = '__HUB_KID__';
-  var HUB_ORIGINS = __HUB_ORIGINS_JSON__;
+  var HUB_URL = '__HUB_URL__';
   var ISSUER = 'shanta-life-agent-hub';
   var ROLES = ['employee', 'team_lead', 'manager', 'admin'];
   var CLOCK_SKEW_S = 60;
   var SESSION_KEY = MODULE_ID + '-hub-session';
+  var FRAGMENT_PREFIX = '#hub-token=';
 
   var statusEl = document.getElementById('stub-status');
   var headerEl = document.getElementById('hub-header');
@@ -75,9 +74,9 @@
   function showBanner() { bannerEl.classList.add('visible'); }
   function hideBanner() { bannerEl.classList.remove('visible'); }
   document.getElementById('dismiss-banner').addEventListener('click', hideBanner);
+  // Same-tab navigation: there is no opener window to close — navigate home.
   document.getElementById('back-to-hub').addEventListener('click', function () {
-    if (window.opener) { window.close(); return; }
-    window.location.href = 'http://localhost:5173';
+    window.location.href = HUB_URL;
   });
 
   function b64urlDecode(input) {
@@ -161,46 +160,40 @@
     if (!document.hidden) recheckExpiry();
   });
 
-  if (!window.opener) {
-    // Standalone mode: direct link / bookmark — no header, no gate.
-    setStatus('standalone');
+  // Fragment flow (protocol §3): ONE mechanism — the token arrives in the
+  // URL fragment. Extract it, strip the fragment IMMEDIATELY (before the
+  // async verification), then verify. An invalid token still strips.
+  if (window.location.hash.indexOf(FRAGMENT_PREFIX) === 0) {
+    var token = window.location.hash.slice(FRAGMENT_PREFIX.length);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    verifyToken(token).then(function (claims) {
+      if (!claims) {
+        // Fail closed: clear any stored session too — a bad fragment means
+        // this navigation carries no valid auth.
+        try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ }
+        showBanner();
+        setStatus('hub-session-invalid');
+        return;
+      }
+      enterHubMode(claims, token);
+    });
     return;
   }
 
-  // Opened from the Hub: announce readiness (no secret in this message).
-  window.opener.postMessage({ type: 'hub-ready', module: MODULE_ID }, '*');
-
-  var settled = false;
-  var promptTimer = setTimeout(function () {
-    if (settled) return;
-    settled = true;
-    showBanner();
-    setStatus('hub-signin-prompt');
-  }, 5000);
-
-  window.addEventListener('message', async function (event) {
-    // Accept ONLY from an allowlisted Hub origin AND from window.opener.
-    if (HUB_ORIGINS.indexOf(event.origin) === -1) return;
-    if (event.source !== window.opener) return;
-    var data = event.data || {};
-    if (data.type === 'hub-signout') {
-      clearTimeout(promptTimer);
-      settled = true;
-      leaveHubMode('hub-session-cleared');
+  // No fragment: restore a hub session from this tab, if one is still valid.
+  try {
+    var stored = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+    if (stored && Math.floor(Date.now() / 1000) <= stored.exp + CLOCK_SKEW_S) {
+      chipEl.textContent = stored.name + ' · ' + stored.role;
+      headerEl.classList.add('visible');
+      setStatus('hub-session-ok sub=' + stored.sub + ' role=' + stored.role);
       return;
     }
-    if (data.type !== 'hub-token' || typeof data.token !== 'string') return;
-    clearTimeout(promptTimer);
-    var claims = await verifyToken(data.token);
-    if (!claims) {
-      settled = true;
-      showBanner();
-      setStatus('hub-session-invalid');
-      return;
-    }
-    settled = true;
-    enterHubMode(claims, data.token);
-  });
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) { /* ignore */ }
+
+  // Standalone mode: direct link / bookmark — no header, no gate.
+  setStatus('standalone');
 })();
 </script>
 </body>
