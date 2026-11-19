@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Geometric Agent Hub icon. NOT the Shanta Life logo. -->
+  <rect width="192" height="192" rx="42" fill="#3C3C3B"/>
+  <circle cx="96" cy="96" r="34" fill="#F37021"/>
+  <circle cx="96" cy="96" r="34" fill="none" stroke="#F7F5F0" stroke-width="4"/>
+  <g stroke="#978C21" stroke-width="10" stroke-linecap="round">
+    <line x1="96" y1="42" x2="96" y2="56"/>
+    <line x1="96" y1="136" x2="96" y2="150"/>
+    <line x1="42" y1="96" x2="56" y2="96"/>
+    <line x1="136" y1="96" x2="150" y2="96"/>
+  </g>
+  <g fill="#F7F5F0">
+    <circle cx="96" cy="38" r="7"/>
+    <circle cx="96" cy="154" r="7"/>
+    <circle cx="38" cy="96" r="7"/>
+    <circle cx="154" cy="96" r="7"/>
+  </g>
+</svg>

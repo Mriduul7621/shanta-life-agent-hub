@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+# build output
+dist/
+dist-ssr/
+*.local
+# env files — NEVER commit real secrets
+.env
+.env.*.local
+!.env.example
+# logs
+*.log
+npm-debug.log*
+# editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+# local QA artefacts are kept (qa/), but never commit captures with real data
+
+# tsc build info
+*.tsbuildinfo

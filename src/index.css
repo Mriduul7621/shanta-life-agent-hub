@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  /* Shanta Life brand palette (Brand Guidelines):
+     Charcoal Grey 50% · Sunset Orange 30% · Olive Green 20% */
+  --color-charcoal: #3c3c3b;
+  --color-sunset: #f37021;
+  --color-sunset-dark: #d95f14;
+  --color-olive: #978c21;
+  --color-olive-dark: #7d7418;
+  --color-cream: #f7f5f0;
+  --color-cream-dark: #e9e2d7;
+
+  /* System stack that renders Bangla natively (no font downloads):
+     Noto Sans Bengali on Android/Linux, Nirmala UI on Windows,
+     Kohinoor Bangla on Apple devices. */
+  --font-sans: "Noto Sans Bengali", "Hind Siliguri", "Nirmala UI", "Kohinoor Bangla",
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  /* Prevent any accidental horizontal scroll at the document level. */
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-cream);
+  color: var(--color-charcoal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Bangla digits and text stay legible at small sizes. */
+:lang(bn) {
+  line-height: 1.55;
+}

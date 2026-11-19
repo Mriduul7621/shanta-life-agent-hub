@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Maskable variant: full-bleed charcoal, hub mark kept inside the safe zone. NOT the Shanta Life logo. -->
+  <rect width="512" height="512" fill="#3C3C3B"/>
+  <circle cx="256" cy="256" r="72" fill="#F37021"/>
+  <circle cx="256" cy="256" r="72" fill="none" stroke="#F7F5F0" stroke-width="8"/>
+  <g stroke="#978C21" stroke-width="22" stroke-linecap="round">
+    <line x1="256" y1="150" x2="256" y2="178"/>
+    <line x1="256" y1="334" x2="256" y2="362"/>
+    <line x1="150" y1="256" x2="178" y2="256"/>
+    <line x1="334" y1="256" x2="362" y2="256"/>
+  </g>
+  <g fill="#F7F5F0">
+    <circle cx="256" cy="142" r="15"/>
+    <circle cx="256" cy="370" r="15"/>
+    <circle cx="142" cy="256" r="15"/>
+    <circle cx="370" cy="256" r="15"/>
+  </g>
+</svg>
