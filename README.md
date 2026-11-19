@@ -2,7 +2,7 @@
 
 One login for the six tools the Shanta Life field force already uses —
 LeadFlow, Learning Hub, PremiumPulse, SDPP Projection, Income Calculator
-and the Sales Command Center — plus a link to the official agent portal
+and the Retail Sales Dashboard — plus a link to the official agent portal
 for proposals.
 
 **Plan A: nothing is rebuilt or moved.** The Hub is a thin shell: one login,
@@ -159,8 +159,22 @@ the fragment and runs standalone — that is the graceful path, not an
 error. **Sign-out limitation (expected):** same-tab navigation has no
 second window to notify, so Hub sign-out does not reach a module the
 agent already navigated to — module sessions end at token expiry (≤ 1 h).
-LeadFlow, Learning Hub and the Sales Command Center are NOT joined yet —
+LeadFlow, Learning Hub and the Retail Sales Dashboard are NOT joined yet —
 their tiles stay plain links until their join milestone.
+
+### Tile icons (Mahadi's decision 2026-11-20)
+
+Every tile shows the app's real icon, not the two-letter monogram. Tiles
+load their icon **live** from the app's own deployed URL where one exists
+(`iconUrl` in `src/data/modules.ts` — PremiumPulse, SDPP and Income use
+their `/icon.svg`), so an app icon update appears in the Hub automatically.
+Apps with no stable live icon URL yet use a local SVG copy in
+`public/icons/modules/` (`icon` field — LeadFlow, Learning Hub and the
+Retail Sales Dashboard; the Retail icon is Hub-created in the olive-tile
+family, the app has only Shanta logo PNGs). Resolution is live → local →
+monogram, and a failed load falls back to the monogram via `onError`, so a
+tile never shows a broken image. Proposals has no app and keeps its
+monogram. To flip a local icon to its live URL later, change one field.
 
 ### Roles
 
@@ -244,7 +258,7 @@ milestone.
 
 ## QA
 
-`npm run qa` runs `scripts/qa-screenshots.mjs` — 86 checks. It performs its
+`npm run qa` runs `scripts/qa-screenshots.mjs` — 92 checks. It performs its
 own demo-enabled build first (`HUB_BUILD_TARGET=qa` + `VITE_DEMO_AUTH=true`,
 script-forced, with an ephemeral keypair when no `.env` key exists), so it
 passes from a fresh clone. Coverage: the Milestone 1 suite (login for all 4

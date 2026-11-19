@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Shanta Life Learning Hub">
+  <title>Shanta Life Learning Hub</title>
+  <defs>
+    <linearGradient id="olive" x1="0.1" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#AEA43A" />
+      <stop offset="0.5" stop-color="#978C21" />
+      <stop offset="1" stop-color="#6B6312" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22" />
+      <stop offset="0.65" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FFFEFA" />
+      <stop offset="1" stop-color="#F4EAD7" />
+    </linearGradient>
+    <linearGradient id="sun" x1="0.2" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#FF9A52" />
+      <stop offset="1" stop-color="#F37021" />
+    </linearGradient>
+  </defs>
+
+  <!-- brand plaque: olive green from the wordmark -->
+  <rect width="512" height="512" rx="112" fill="url(#olive)" />
+  <rect width="512" height="512" rx="112" fill="url(#glow)" />
+
+  <!-- the dot of “Life”, lifted like a rising sun / spark of learning -->
+  <circle cx="256" cy="172" r="47" fill="url(#sun)" />
+  <circle cx="256" cy="172" r="47" fill="none" stroke="#C8540F" stroke-opacity="0.22" stroke-width="4" />
+
+  <!-- open book -->
+  <path
+    d="M250 268c-31-24-72-32-116-25-6 1-10 6-10 12v102c0 7 5 12 12 11 41-5 81 2 108 21 3 2 6 1 6-3V268Z"
+    fill="url(#page)"
+  />
+  <path
+    d="M262 268c31-24 72-32 116-25 6 1 10 6 10 12v102c0 7-5 12-12 11-41-5-81 2-108 21-3 2-6 1-6-3V268Z"
+    fill="url(#page)"
+  />
+  <path d="M256 272v118" stroke="#8A8120" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round" />
+</svg>

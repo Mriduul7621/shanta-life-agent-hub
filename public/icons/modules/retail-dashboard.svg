@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Retail Sales Dashboard">
+  <title>Retail Sales Dashboard</title>
+  <!-- Retail Sales Dashboard tile icon, created for the Agent Hub 2026-11-20:
+       the Retail Dashboard app has no SVG icon of its own (its favicon is
+       Shanta logo PNGs only), so this follows the same olive rounded-tile
+       family as the PremiumPulse and LeadFlow icons — rising bars (retail
+       sales) + orange trend line (growth), Shanta Life palette —
+       Olive #978C21, Sunset Orange #F37021, canvas cream #F7F2E9. -->
+  <rect width="512" height="512" rx="112" fill="#978C21"/>
+  <rect x="120" y="296" width="64" height="88" rx="16" fill="#F7F2E9"/>
+  <rect x="224" y="232" width="64" height="152" rx="16" fill="#F7F2E9"/>
+  <rect x="328" y="168" width="64" height="216" rx="16" fill="#F7F2E9"/>
+  <rect x="104" y="384" width="304" height="24" rx="12" fill="#F7F2E9"/>
+  <polyline points="136,288 256,224 376,160" fill="none" stroke="#F37021" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="376" cy="160" r="18" fill="#F37021"/>
+</svg>

@@ -67,11 +67,23 @@
  *
  * Checks (Milestone 3 — 22):
  * 16. Dashboard page: reaches a terminal state (live KPIs or error state
- *     with retry), shows the SCC link, and has a Refresh button; the ready
+ *     with retry), has a Refresh button, and carries no link to the removed
+ *     SCC tile; the ready
  *     state renders against a synthetic session cache with exact figures.
  * 17. Due-premium widget: present on Home with the DEMO badge + note and
  *     demo rows for Team Lead; "showing 5 of 31" for Manager team; empty
  *     state for Admin.
+ *
+ * Checks (Tile icons — 6):
+ * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
+ *     Income) render as <img> with the expected live URL, local icons
+ *     (LeadFlow, Learning Hub, Retail Dashboard) render with the expected
+ *     local path and actually load (naturalWidth > 0); Proposals keeps its
+ *     monogram with no img. A failed live icon falls back to the monogram
+ *     (live requests held by interception, then aborted), and breaking a
+ *     local icon's src at runtime also falls back to the monogram.
+ *     Remote icons cannot load in this VM (no external network) — their
+ *     live rendering is verified post-push with a browser task.
  *
  * Exits non-zero if any check fails. Screenshots land in qa/.
  */
@@ -400,7 +412,12 @@ try {
         console.log('SAMPLE JWT payload:', JSON.stringify(payload));
       }
     }
-    check(`login ${c.id}: no console errors`, errors.length === 0, errors.join(' | '));
+    // Live tile icons fail to load in this VM (no external network) and log
+    // "Failed to load resource" — a network failure the tile handles via its
+    // monogram fallback, not an app error. Same filter as the dashboard
+    // sections below.
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check(`login ${c.id}: no console errors`, appErrors.length === 0, appErrors.join(' | '));
     await ctx.close();
   }
 
@@ -575,13 +592,16 @@ try {
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error', `path=${dashPath}`);
+    // The Sales Command Center tile was removed (Mahadi 2026-11-20) — the
+    // Dashboard page's "full SCC" section renders nothing until the page
+    // rework lands. Assert no dangling link to the removed module remains.
     const sccLink = await page.evaluate(() => {
       const a = [...document.querySelectorAll('a')].find((el) =>
         el.href.includes('training-dashboard-shanta-life.vercel.app'),
       );
       return a ? a.href : null;
     });
-    check('dashboard: full SCC link present', !!sccLink, sccLink || 'missing');
+    check('dashboard: removed SCC tile stays gone (no SCC link)', !sccLink, sccLink || 'none');
     const hasRefresh = await page.evaluate(() =>
       [...document.querySelectorAll('button')].some(
         (b) => b.textContent.includes('রিফ্রেশ') || b.textContent.includes('Refresh'),
@@ -803,7 +823,7 @@ try {
 
       // 14. Tile wiring (read-only — no live navigation).
       const wiring = await page.evaluate(() => {
-        const names = ['LeadFlow', 'Learning Hub', 'PremiumPulse', 'SDPP Projection', 'Income Calculator', 'Sales Command Center', 'Proposals'];
+        const names = ['LeadFlow', 'Learning Hub', 'PremiumPulse', 'SDPP Projection', 'Income Calculator', 'Retail Sales Dashboard', 'Proposals'];
         return [...document.querySelectorAll('h3')]
           .filter((h) => names.includes(h.textContent))
           .map((h) => {
@@ -834,9 +854,9 @@ try {
         wiring.find((w) => w.name === 'Learning Hub')?.tag === 'A' &&
         wiring.find((w) => w.name === 'Learning Hub')?.href === 'https://shanta-life-learning-hub.vercel.app' &&
         !wiring.find((w) => w.name === 'Learning Hub')?.target &&
-        wiring.find((w) => w.name === 'Sales Command Center')?.tag === 'A' &&
-        wiring.find((w) => w.name === 'Sales Command Center')?.href === 'https://training-dashboard-shanta-life.vercel.app' &&
-        !wiring.find((w) => w.name === 'Sales Command Center')?.target;
+        wiring.find((w) => w.name === 'Retail Sales Dashboard')?.tag === 'A' &&
+        wiring.find((w) => w.name === 'Retail Sales Dashboard')?.href === 'https://retail-dashboard-zeta.vercel.app' &&
+        !wiring.find((w) => w.name === 'Retail Sales Dashboard')?.target;
       check('tiles: non-joined modules render as plain same-tab links (no target)', !!plainOk, wiringSummary);
 
       // 13. Handoff end-to-end against the local stub module (no live URLs).
@@ -1051,6 +1071,136 @@ try {
     } else {
       check('production build: no demo users shown', false, 'production build failed');
       check('production build: sign-in fails closed (not configured)', false, 'production build failed');
+    }
+  }
+
+  // ---- 16. Tile icons (local QA only) ----
+  // This Chrome build has no external network, so the three LIVE icons
+  // (PremiumPulse, SDPP, Income) cannot load here. Request interception
+  // holds their requests so the <img> src can be read from the DOM, then
+  // aborts them so the onError fallback (monogram) can be verified. Live
+  // rendering of the remote icons is verified post-push with a browser
+  // task. Local icons (LeadFlow, Learning Hub, Retail Dashboard) load
+  // from file:// and are checked for real pixels.
+  if (LOCAL_QA) {
+    const LIVE_ICON_URLS = [
+      'https://premium-illustrator.vercel.app/icon.svg',
+      'https://sdpp-value-projection.vercel.app/icon.svg',
+      'https://incomecalculator-delta.vercel.app/icon.svg',
+    ];
+    const EXPECTED_ICON_SRC = {
+      LeadFlow: 'icons/modules/leadflow.svg',
+      'Learning Hub': 'icons/modules/learning-hub.svg',
+      PremiumPulse: 'https://premium-illustrator.vercel.app/icon.svg',
+      'SDPP Projection': 'https://sdpp-value-projection.vercel.app/icon.svg',
+      'Income Calculator': 'https://incomecalculator-delta.vercel.app/icon.svg',
+      'Retail Sales Dashboard': 'icons/modules/retail-dashboard.svg',
+    };
+    const TILE_NAMES = [...Object.keys(EXPECTED_ICON_SRC), 'Proposals'];
+    const { ctx, page } = await newPage(browser, 1440);
+    const heldRequests = [];
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (LIVE_ICON_URLS.includes(req.url())) {
+        heldRequests.push(req); // hold: answer later, after the src is read
+      } else {
+        void req.continue();
+      }
+    });
+    try {
+      await login(page, '9990002', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(
+        (names) => names.every((n) => [...document.querySelectorAll('h3')].some((h) => h.textContent === n)),
+        { timeout: 5000 },
+        TILE_NAMES,
+      );
+      // Local icons must have finished loading before the read.
+      await page.waitForFunction(
+        () => {
+          const names = ['LeadFlow', 'Learning Hub', 'Retail Sales Dashboard'];
+          return names.every((n) => {
+            const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === n);
+            const img = h?.closest('a,button,div')?.querySelector('img');
+            return img && img.complete && img.naturalWidth > 0;
+          });
+        },
+        { timeout: 5000 },
+      );
+      const readTileIcons = () =>
+        page.evaluate((names) => {
+          return [...document.querySelectorAll('h3')]
+            .filter((h) => names.includes(h.textContent))
+            .map((h) => {
+              const tile = h.closest('a,button,div');
+              const img = tile ? tile.querySelector('img') : null;
+              const mark = tile ? tile.querySelector('span[aria-hidden]') : null;
+              return {
+                name: h.textContent,
+                imgSrc: img ? img.getAttribute('src') : null,
+                imgLoaded: img ? img.complete && img.naturalWidth > 0 : false,
+                markText: mark ? mark.textContent : null,
+              };
+            });
+        }, TILE_NAMES);
+      const before = await readTileIcons();
+      const liveOk = ['PremiumPulse', 'SDPP Projection', 'Income Calculator'].every(
+        (n) => before.find((x) => x.name === n)?.imgSrc === EXPECTED_ICON_SRC[n],
+      );
+      check('tiles: live icons render as <img> with the expected src', liveOk, JSON.stringify(before.map((b) => [b.name, b.imgSrc])));
+      const localOk = ['LeadFlow', 'Learning Hub', 'Retail Sales Dashboard'].every(
+        (n) => before.find((x) => x.name === n)?.imgSrc === EXPECTED_ICON_SRC[n],
+      );
+      check('tiles: local icons render as <img> with the expected src', localOk, JSON.stringify(before.map((b) => [b.name, b.imgSrc])));
+      const localLoaded = ['LeadFlow', 'Learning Hub', 'Retail Sales Dashboard'].every(
+        (n) => before.find((x) => x.name === n)?.imgLoaded === true,
+      );
+      check('tiles: local icons actually load (naturalWidth > 0)', localLoaded, JSON.stringify(before.map((b) => [b.name, b.imgLoaded])));
+      const proposalsTile = before.find((x) => x.name === 'Proposals');
+      check('tiles: Proposals keeps the monogram (no img)', proposalsTile?.imgSrc === null && proposalsTile?.markText === 'PR', JSON.stringify(proposalsTile));
+
+      // Release the held live-icon requests as failures: the tiles must
+      // fall back to their monograms, never a broken image.
+      for (const req of heldRequests) await req.abort().catch(() => {});
+      await page.waitForFunction(
+        (names) => names.every((n) => {
+          const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === n);
+          const tile = h?.closest('a,button,div');
+          return tile && !tile.querySelector('img') && tile.querySelector('span[aria-hidden]');
+        }),
+        { timeout: 5000 },
+        ['PremiumPulse', 'SDPP Projection', 'Income Calculator'],
+      ).catch(() => {});
+      const after = await readTileIcons();
+      const fallbackOk = [
+        ['PremiumPulse', 'PP'],
+        ['SDPP Projection', 'SP'],
+        ['Income Calculator', 'IC'],
+      ].every(([n, mark]) => {
+        const t = after.find((x) => x.name === n);
+        return t?.imgSrc === null && t?.markText === mark;
+      });
+      check('tiles: failed live icon falls back to the monogram', fallbackOk, JSON.stringify(after.map((b) => [b.name, b.imgSrc, b.markText])));
+
+      // Runtime onError check: break one local icon and watch the monogram appear.
+      await page.evaluate(() => {
+        const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === 'LeadFlow');
+        const img = h?.closest('a,button,div')?.querySelector('img');
+        if (img) img.src = 'icons/modules/does-not-exist.svg';
+      });
+      await page.waitForFunction(() => {
+        const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === 'LeadFlow');
+        const tile = h?.closest('a,button,div');
+        return tile && !tile.querySelector('img') && tile.querySelector('span[aria-hidden]')?.textContent === 'LF';
+      }, { timeout: 5000 }).catch(() => {});
+      const leadflowAfter = await page.evaluate(() => {
+        const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === 'LeadFlow');
+        const tile = h?.closest('a,button,div');
+        return { hasImg: !!tile?.querySelector('img'), mark: tile?.querySelector('span[aria-hidden]')?.textContent ?? null };
+      });
+      check('tiles: icon onError falls back to the monogram (runtime swap)', leadflowAfter.hasImg === false && leadflowAfter.mark === 'LF', JSON.stringify(leadflowAfter));
+    } finally {
+      await ctx.close();
     }
   }
 } finally {

@@ -13,7 +13,7 @@ deployment. Do not guess URLs — if a URL is not listed here, it is not verifie
 | 3 | PremiumPulse (Premium-illustrator) | Mriduul7621/Premium-illustrator (TS, public) | TypeScript + Vite, static | premium-illustrator | https://premium-illustrator.vercel.app |
 | 4 | SDPP Value Projection | Mriduul7621/SDPP-Value-Projection (TS, private) | TypeScript + Vite, static | sdpp-value-projection | https://sdpp-value-projection.vercel.app |
 | 5 | Income Calculator | Mriduul7621/Shanta-Life-Income-Calculator (TS, private) | React 19 + Vite 6 + Tailwind 4, AI Studio origin | income_calculator | https://incomecalculator-delta.vercel.app |
-| 6 | Sales Command Center | Mriduul7621/Training-Dashboard_Shanta-Life (TS, private; package `shanta-analytics`, page title "Shanta Training & Sales Analytics") | React 19 + Vite 6 + recharts + xlsx, AI Studio origin, Gemini | training-dashboard-shanta-life (second project `shantalifedashboard_tnd` deploys the same repo) | https://training-dashboard-shanta-life.vercel.app |
+| 6 | Retail Sales Dashboard | Mriduul7621/Retail_Dashboard (TS, private) | Vite app (dist build in repo), Google Sheets data | retail-dashboard | https://retail-dashboard-zeta.vercel.app |
 
 ## Notes
 
@@ -22,17 +22,25 @@ deployment. Do not guess URLs — if a URL is not listed here, it is not verifie
 - **PremiumPulse second deployment:** https://premiumpulsevr2.vercel.app is Vercel project
   `premiumpulse_vr_2` under Mahadi's mriduul.tnd@gmail.com account (same repo, same code).
   The Hub links the main deployment (premium-illustrator.vercel.app).
-- **Sales Command Center identity:** confirmed by repo + title + stack (AI Studio + Gemini =
-  the "AI-driven" dashboard; recharts = the BE-share donut; xlsx = Sheets data). The
-  in-code name is "Shanta Training & Sales Analytics"; "Sales Command Center" is Mahadi's
-  display name for it. Do not rename anything in that repo.
+- **Sales Command Center (NOT a tile — Dashboard page data source):** the Hub's
+  Milestone 3 Dashboard page reads the Sales Command Center's public sheet, but there
+  is no Sales Command Center tile — Mahadi replaced it with the Retail Sales Dashboard
+  tile on 2026-11-20. The SCC repo is Mriduul7621/Training-Dashboard_Shanta-Life
+  (TS, private; package `shanta-analytics`, page title "Shanta Training & Sales
+  Analytics"; React 19 + Vite 6 + recharts + xlsx, AI Studio origin, Gemini;
+  Vercel project `training-dashboard-shanta-life`, second project
+  `shantalifedashboard_tnd` deploys the same repo;
+  https://training-dashboard-shanta-life.vercel.app). Do not rename anything
+  in that repo, and do not re-add the tile without Mahadi's word.
 - **Official agent portal (IT-owned, NOT a Hub module):** proposal submission, e-KYC,
   claims stay here. The Hub links to it only. Production portal URL to be confirmed
   with IT — see `~/workspace/your_files/shanta-life-agent-portal-training/Exploration_Report_2026-11-07.md`
   for the UAT exploration (test agent NIHAN ARFIN, RO, code 1101010127001 — read-only).
-- **Retail Dashboard (due-widget source, milestone 3):** Mriduul7621/Retail_Dashboard,
-  https://retail-dashboard-zeta.vercel.app/ — already reads the Due & Lapse sheet.
-  Reuse its mapping; do not invent one.
+- **Retail Dashboard (Hub module #6 + due-widget source, milestone 3):**
+  Mriduul7621/Retail_Dashboard, https://retail-dashboard-zeta.vercel.app/ — already
+  reads the Due & Lapse sheet. Reuse its mapping; do not invent one. Its live page
+  title is still "Shanta Life Sales Command Center" (the app's own title) — the
+  Hub tile is named "Retail Sales Dashboard" per Mahadi's decision.
 
 ## Tax Rebate Calculator — REMOVED (Mahadi's decision, 2026-11-20)
 

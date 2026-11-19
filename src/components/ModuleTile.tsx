@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { buildModuleUrl } from '../sso/handoff';
@@ -18,21 +19,38 @@ const MARK_BG: Record<HubModule['accent'], string> = {
  *   standalone.
  * - Everything else enabled is a plain link to the module URL.
  * - Disabled tiles are inert, greyed, and say why.
+ * - The tile shows the app's real icon: live `iconUrl` first, then the
+ *   local `icon` copy, then the monogram. If the icon fails to load (the
+ *   app is down, the URL moved), onError falls back to the monogram —
+ *   a tile never shows a broken image.
  */
 export function ModuleTile({ module }: { module: HubModule }) {
   const { t } = useI18n();
   const { token } = useAuth();
+  const [iconFailed, setIconFailed] = useState(false);
   const disabled = !module.url;
+  const iconSrc = module.iconUrl ?? module.icon;
+  const showIcon = !!iconSrc && !iconFailed;
 
   const inner = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <span
-          aria-hidden
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold tracking-wide ${MARK_BG[module.accent]} ${disabled ? 'opacity-50' : ''}`}
-        >
-          {module.mark}
-        </span>
+        {showIcon ? (
+          <img
+            src={iconSrc}
+            alt=""
+            aria-hidden
+            onError={() => setIconFailed(true)}
+            className={`h-11 w-11 shrink-0 rounded-xl object-cover ${disabled ? 'opacity-50' : ''}`}
+          />
+        ) : (
+          <span
+            aria-hidden
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold tracking-wide ${MARK_BG[module.accent]} ${disabled ? 'opacity-50' : ''}`}
+          >
+            {module.mark}
+          </span>
+        )}
         {!disabled && (
           <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
             {t('openTool')} →
