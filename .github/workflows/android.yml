@@ -4,9 +4,12 @@
 # builds the signed release APK from the checked-in version source
 # (android/version.properties), publishes it to GitHub Releases (a
 # versioned v<versionName> release plus the rolling `latest` release —
-# the web app's download popup and login link point at the `latest`
-# APK URL, which never changes), and uploads it as a workflow
-# artifact (90-day backup).
+# the asset is named "Agent Hub V-<versionName>.<versionCode>.apk" so
+# the downloaded file carries the app name + version, Mahadi
+# 2026-11-21; the web app's popup and login link point at the Hub's
+# /api/download-apk route, which redirects to the newest .apk asset —
+# so the Hub link never changes across versions), and uploads it as a
+# workflow artifact (90-day backup).
 #
 # UPLOAD ROUTE — read before pushing: the Muse GitHub App CANNOT push
 # files under .github/workflows/ (deterministic 403, workflows:write
@@ -152,7 +155,7 @@ jobs:
             echo "## Agent Hub Android release"
             echo ""
             echo "- Version: ${{ steps.version.outputs.name }} (versionCode ${{ steps.version.outputs.code }})"
-            echo "- APK: app-release.apk"
+            echo "- APK: Agent Hub V-${{ steps.version.outputs.name }}.${{ steps.version.outputs.code }}.apk"
             echo "- SHA-256: \`$(cat "$APK.sha256")\`"
             echo "- Signer: release keystore (verified — fingerprint matches AGENTHUB_KEYSTORE_B64)"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -165,16 +168,22 @@ jobs:
           VERSION="${{ steps.version.outputs.name }}"
           CODE="${{ steps.version.outputs.code }}"
           SHA256=$(cat "$APK.sha256")
+          # The file users download carries the app name + version
+          # (Mahadi 2026-11-21): "Agent Hub V-1.0.0.1.apk" —
+          # versionName.versionCode. The Hub's download route
+          # (/api/download-apk) redirects to the newest .apk asset,
+          # so the Hub link never changes when the version does.
+          APK_NAME="Agent Hub V-$VERSION.$CODE.apk"
+          cp "$APK" "$RUNNER_TEMP/$APK_NAME"
+          cp "$APK.sha256" "$RUNNER_TEMP/$APK_NAME.sha256"
           # Two releases, both public (no login needed to download):
           #   - v<versionName>: the permanent record for this version.
-          #   - latest: the rolling release the web app links to
-          #     (releases/download/latest/app-release.apk) — the URL
-          #     never changes across versions.
+          #   - latest: the rolling release — the download route
+          #     serves its newest .apk asset.
           # Idempotent: a missing release is created first; an existing
           # one is re-uploaded with --clobber, so a re-run replaces the
           # files instead of failing. The `latest` tag keeps pointing
-          # at the commit that first created it — only the assets move
-          # (the download URL serves the newest assets regardless).
+          # at the commit that first created it — only the assets move.
           for TAG in "v$VERSION" latest; do
             if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               if [ "$TAG" = "latest" ]; then
@@ -187,14 +196,25 @@ jobs:
                   --notes "Version $VERSION (versionCode $CODE). APK SHA-256: $SHA256"
               fi
             fi
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$APK" "$APK.sha256"
+            # `latest` must hold exactly one APK: the asset name
+            # changes with every version, so delete the previous
+            # version's assets first — otherwise stale names pile up
+            # and the download route could pick the wrong one.
+            if [ "$TAG" = "latest" ]; then
+              gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+                --jq '.assets[] | select(.name | endswith(".apk") or endswith(".apk.sha256")) | .name' \
+                | while IFS= read -r OLD; do
+                    [ -n "$OLD" ] && gh release delete-asset "$TAG" --repo "$GITHUB_REPOSITORY" --yes "$OLD"
+                  done
+            fi
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/$APK_NAME" "$RUNNER_TEMP/$APK_NAME.sha256"
           done
           {
             echo ""
             echo "- Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
-            echo "- Latest APK: https://github.com/$GITHUB_REPOSITORY/releases/download/latest/app-release.apk"
+            echo "- Latest APK: https://shanta-life-agent-hub.vercel.app/api/download-apk ($APK_NAME)"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "Published: v$VERSION and latest"
+          echo "Published: v$VERSION and latest ($APK_NAME)"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
