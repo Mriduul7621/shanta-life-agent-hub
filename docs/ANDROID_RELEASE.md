@@ -301,6 +301,22 @@ usable service-account JSON) and `token exchange failed` (Google
 refused the OAuth grant — wrong key, wrong project, or clock).
 Check the logs first: the client never surfaces these failures.
 
+### IID header + deprecation (found 2026-11-21)
+
+The IID `batchAdd` call MUST send the `access_token_auth: true`
+header with the OAuth token (Instance ID server reference, batchAdd
+parameters) — without it IID answers **401** and no device ever
+subscribes. That was the first device test's failure: subscribe
+reached IID and got exactly 401; the header fixed it.
+
+Sunset: Firebase deprecated all Instance ID server APIs in
+September 2026 — requests to them start failing after
+**September 29, 2027**. Before that date the subscribe route must
+move to the FCM HTTP v1 topic endpoint
+(`POST /v1/projects/{project-id}/topics/{topic}:batchAdd`, body
+`{tokens: [...]}`), which needs the Firebase project id. The
+send path (LH/LF publish) already uses HTTP v1 and is unaffected.
+
 ### Testing (after the project + secrets + dispatch)
 
 1. Install the push-enabled APK, sign in (accept the permission
