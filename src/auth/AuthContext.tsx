@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DemoAuthProvider } from './demoProvider';
-import { SupabaseAuthProvider } from './supabaseProvider';
+import { HubAuthProvider } from './hubAuthProvider';
 import { signSsoToken, verifySsoToken } from './jwt';
 import { HUB_PUBLIC_KEY_PEM } from './keys';
 import type { AuthError, AuthProvider, HubUser } from './types';
@@ -23,8 +22,15 @@ export const isDemoAuthEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
  */
 const devPrivateKeyB64: string | undefined = import.meta.env.VITE_JWT_PRIVATE_KEY_B64 as string | undefined;
 
+/**
+ * One provider for every build: HubAuthProvider routes 999xxxx
+ * identifiers to the demo provider when demo auth is enabled (QA/dev
+ * builds) and everything else to the Hub auth function
+ * (/api/hub-auth). With demo auth off, demo IDs go to the server
+ * too and fail there (no such LH row) — fail closed, no demo users.
+ */
 export function selectProvider(): AuthProvider {
-  return isDemoAuthEnabled ? new DemoAuthProvider() : new SupabaseAuthProvider();
+  return new HubAuthProvider();
 }
 
 interface AuthValue {

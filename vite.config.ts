@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -18,10 +19,21 @@ import tailwindcss from '@tailwindcss/vite';
  *   server-side flag for the /api/retail-data proxy, but the build guard
  *   fails on it too so a production build can never be cut from an
  *   environment that has it on.)
+ *   It ALSO fails when a production signing key (HUB_JWT_PRIVATE_KEY_B64)
+ *   is present without its matching public-key config
+ *   (HUB_PUBLIC_KEY_PEM + HUB_KID), or when the configured HUB_KID does
+ *   not match the public key — otherwise the issuer would sign with a
+ *   key nothing verifies against and every real sign-in would fail.
  *
  * The guard runs for `vite build` only — the dev server is local-only by
  * definition. It reads the merged environment the same way Vite does:
  * real shell variables take precedence over `.env` files.
+ *
+ * Two layers: this build guard cannot see Vercel RUNTIME env, so the
+ * second layer lives in the issuer itself — api/_lib/signJwt.js refuses
+ * to sign when HUB_BUILD_TARGET=production and no
+ * HUB_JWT_PRIVATE_KEY_B64 is set (the dev key must never issue real
+ * tokens in production). See docs/SSO_PRODUCTION.md.
  */
 type BuildTarget = 'dev' | 'qa' | 'production';
 
@@ -63,6 +75,58 @@ function assertProductionSafe(mode: string, target: BuildTarget): void {
         'Production tokens are issued server-side; no signing key may be inlined in a production bundle. ' +
         'Set HUB_BUILD_TARGET=dev or HUB_BUILD_TARGET=qa for builds that sign demo tokens locally.',
     );
+  }
+  // A production signing key without its matching public-key config
+  // means the issuer signs with a key nothing verifies against (the
+  // proxies fall back to the dev key) — every real sign-in would fail.
+  // HUB_JWT_PRIVATE_KEY_B64 is a runtime secret, but Vercel exposes env
+  // vars at build time too, so the pair can be checked here.
+  const hasProdSigningKey = merged.HUB_JWT_PRIVATE_KEY_B64 !== undefined && merged.HUB_JWT_PRIVATE_KEY_B64 !== '';
+  const prodPem = merged.HUB_PUBLIC_KEY_PEM;
+  const prodKid = merged.HUB_KID;
+  if (hasProdSigningKey && (!prodPem || !prodKid)) {
+    throw new Error(
+      'Agent Hub build guard: refusing a production-target build with HUB_JWT_PRIVATE_KEY_B64 set ' +
+        'but HUB_PUBLIC_KEY_PEM / HUB_KID missing.\n' +
+        'The production public key + kid must be configured together with the production signing key ' +
+        '(see docs/SSO_PRODUCTION.md), or the proxies verify against the dev key while hub-auth signs ' +
+        'with the production key and no real sign-in works.',
+    );
+  }
+  if (prodPem && prodKid) {
+    // The kid must equal the key's derived kid (first 16 hex of the
+    // SHA-256 of the public SPKI DER — the src/auth/keys.ts rule), or
+    // tokens signed with this key are rejected as an unknown kid.
+    const derived = deriveKidFromPem(prodPem);
+    if (derived === null) {
+      throw new Error(
+        'Agent Hub build guard: HUB_PUBLIC_KEY_PEM does not parse as an SPKI PEM public key. ' +
+          'Fix the value (see docs/SSO_PRODUCTION.md) — a production build cannot verify tokens otherwise.',
+      );
+    }
+    if (derived !== prodKid) {
+      throw new Error(
+        `Agent Hub build guard: HUB_KID (${prodKid}) does not match HUB_PUBLIC_KEY_PEM (derived kid ${derived}).\n` +
+          'The kid is the first 16 hex chars of the SHA-256 of the public key DER — see docs/SSO_PRODUCTION.md.',
+      );
+    }
+  }
+}
+
+/** Kid rule (src/auth/keys.ts): first 16 hex of SHA-256(public SPKI DER). Null when unparseable. */
+function deriveKidFromPem(pem: string): string | null {
+  try {
+    const b64 = pem
+      .replace('-----BEGIN PUBLIC KEY-----', '')
+      .replace('-----END PUBLIC KEY-----', '')
+      .replace(/\\n/g, '')
+      .replace(/\s+/g, '');
+    if (!b64) return null;
+    const der = Buffer.from(b64, 'base64');
+    if (der.length === 0) return null;
+    return createHash('sha256').update(der).digest('hex').slice(0, 16);
+  } catch {
+    return null;
   }
 }
 

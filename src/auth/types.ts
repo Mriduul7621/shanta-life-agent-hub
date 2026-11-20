@@ -13,7 +13,15 @@ export type AuthErrorCode =
   | 'unknown_user'
   | 'locked'
   | 'not_configured'
-  | 'session_expired';
+  | 'session_expired'
+  /** The Employee ID has no Learning Hub employees row (api/hub-auth). */
+  | 'no_lms_record'
+  /** The Learning Hub employee record is inactive. */
+  | 'inactive'
+  /** LH flags a forced credential change — change it in the Learning Hub. */
+  | 'must_change'
+  /** The auth endpoint answered with a server error (LH unreachable, etc.). */
+  | 'unavailable';
 
 export interface AuthError {
   code: AuthErrorCode;
@@ -43,21 +51,23 @@ export type ChangeCredentialResult =
   | { ok: false; error: 'invalid' | 'mismatch' | 'same' };
 
 /**
- * Auth provider interface. Milestone 2 ships two implementations:
+ * Auth provider interface.
  * - DemoAuthProvider (dev only, env-gated) — see demoProvider.ts. Returns no
  *   token; the Hub signs a demo token locally with the dev-only key.
- * - SupabaseAuthProvider (stub — see supabaseProvider.ts). The real
- *   implementation calls the Hub auth Edge Function, which verifies the
- *   credential server-side and returns a server-issued RS256 token in
- *   `SignInResult.token`; AuthContext then uses that token instead of
- *   signing locally. The browser never holds a signing key in production —
- *   see docs/SSO_PRODUCTION.md.
+ * - HubAuthProvider (see hubAuthProvider.ts) — the real implementation. It
+ *   POSTs the Hub-side serverless function `/api/hub-auth`, which verifies
+ *   the credential against the Learning Hub store server-side and returns a
+ *   server-issued RS256 token in `SignInResult.token`; AuthContext then uses
+ *   that token instead of signing locally. The browser never holds a signing
+ *   key in production — see docs/SSO_PRODUCTION.md. In QA/dev builds with
+ *   demo auth enabled, 999xxxx identifiers are routed to the demo provider
+ *   instead, so demo sign-in keeps working alongside real sign-in.
  *
  * The provider authenticates the user; the SSO JWT comes either from the
- * provider (production) or from local dev signing (demo only).
+ * provider (real auth) or from local dev signing (demo only).
  */
 export interface AuthProvider {
-  readonly id: 'demo' | 'supabase';
+  readonly id: 'demo' | 'hub';
   readonly label: string;
   signIn(employeeId: string, credential: string): Promise<SignInResult>;
   changeCredential(

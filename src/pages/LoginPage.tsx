@@ -14,19 +14,26 @@ function roleKey(role: string): DictKey {
   return 'roleEmployee';
 }
 
+const LEARNING_HUB_URL = 'https://shanta-life-learning-hub.vercel.app';
+
 export function LoginPage() {
   const { t } = useI18n();
   const { signIn, sessionExpired } = useAuth();
-  const [employeeId, setEmployeeId] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<AuthError | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // One identifier field (LH pattern): an email routes to the staff
+  // password track, anything else to the PIN track — the server
+  // decides; the form only adapts its hints.
+  const looksLikeEmail = identifier.includes('@');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setBusy(true);
-    const result = await signIn(employeeId, pin);
+    const result = await signIn(identifier, pin);
     setBusy(false);
     if (!result.ok) setError(result.error);
   }
@@ -34,7 +41,9 @@ export function LoginPage() {
   function errorMessage(err: AuthError): string {
     switch (err.code) {
       case 'wrong_pin':
-        return `${t('errorWrongPin')} ${err.attemptsLeft ?? 0} ${t('errorAttemptsLeft')}.`;
+        return err.attemptsLeft === undefined
+          ? t('errorWrongPin')
+          : `${t('errorWrongPin')} ${err.attemptsLeft} ${t('errorAttemptsLeft')}.`;
       case 'locked':
         return `${t('errorLocked')} ${t('lockedMinutes', { minutes: err.lockedMinutesLeft ?? 15 })}`;
       case 'unknown_user':
@@ -43,6 +52,14 @@ export function LoginPage() {
         return t('errorNotConfigured');
       case 'session_expired':
         return t('errorSessionExpired');
+      case 'no_lms_record':
+        return t('errorNoLmsRecord');
+      case 'inactive':
+        return t('errorInactive');
+      case 'must_change':
+        return t('errorMustChange');
+      case 'unavailable':
+        return t('errorUnavailable');
     }
   }
 
@@ -79,18 +96,17 @@ export function LoginPage() {
             <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
               <div>
                 <label htmlFor="employee-id" className="mb-1.5 block text-sm font-semibold text-charcoal">
-                  {t('employeeId')}
+                  {t('loginIdentifier')}
                 </label>
                 <input
                   id="employee-id"
                   name="employee-id"
                   type="text"
-                  inputMode="numeric"
                   autoComplete="username"
                   autoFocus
-                  value={employeeId}
-                  onChange={(e) => setEmployeeId(e.target.value)}
-                  placeholder={t('employeeIdPlaceholder')}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder={t('loginIdentifierPlaceholder')}
                   className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
                 />
               </div>
@@ -102,24 +118,46 @@ export function LoginPage() {
                   id="pin"
                   name="pin"
                   type="password"
-                  inputMode="numeric"
+                  inputMode={looksLikeEmail ? 'text' : 'numeric'}
                   autoComplete="current-password"
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
-                  placeholder={t('pinPlaceholder')}
+                  placeholder={looksLikeEmail ? t('passwordPlaceholder') : t('pinPlaceholder')}
                   className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
                 />
+                <p className="mt-2 text-right">
+                  <a
+                    href={`${LEARNING_HUB_URL}/login/forgot`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm font-semibold text-sunset underline-offset-2 hover:underline"
+                  >
+                    {t('forgotCredential')}
+                  </a>
+                </p>
               </div>
 
               {error && (
-                <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-                  {errorMessage(error)}
-                </p>
+                <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                  <p>{errorMessage(error)}</p>
+                  {error.code === 'must_change' && (
+                    <p className="mt-2">
+                      <a
+                        href={`${LEARNING_HUB_URL}/login`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-bold text-sunset underline-offset-2 hover:underline"
+                      >
+                        {t('changeInLearningHub')} →
+                      </a>
+                    </p>
+                  )}
+                </div>
               )}
 
               <button
                 type="submit"
-                disabled={busy || !employeeId.trim() || !pin}
+                disabled={busy || !identifier.trim() || !pin}
                 className="min-h-12 w-full rounded-xl bg-sunset text-base font-bold text-white transition-colors hover:bg-sunset-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? t('signingIn') : t('signIn')}
@@ -140,7 +178,7 @@ export function LoginPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setEmployeeId(u.employeeId);
+                        setIdentifier(u.employeeId);
                         setPin(DEMO_PIN);
                       }}
                       className="font-mono font-bold text-charcoal underline decoration-sunset decoration-2 underline-offset-2"

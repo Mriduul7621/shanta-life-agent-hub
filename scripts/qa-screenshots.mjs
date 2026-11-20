@@ -72,9 +72,11 @@
  *     (no target=_blank); ssoJoined tiles carry #hub-token= in the href,
  *     non-joined tiles are plain links (read-only — no live navigation).
  * 15. Production-target guard: a production build with demo auth FAILS, a
- *     production build with a signing key FAILS, and a clean production
- *     build (temp copy, no .env) succeeds with no demo users and sign-in
- *     failing closed.
+ *     production build with a signing key FAILS, a production signing key
+ *     without its matching public-key config FAILS, a HUB_KID that does
+ *     not match HUB_PUBLIC_KEY_PEM FAILS, a matching production keypair
+ *     SUCCEEDS, and a clean production build (temp copy, no .env)
+ *     succeeds with no demo users and sign-in failing closed.
  *
  * Checks (Retail Dashboard — 40):
  * 16. Dashboard page: heading is "Retail Sales Dashboard", reaches a
@@ -126,6 +128,16 @@
  *     demo role note + the preview note on the Leads strip. Overflow
  *     checks at 375 / 768 / 1440 with screenshots (home-live-*,
  *     leads-live-1440, learning-live-1440).
+ *
+ * Checks (Phase 2 — real auth):
+ * 22. Real-login form at 375 / 768 / 1440: identifier label "Employee
+ *     ID or email", identifier placeholder, forgot link out to the
+ *     Learning Hub, demo notice still shown in the QA build, and the
+ *     credential field switching to a password field when an email is
+ *     typed; error state (wrong PIN shows the message + attempts left)
+ *     and lockout state (5 wrong PINs) at 375 px, with screenshots
+ *     (login-real-*, login-error-375, login-locked-375). The server
+ *     side of real auth is covered by `npm run qa:auth-live`.
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -1256,7 +1268,9 @@ try {
     );
 
     // Clean production build in a temp copy (no .env — fresh-clone shape) +
-    // fail-closed login check against it.
+    // fail-closed login check against it. The production-key guard checks
+    // run in the temp copy too: a SUCCEEDING production build must never
+    // overwrite the QA build's dist in ROOT (later sections need it).
     prodTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-prod-'));
     fs.cpSync(ROOT, prodTmp, {
       recursive: true,
@@ -1270,9 +1284,45 @@ try {
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(prodTmp, 'node_modules'), 'dir');
     const prodEnv = { ...process.env };
     for (const k of Object.keys(prodEnv)) {
-      if (k.startsWith('VITE_') || k === 'HUB_BUILD_TARGET') delete prodEnv[k];
+      if (k.startsWith('VITE_') || k.startsWith('HUB_')) delete prodEnv[k];
     }
     prodEnv.HUB_BUILD_TARGET = 'production';
+
+    // Production-key guard (real auth): a production signing key without
+    // its matching public-key config, or a kid that does not match the
+    // public key, must FAIL — otherwise hub-auth signs with a key nothing
+    // verifies against. A matching pair must SUCCEED.
+    const failKeyPair = runBuild(prodTmp, {
+      ...prodEnv,
+      HUB_JWT_PRIVATE_KEY_B64: privateB64,
+    });
+    check(
+      'guard: production signing key without public-key config FAILS',
+      failKeyPair.status !== 0 && /HUB_PUBLIC_KEY_PEM/.test(failKeyPair.output),
+      `exit=${failKeyPair.status}`,
+    );
+    const failKidMismatch = runBuild(prodTmp, {
+      ...prodEnv,
+      HUB_JWT_PRIVATE_KEY_B64: privateB64,
+      HUB_PUBLIC_KEY_PEM: publicPem,
+      HUB_KID: '0000000000000000',
+    });
+    check(
+      'guard: HUB_KID not matching HUB_PUBLIC_KEY_PEM FAILS',
+      failKidMismatch.status !== 0 && /does not match/.test(failKidMismatch.output),
+      `exit=${failKidMismatch.status}`,
+    );
+    const okKeyPair = runBuild(prodTmp, {
+      ...prodEnv,
+      HUB_JWT_PRIVATE_KEY_B64: privateB64,
+      HUB_PUBLIC_KEY_PEM: publicPem,
+      HUB_KID: kid,
+    });
+    check(
+      'guard: production signing key + matching public key + kid SUCCEEDS',
+      okKeyPair.status === 0,
+      okKeyPair.status === 0 ? '' : okKeyPair.output.slice(-400),
+    );
     const prodBuild = runBuild(prodTmp, prodEnv);
     check('production build: clean demo-off build succeeds', prodBuild.status === 0, prodBuild.status === 0 ? '' : prodBuild.output.slice(-400));
     if (prodBuild.status === 0) {
@@ -2020,6 +2070,83 @@ try {
         !strip.includes('live lead data arrives with the LeadFlow connection'),
       strip.slice(0, 200),
     );
+    await ctx.close();
+  }
+
+  // ---- 22. Real-auth login states (Phase 2) ----
+  // The form is the real-login form now: one identifier field (Employee
+  // ID or email) + one credential field, with a forgot link out to the
+  // Learning Hub. Demo sign-in still works behind the QA flag (the
+  // demo notice is still shown in this build) and the demo lockout is
+  // the local one (§3) — the server lockout surfaces via the same alert
+  // (qa:auth-live covers the server side).
+  for (const width of [375, 768, 1440]) {
+    const { ctx, page } = await newPage(browser, width);
+    await page.goto(BASE, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('#employee-id', { timeout: 10000 });
+    const idLabel = await page.$eval('label[for="employee-id"]', (el) => el.textContent);
+    const idPlaceholder = await page.$eval('#employee-id', (el) => el.placeholder);
+    const forgotHref = await page
+      .$eval('a[href*="login/forgot"]', (el) => el.href)
+      .catch(() => '(no forgot link)');
+    const demoNotice = await page.evaluate(() => document.body.textContent.includes('9990001'));
+    check(`login real form ${width}: identifier label`, idLabel.includes('Employee ID or email'), idLabel);
+    check(`login real form ${width}: identifier placeholder`, idPlaceholder.includes('2025019 or name@shantalife.com'), idPlaceholder);
+    check(`login real form ${width}: forgot link to LH`, forgotHref.includes('shanta-life-learning-hub.vercel.app/login/forgot'), forgotHref);
+    check(`login real form ${width}: demo notice still shown (QA build)`, demoNotice);
+    // Typing an email switches the credential field to a password field.
+    await page.type('#employee-id', 'staff@shantalife.com');
+    await new Promise((r) => setTimeout(r, 200));
+    const credPlaceholder = await page.$eval('#pin', (el) => el.placeholder);
+    const credType = await page.$eval('#pin', (el) => el.type);
+    check(`login real form ${width}: email identifier -> password placeholder`, credPlaceholder === 'Password' && credType === 'password', `${credPlaceholder} / ${credType}`);
+    const ov = await overflowCheck(page);
+    check(`login real form ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, `login-real-${width}.png`), fullPage: true });
+    await ctx.close();
+  }
+
+  // Error state: one wrong PIN shows the message + attempts left.
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.goto(BASE, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('#employee-id', { timeout: 10000 });
+    await page.type('#employee-id', '9990002');
+    await page.type('#pin', '000000');
+    await page.click('button[type="submit"]');
+    await page.waitForSelector('[role="alert"]', { timeout: 5000 });
+    const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
+    check(
+      'login error state: wrong PIN message + attempts left',
+      /Wrong PIN or password/.test(alert) && /4 attempts left/.test(alert),
+      alert,
+    );
+    const ov = await overflowCheck(page);
+    check('login error state: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'login-error-375.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // Lockout state: 5 wrong PINs at 375 px (same flow as §3, phone width).
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.goto(BASE, { waitUntil: 'networkidle0' });
+    for (let i = 0; i < 5; i++) {
+      await page.waitForSelector('#employee-id');
+      await page.evaluate(() => {
+        document.querySelector('#employee-id').value = '';
+        document.querySelector('#pin').value = '';
+      });
+      await page.type('#employee-id', '9990002');
+      await page.type('#pin', '000000');
+      await page.click('button[type="submit"]');
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
+    check('login lockout state 375: 5 wrong PINs locks account', /লক|lock/i.test(alert), alert);
+    const ov = await overflowCheck(page);
+    check('login lockout state 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'login-locked-375.png'), fullPage: true });
     await ctx.close();
   }
 } finally {

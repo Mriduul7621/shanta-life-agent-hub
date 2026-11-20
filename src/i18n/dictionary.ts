@@ -20,8 +20,12 @@ export type DictKey =
   | 'loginSubtitle'
   | 'employeeId'
   | 'employeeIdPlaceholder'
+  | 'loginIdentifier'
+  | 'loginIdentifierPlaceholder'
   | 'pin'
   | 'pinPlaceholder'
+  | 'passwordPlaceholder'
+  | 'forgotCredential'
   | 'signIn'
   | 'signingIn'
   | 'demoNoticeTitle'
@@ -33,6 +37,11 @@ export type DictKey =
   | 'errorUnknownUser'
   | 'errorNotConfigured'
   | 'errorSessionExpired'
+  | 'errorNoLmsRecord'
+  | 'errorInactive'
+  | 'errorMustChange'
+  | 'errorUnavailable'
+  | 'changeInLearningHub'
   | 'lockedMinutes'
   | 'changePinTitle'
   | 'changePinSubtitle'
@@ -208,20 +217,31 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginSubtitle: 'One login for all your tools',
     employeeId: 'Employee ID',
     employeeIdPlaceholder: 'e.g. 9990001',
+    loginIdentifier: 'Employee ID or email',
+    loginIdentifierPlaceholder: 'e.g. 2025019 or name@shantalife.com',
     pin: 'PIN / Password',
     pinPlaceholder: '6-digit PIN',
+    passwordPlaceholder: 'Password',
+    forgotCredential: 'Forgot PIN or password?',
     signIn: 'Sign in',
     signingIn: 'Signing in…',
     demoNoticeTitle: 'DEMO — for testing only',
     demoNoticeBody:
       'Demo sign-in is enabled in this build. Use a demo account below. No real employee data is used.',
     demoUser: 'Demo',
-    errorWrongPin: 'Wrong PIN. Please try again.',
+    errorWrongPin: 'Wrong PIN or password. Please try again.',
     errorAttemptsLeft: 'attempts left before lockout',
     errorLocked: 'Account locked after 5 wrong attempts.',
     errorUnknownUser: 'Employee ID not found.',
     errorNotConfigured: 'Sign-in is not configured in this build.',
     errorSessionExpired: 'Your session expired. Please sign in again.',
+    errorNoLmsRecord:
+      'No Learning Hub record found for this Employee ID. Please contact the Training & Development team.',
+    errorInactive: 'This account is inactive. Please contact the Training & Development team.',
+    errorMustChange:
+      'Your PIN or password is temporary. Please change it in the Learning Hub first, then sign in here.',
+    errorUnavailable: 'Sign-in is temporarily unavailable. Please try again in a moment.',
+    changeInLearningHub: 'Change it in the Learning Hub',
     lockedMinutes: 'Try again in {minutes} minutes.',
     changePinTitle: 'Set a new PIN',
     changePinSubtitle:
@@ -400,20 +420,31 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginSubtitle: 'সব টুলের জন্য একটি লগইন',
     employeeId: 'কর্মচারী আইডি',
     employeeIdPlaceholder: 'যেমন 9990001',
+    loginIdentifier: 'কর্মচারী আইডি বা ইমেইল',
+    loginIdentifierPlaceholder: 'যেমন 2025019 বা name@shantalife.com',
     pin: 'পিন / পাসওয়ার্ড',
     pinPlaceholder: '৬ সংখ্যার পিন',
+    passwordPlaceholder: 'পাসওয়ার্ড',
+    forgotCredential: 'পিন বা পাসওয়ার্ড ভুলে গেছেন?',
     signIn: 'সাইন ইন',
     signingIn: 'সাইন ইন হচ্ছে…',
     demoNoticeTitle: 'ডেমো — শুধুমাত্র পরীক্ষার জন্য',
     demoNoticeBody:
       'এই বিল্ডে ডেমো সাইন-ইন চালু আছে। নিচের ডেমো অ্যাকাউন্ট ব্যবহার করুন। কোনো বাস্তব কর্মচারী তথ্য ব্যবহৃত হয় না।',
     demoUser: 'ডেমো',
-    errorWrongPin: 'ভুল পিন। আবার চেষ্টা করুন।',
+    errorWrongPin: 'ভুল পিন বা পাসওয়ার্ড। আবার চেষ্টা করুন।',
     errorAttemptsLeft: 'বার চেষ্টা বাকি আছে, তারপর লক হবে',
     errorLocked: '৫ বার ভুল চেষ্টার পর অ্যাকাউন্ট লক হয়েছে।',
     errorUnknownUser: 'কর্মচারী আইডি পাওয়া যায়নি।',
     errorNotConfigured: 'এই বিল্ডে সাইন-ইন কনফিগার করা হয়নি।',
     errorSessionExpired: 'আপনার সেশন শেষ হয়ে গেছে। আবার সাইন ইন করুন।',
+    errorNoLmsRecord:
+      'এই কর্মচারী আইডির জন্য কোনো লার্নিং হাব রেকর্ড পাওয়া যায়নি। প্রশিক্ষণ ও উন্নয়ন টিমের সাথে যোগাযোগ করুন।',
+    errorInactive: 'এই অ্যাকাউন্টটি নিষ্ক্রিয়। প্রশিক্ষণ ও উন্নয়ন টিমের সাথে যোগাযোগ করুন।',
+    errorMustChange:
+      'আপনার পিন বা পাসওয়ার্ড অস্থায়ী। প্রথমে লার্নিং হাবে পরিবর্তন করুন, তারপর এখানে সাইন ইন করুন।',
+    errorUnavailable: 'সাইন-ইন সাময়িকভাবে অনুপলব্ধ। কিছুক্ষণ পরে আবার চেষ্টা করুন।',
+    changeInLearningHub: 'লার্নিং হাবে পরিবর্তন করুন',
     lockedMinutes: '{minutes} মিনিট পরে আবার চেষ্টা করুন।',
     changePinTitle: 'নতুন পিন সেট করুন',
     changePinSubtitle:
