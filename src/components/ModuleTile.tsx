@@ -1,14 +1,9 @@
-import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { buildModuleUrl } from '../sso/handoff';
+import { prefetchModule } from '../performance/prefetch';
+import { ModuleIcon } from './ModuleIcon';
 import type { HubModule } from '../data/modules';
-
-const MARK_BG: Record<HubModule['accent'], string> = {
-  orange: 'bg-sunset text-white',
-  olive: 'bg-olive text-white',
-  charcoal: 'bg-charcoal text-white',
-};
 
 /**
  * One tool tile. Every enabled tile is a plain same-tab link (Mahadi's
@@ -27,30 +22,12 @@ const MARK_BG: Record<HubModule['accent'], string> = {
 export function ModuleTile({ module }: { module: HubModule }) {
   const { t } = useI18n();
   const { token } = useAuth();
-  const [iconFailed, setIconFailed] = useState(false);
   const disabled = !module.url;
-  const iconSrc = module.iconUrl ?? module.icon;
-  const showIcon = !!iconSrc && !iconFailed;
 
   const inner = (
     <>
       <div className="flex items-start justify-between gap-3">
-        {showIcon ? (
-          <img
-            src={iconSrc}
-            alt=""
-            aria-hidden
-            onError={() => setIconFailed(true)}
-            className={`h-11 w-11 shrink-0 rounded-xl object-cover ${disabled ? 'opacity-50' : ''}`}
-          />
-        ) : (
-          <span
-            aria-hidden
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold tracking-wide ${MARK_BG[module.accent]} ${disabled ? 'opacity-50' : ''}`}
-          >
-            {module.mark}
-          </span>
-        )}
+        <ModuleIcon module={module} className={`h-11 w-11 ${disabled ? 'opacity-50' : ''}`} />
         {!disabled && (
           <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
             {t('openTool')} →
@@ -81,9 +58,17 @@ export function ModuleTile({ module }: { module: HubModule }) {
   }
 
   const href = module.ssoJoined ? buildModuleUrl(module, token) : module.url;
+  // Intent-based prefetch (instant-open): hover / focus / touch warms the
+  // module's document cache before the click. The base URL is prefetched
+  // (no token fragment — prefetchModule strips it); the link itself is
+  // unchanged, still same-tab.
+  const warm = () => prefetchModule(module.url);
   return (
     <a
       href={href ?? undefined}
+      onMouseEnter={warm}
+      onFocus={warm}
+      onTouchStart={warm}
       className="block rounded-2xl border border-cream-dark bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sunset sm:p-5"
     >
       {inner}

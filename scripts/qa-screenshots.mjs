@@ -16,12 +16,16 @@
  * local QA build). The handoff test navigates same-tab to a temp file://
  * stub fixture, so it needs no loopback server at all.
  *
- * NOTE (Milestone 3): this VM's headless Chrome has no external network, so
- * the Dashboard's live gviz fetch cannot succeed here — the dashboard QA
- * below asserts the page reaches a terminal state (live KPIs OR the error
- * state with retry + SCC link) and records which path was taken. The live
- * path itself is verified by `npm run qa:scc-live`, which runs the Hub's
- * own parser + aggregation code against the real gviz CSVs from Node.
+ * NOTE (Retail Dashboard): this VM's headless Chrome has no external network
+ * and there is no /api/retail-data proxy under file://, so the Dashboard's
+ * live fetch cannot succeed here — the dashboard QA below asserts the page
+ * reaches a terminal state (live KPIs OR the error state with retry + the
+ * retail-dashboard link) and records which path was taken. The ready state
+ * is verified against a synthetic session cache seeded with the demo
+ * fixture summary (computed by the Hub's own summarizer, api/_lib). The
+ * live path itself is verified by `npm run qa:retail-live`, which runs
+ * the Hub's own summarizer + proxy handler against the real retail
+ * endpoint payload from Node.
  *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
@@ -65,14 +69,37 @@
  *     build (temp copy, no .env) succeeds with no demo users and sign-in
  *     failing closed.
  *
- * Checks (Milestone 3 — 22):
- * 16. Dashboard page: reaches a terminal state (live KPIs or error state
- *     with retry), has a Refresh button, and carries no link to the removed
- *     SCC tile; the ready
- *     state renders against a synthetic session cache with exact figures.
+ * Checks (Retail Dashboard — 40):
+ * 16. Dashboard page: heading is "Retail Sales Dashboard", reaches a
+ *     terminal state (live KPIs, empty state or error state with retry),
+ *     has a Refresh button, links to the Retail Sales Dashboard, and
+ *     carries no link to the removed SCC tile.
+ * 16b. Dashboard ready state (Team Lead): renders against a synthetic
+ *     session cache seeded with the demo fixture summary — exact figures
+ *     for all 6 KPIs, the Top team members leaderboard, the DEMO badge,
+ *     the scope label, and the cached-while-refreshing banner.
+ * 16c. Dashboard role views: Employee sees own data only (no leaderboard);
+ *     Admin sees Top Business Executives + the Unassigned line + Org-wide;
+ *     an empty scope shows the empty state with the no-code note and no
+ *     KPI cards.
  * 17. Due-premium widget: present on Home with the DEMO badge + note and
  *     demo rows for Team Lead; "showing 5 of 31" for Manager team; empty
  *     state for Admin.
+ *
+ * Checks (Instant-open — 8):
+ * 19. Preconnect + dns-prefetch links exist for all 6 module origins, no
+ *     prerender link exists anywhere, hovering a tile adds a prefetch
+ *     link for that app's document, hovering twice adds only one, and the
+ *     prefetch URL carries no SSO token fragment.
+ *
+ * Checks (Home quick-actions + module data pages — 19):
+ * 20. Home has one flat quick-action grid (7 tiles, icon + name, no group
+ *     headings, no descriptions) with disabled Proposals + Coming soon.
+ *     Leads/Learning pages show a DEMO summary strip (exact demo figures)
+ *     + a same-tab Go button and no ModuleTile; Calculators/Proposals
+ *     pages are unchanged (tiles only, no summary, no Go button).
+ * 20b. Leads/Learning pages at 375 px: no horizontal overflow, with
+ *     screenshots (device gate; 1440 px shots are taken in §20).
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -94,6 +121,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import puppeteer from 'puppeteer-core';
+// Retail Dashboard QA: the demo fixture summary is computed by the Hub's
+// OWN summarizer (api/_lib — pure, no Node/browser APIs), so the seeded
+// cache is exactly what the proxy would return for a demo user.
+import { summarizeRetail } from '../api/_lib/retailSummary.js';
+import { buildDemoPayload } from '../api/_lib/demoFixture.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const LOCAL_QA = !process.env.HUB_QA_URL;
@@ -324,26 +356,46 @@ async function clickNav(page, bn, en) {
 }
 
 /**
- * Dashboard terminal state: live KPIs rendered OR the error state rendered.
- * Returns 'live' | 'error'. The live path needs external network, which this
- * VM's headless Chrome lacks — so 'error' is the expected outcome here, and
- * the live path is verified separately by scripts/qa-scc-live.mjs.
+ * Dashboard terminal state: live KPIs rendered, the empty state rendered,
+ * or the error state rendered. Returns 'live' | 'empty' | 'error'. The
+ * live fetch needs the /api/retail-data proxy, which does not exist under
+ * file:// in this VM's headless Chrome — so 'error' is the expected
+ * outcome here, and the live path is verified separately by
+ * scripts/qa-retail-live.mjs.
  */
 async function waitForDashboardTerminal(page) {
   await page.waitForFunction(
     () =>
       document.body.textContent.includes('লাইভ ড্যাশবোর্ড লোড করা যায়নি') ||
       document.body.textContent.includes('Could not load the live dashboard') ||
-      document.body.textContent.includes('নতুন প্রিমিয়াম') ||
-      document.body.textContent.includes('New premium'),
+      document.body.textContent.includes('মোট প্রাপ্ত প্রিমিয়াম') ||
+      document.body.textContent.includes('Total premium received') ||
+      document.body.textContent.includes('এই স্কোপে কোনো সেলস ডেটা নেই') ||
+      document.body.textContent.includes('No sales data in scope'),
     { timeout: 30000 },
   );
-  return page.evaluate(() =>
-    document.body.textContent.includes('নতুন প্রিমিয়াম') ||
-    document.body.textContent.includes('New premium')
-      ? 'live'
-      : 'error',
-  );
+  return page.evaluate(() => {
+    const text = document.body.textContent;
+    if (text.includes('মোট প্রাপ্ত প্রিমিয়াম') || text.includes('Total premium received')) return 'live';
+    if (text.includes('এই স্কোপে কোনো সেলস ডেটা নেই') || text.includes('No sales data in scope')) return 'empty';
+    return 'error';
+  });
+}
+
+/**
+ * The demo fixture summary the proxy would return for a demo user — used
+ * to seed the Dashboard's session cache (hub-retail-cache-v1) so the
+ * ready state can be verified without the proxy. Values are the
+ * hand-computed fixture expectations (see scripts/qa-retail-live.mjs).
+ * The fixture scenario is PINNED to 2026-11-20: its due expectations
+ * depend on instalment dates relative to the reference day, so pinning
+ * keeps the seeded values deterministic whatever day the suite runs.
+ */
+const FIXTURE_TODAY = '2026-11-20';
+function demoSummaryFor(employeeId, role) {
+  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY);
+  summary.demo = true; // the proxy marks fixture summaries demo: true
+  return summary;
 }
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -584,17 +636,25 @@ try {
     await ctx.close();
   }
 
-  // ---- 16. Dashboard page (M3): terminal state, SCC link, refresh ----
+  // ---- 16. Dashboard page (retail): terminal state, retail link, refresh ----
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002', '123456');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
-    check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error', `path=${dashPath}`);
-    // The Sales Command Center tile was removed (Mahadi 2026-11-20) — the
-    // Dashboard page's "full SCC" section renders nothing until the page
-    // rework lands. Assert no dangling link to the removed module remains.
+    check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error' || dashPath === 'empty', `path=${dashPath}`);
+    const dashTitle = await page.$eval('h1', (el) => el.textContent);
+    check('dashboard: heading is Retail Sales Dashboard', dashTitle === 'Retail Sales Dashboard' || dashTitle === 'রিটেইল সেলস ড্যাশবোর্ড', dashTitle);
+    // The "Open the full dashboard" section must link to the Retail Sales
+    // Dashboard (Mahadi 2026-11-20 — the SCC tile was the wrong source).
+    const retailLink = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('a')].find((el) =>
+        el.href.includes('retail-dashboard-zeta.vercel.app'),
+      );
+      return a ? a.href : null;
+    });
+    check('dashboard: full-dashboard link points to Retail', !!retailLink, retailLink || 'none');
     const sccLink = await page.evaluate(() => {
       const a = [...document.querySelectorAll('a')].find((el) =>
         el.href.includes('training-dashboard-shanta-life.vercel.app'),
@@ -615,13 +675,15 @@ try {
         ),
       );
       check('dashboard (error path): retry button present', hasRetry);
-    } else {
+    } else if (dashPath === 'live') {
       const hasLeaders = await page.evaluate(
         () =>
-          document.body.textContent.includes('শীর্ষ জেনারেল ম্যানেজার') ||
-          document.body.textContent.includes('Top General Managers'),
+          document.body.textContent.includes('শীর্ষ টিম মেম্বার') ||
+          document.body.textContent.includes('Top team members'),
       );
       check('dashboard (live path): leaders section present', hasLeaders);
+    } else {
+      check('dashboard (empty path): empty state present', true, 'empty scope, no live fetch here');
     }
     // Chrome logs a failed fetch as a console error ("Failed to load
     // resource") even when the app catches it — and the Dashboard handles a
@@ -633,48 +695,125 @@ try {
     await ctx.close();
   }
 
-  // ---- 16b. Dashboard ready state (M3): synthetic cache, exact figures ----
-  // Synthetic producers/sessions (fictional names, hand-computed KPIs):
-  // new premium 175,000 · policies 17 · lifetime 825,000 · active FAs 3 ·
-  // avg premium/FA 58,333 · avg policies/FA 5.7 · sessions 2 · participants
-  // 50 · cost 8,000 · trained 2 of 3 (66.7%) · gap 1 (33.3%) · leaders:
-  // Test GM One (150,000) then Test GM Two (25,000) · 1 unassigned row.
+  // ---- 16b. Dashboard ready state (retail): synthetic cache, exact figures ----
+  // Seeded with the demo fixture summary for 9990002 (Team Lead), computed
+  // by the Hub's own summarizer — the exact values the proxy returns:
+  // total ৳1,64,000 · FYCP ৳1,56,000 · policies 7 · due ৳34,000 (4 pol) ·
+  // persistency 83.3% (5/6) · active 2 of 3 · leaders Demo Agent ৳67,000,
+  // Demo FA Eleven ৳57,000, Demo FA Twelve ৳15,000 · DEMO badge · scope
+  // "Own + team". The background refresh fails here (no proxy under
+  // file://), so the cached-while-refreshing banner must also show.
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002', '123456');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-    const producerCsv = [
-      '"EMPID OLD","PRODUCER NAME","TIER","STATUS ACTIVITY","No of New Policy","New Policy Premium","Life Time Premium","GM Name","Basic Training","Review Session","Foundation Training"',
-      '"F001","Test FA One","FA","Active","10","100000","500000","Test GM One","Yes","No","No"',
-      '"F002","Test FA Two","FA","Active","5","50000","200000","Test GM One","No","No","No"',
-      '"F003","Test FA Three","FA","Active","2","25000","25000","Test GM Two","Yes","Yes","Yes"',
-      '"F004","Test FA Four","FA","Inactive","0","0","100000","Test GM Two","No","No","No"',
-      '"M001","Test Manager","GM","Active","0","0","0","#N/A","No","No","No"',
-    ].join('\n');
-    const sessionCsv = [
-      '"Training Date","Training Name","Type of Training","Attendees","Training Cost"',
-      '"01 Jan 26","Test Session One","Basic Training","30","5000"',
-      '"02 Jan 26","Test Session Two","Review Session","20","3000"',
-    ].join('\n');
     await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-scc-cache-v1', JSON.stringify(cache)),
-      { producerCsv, sessionCsv, syncedAt: Date.now() },
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      { summary: demoSummaryFor('9990002', 'team_lead'), employeeId: '9990002', syncedAt: Date.now() },
     );
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (synthetic cache): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    // Wait for the background refresh to fail so the banner is visible.
+    await page.waitForFunction(
+      () => document.body.textContent.includes('Refresh failed') || document.body.textContent.includes('রিফ্রেশ ব্যর্থ'),
+      { timeout: 10000 },
+    ).catch(() => {});
     const body = await page.evaluate(() => document.body.textContent);
-    check('dashboard ready: new premium ৳1,75,000', body.includes('৳1,75,000'));
-    check('dashboard ready: policies 17 + lifetime ৳8,25,000', body.includes('17') && body.includes('৳8,25,000'));
-    check('dashboard ready: FA trained 66.7%', body.includes('66.7%'));
-    check('dashboard ready: training gap 1 FA', body.includes('1 জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন') || body.includes('1 active FA not yet trained'));
-    check('dashboard ready: leaders ranked (Test GM One)', body.includes('Test GM One') && body.includes('Test GM Two'));
-    check('dashboard ready: unassigned line present', body.includes('বরাদ্দহীন') || body.includes('Unassigned'));
+    // KPI values read per card (WidgetCard renders <section aria-label={title}>),
+    // so a figure is attributed to its card — not just present somewhere.
+    const kpis = await page.evaluate(() => {
+      const out = {};
+      for (const section of document.querySelectorAll('section[aria-label]')) {
+        const value = section.querySelector('p.text-3xl');
+        if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
+      }
+      return out;
+    });
+    check('dashboard ready: total premium ৳1,64,000', kpis['Total premium received'] === '৳1,64,000', JSON.stringify(kpis));
+    check('dashboard ready: FYCP ৳1,56,000 + policies 7', kpis.FYCP === '৳1,56,000' && kpis.Policies === '7', JSON.stringify(kpis));
+    check('dashboard ready: due premium ৳34,000', kpis['Due premium — this month'] === '৳34,000', JSON.stringify(kpis));
+    check('dashboard ready: persistency 83.3%', kpis.Persistency === '83.3%', JSON.stringify(kpis));
+    check('dashboard ready: active FAs 2 of 3', kpis['Active field FAs'] === '2 of 3', JSON.stringify(kpis));
+    check('dashboard ready: due 4 policies + persistency 5 of 6 inforce', body.includes('4 policies') && body.includes('5 of 6 inforce'));
+    check('dashboard ready: deferred/renewal subline', body.includes('Deferred 3.0%') && body.includes('Renewal 4.9%'));
+    check('dashboard ready: leaders ranked (Demo Agent, Eleven, Twelve)', body.includes('Demo Agent') && body.includes('Demo FA Eleven') && body.includes('Demo FA Twelve'));
+    check('dashboard ready: DEMO badge + note', body.includes('DEMO DATA') && body.includes('Demo data — fictional figures'));
+    check('dashboard ready: scope label Own + team', body.includes('Own + team'));
+    check('dashboard ready: cached-while-refreshing banner', body.includes('Refresh failed') || body.includes('রিফ্রেশ ব্যর্থ'));
     const readyOv = await overflowCheck(page);
     check('dashboard ready: no horizontal overflow', !readyOv.overflow, `scrollWidth=${readyOv.scrollWidth} innerWidth=${readyOv.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, 'dashboard-ready-1440.png'), fullPage: true });
     const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
     check('dashboard ready: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    await ctx.close();
+  }
+
+  // ---- 16c. Dashboard role views: Employee, Admin, empty scope ----
+  // Employee (9990001): own data only — total ৳67,000, persistency 100.0%,
+  // scope "Own data", and NO leaderboard section at all.
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990001', '123456');
+    await page.waitForSelector('#new-pin', { timeout: 5000 });
+    await page.type('#new-pin', '654321');
+    await page.type('#confirm-pin', '654321');
+    await page.click('button[type="submit"]');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
+    await page.evaluate(
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      { summary: demoSummaryFor('9990001', 'employee'), employeeId: '9990001', syncedAt: Date.now() },
+    );
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    check('dashboard (employee): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    const body = await page.evaluate(() => document.body.textContent);
+    check('dashboard (employee): own total ৳67,000 + persistency 100.0%', body.includes('৳67,000') && body.includes('100.0%'));
+    check('dashboard (employee): scope label Own data', body.includes('Own data'));
+    check('dashboard (employee): no leaderboard section', !body.includes('Top team members') && !body.includes('Top Business Executives') && !body.includes('শীর্ষ টিম মেম্বার') && !body.includes('শীর্ষ বিজনেস এক্সিকিউটিভ'));
+    await ctx.close();
+  }
+  // Admin (9990004): org-wide — Top Business Executives with Demo BE
+  // ৳2,34,000, the Unassigned line ৳7,000, scope "Org-wide".
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990004', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
+    await page.evaluate(
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      { summary: demoSummaryFor('9990004', 'admin'), employeeId: '9990004', syncedAt: Date.now() },
+    );
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    check('dashboard (admin): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    const body = await page.evaluate(() => document.body.textContent);
+    check('dashboard (admin): Top Business Executives + Demo BE ৳2,34,000', body.includes('Top Business Executives') && body.includes('Demo BE') && body.includes('৳2,34,000'));
+    check('dashboard (admin): Unassigned line ৳7,000', body.includes('Unassigned') && body.includes('৳7,000'));
+    check('dashboard (admin): scope label Org-wide', body.includes('Org-wide'));
+    await ctx.close();
+  }
+  // Empty scope: the empty state with the no-code note — and no KPI cards.
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990001', '123456');
+    await page.waitForSelector('#new-pin', { timeout: 5000 });
+    await page.type('#new-pin', '654321');
+    await page.type('#confirm-pin', '654321');
+    await page.click('button[type="submit"]');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
+    const emptySummary = demoSummaryFor('9990001', 'employee');
+    emptySummary.empty = true;
+    emptySummary.emptyReason = 'no-code';
+    await page.evaluate(
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      { summary: emptySummary, employeeId: '9990001', syncedAt: Date.now() },
+    );
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    const dashPath = await waitForDashboardTerminal(page);
+    check('dashboard (empty scope): empty state renders', dashPath === 'empty', `path=${dashPath}`);
+    const body = await page.evaluate(() => document.body.textContent);
+    check('dashboard (empty scope): no-code note', body.includes('No producer code is linked to this Employee ID'));
+    check('dashboard (empty scope): no KPI cards', !body.includes('Total premium received') && !body.includes('মোট প্রাপ্ত প্রিমিয়াম'));
     await ctx.close();
   }
   // ---- 17. Due-premium widget (M3) ----
@@ -1202,6 +1341,270 @@ try {
     } finally {
       await ctx.close();
     }
+  }
+
+  // ---- 19. Instant-open: preconnect + intent prefetch (local QA only) ----
+  // Preconnects live in index.html; the prefetch link is added to <head>
+  // on tile hover. The prefetch fetch itself fails in this VM (no
+  // external network) — what matters is that the <link> is created with
+  // the right href, once, and never carries the SSO token fragment.
+  if (LOCAL_QA) {
+    const MODULE_ORIGINS = [
+      'https://lead-flow-jet.vercel.app',
+      'https://shanta-life-learning-hub.vercel.app',
+      'https://premium-illustrator.vercel.app',
+      'https://sdpp-value-projection.vercel.app',
+      'https://incomecalculator-delta.vercel.app',
+      'https://retail-dashboard-zeta.vercel.app',
+    ];
+    const { ctx, page } = await newPage(browser, 1440);
+    try {
+      await login(page, '9990002', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      const headLinks = await page.evaluate(() => ({
+        preconnect: [...document.querySelectorAll('link[rel="preconnect"]')].map((l) => l.getAttribute('href')),
+        dnsPrefetch: [...document.querySelectorAll('link[rel="dns-prefetch"]')].map((l) => l.getAttribute('href')),
+        prerender: [...document.querySelectorAll('link[rel="prerender"]')].map((l) => l.getAttribute('href')),
+      }));
+      check(
+        'instant-open: preconnect for all 6 module origins',
+        MODULE_ORIGINS.every((o) => headLinks.preconnect.includes(o)),
+        JSON.stringify(headLinks.preconnect),
+      );
+      check(
+        'instant-open: dns-prefetch for all 6 module origins',
+        MODULE_ORIGINS.every((o) => headLinks.dnsPrefetch.includes(o)),
+        JSON.stringify(headLinks.dnsPrefetch),
+      );
+      check('instant-open: no prerender links anywhere', headLinks.prerender.length === 0, JSON.stringify(headLinks.prerender));
+      const hoverTile = async (name) => {
+        const box = await page.evaluate((n) => {
+          const h = [...document.querySelectorAll('h3')].find((x) => x.textContent === n);
+          const tile = h?.closest('a');
+          if (!tile) return null;
+          tile.scrollIntoView({ block: 'center' });
+          const r = tile.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }, name);
+        if (!box) return false;
+        await page.mouse.move(box.x, box.y);
+        await new Promise((r) => setTimeout(r, 200));
+        return true;
+      };
+      const prefetchHrefs = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll('link[rel="prefetch"]')].map((l) => l.getAttribute('href')),
+        );
+      check('instant-open: hover finds the LeadFlow tile', await hoverTile('LeadFlow'));
+      const afterFirst = await prefetchHrefs();
+      check(
+        'instant-open: hovering a tile adds a prefetch link for its document',
+        afterFirst.some((h) => h.startsWith('https://lead-flow-jet.vercel.app')),
+        JSON.stringify(afterFirst),
+      );
+      await page.mouse.move(10, 10);
+      await hoverTile('LeadFlow');
+      const afterSecond = await prefetchHrefs();
+      check(
+        'instant-open: hovering twice adds only one prefetch link (dedup)',
+        afterSecond.filter((h) => h.startsWith('https://lead-flow-jet.vercel.app')).length === 1,
+        JSON.stringify(afterSecond),
+      );
+      // The joined tile's href carries #hub-token=<jwt> — the prefetch
+      // must be the module's BASE url with no fragment at all. The QA
+      // build overrides PremiumPulse's URL to the local stub module, so
+      // the new prefetch href is found by diffing before/after the hover
+      // rather than by matching the production URL.
+      const beforeJoined = await prefetchHrefs();
+      check('instant-open: hover finds the PremiumPulse tile', await hoverTile('PremiumPulse'));
+      const afterJoined = await prefetchHrefs();
+      const ppPrefetch = afterJoined.find((h) => !beforeJoined.includes(h));
+      check(
+        'instant-open: prefetch URL carries no SSO token fragment',
+        !!ppPrefetch && !ppPrefetch.includes('#hub-token=') && !ppPrefetch.includes('#'),
+        JSON.stringify(afterJoined),
+      );
+    } finally {
+      await ctx.close();
+    }
+  }
+
+  // ---- 20. Home quick-actions + Leads/Learning data pages ----
+  // Home (Mahadi 2026-11-20): one flat quick-action grid under "Your
+  // tools" — no group sections. Leads/Learning pages: DEMO summary strip
+  // + Go button, no ModuleTile. Calculators/Proposals pages: unchanged.
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    // Home quick-actions.
+    const toolsSection = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Your tools"], section[aria-label="আপনার টুলস"]');
+      if (!section) return null;
+      const h3s = [...section.querySelectorAll('h3')];
+      return {
+        names: h3s.map((h) => h.textContent),
+        uppercaseHeadings: h3s.filter((h) => h.className.includes('uppercase')).map((h) => h.textContent),
+        text: section.textContent,
+        hasDisabledProposals: !!section.querySelector('div[aria-disabled="true"]'),
+      };
+    });
+    const QUICK_NAMES = ['LeadFlow', 'Learning Hub', 'PremiumPulse', 'SDPP Projection', 'Income Calculator', 'Retail Sales Dashboard', 'Proposals'];
+    check(
+      'home quick-actions: no group headings, exactly 7 tiles',
+      !!toolsSection &&
+        toolsSection.names.length === 7 &&
+        QUICK_NAMES.every((n) => toolsSection.names.includes(n)) &&
+        toolsSection.uppercaseHeadings.length === 0,
+      JSON.stringify(toolsSection && { names: toolsSection.names, uppercase: toolsSection.uppercaseHeadings }),
+    );
+    check(
+      'home quick-actions: icon + name only, no descriptions',
+      !!toolsSection &&
+        !toolsSection.text.includes('Leads, follow-ups, reminders and Lead360.') &&
+        !toolsSection.text.includes('Courses, quizzes and certificates.') &&
+        !toolsSection.text.includes('Opens in this tab'),
+      toolsSection ? toolsSection.text.slice(0, 160) : 'no tools section',
+    );
+    check(
+      'home quick-actions: disabled Proposals present with Coming soon',
+      !!toolsSection && toolsSection.hasDisabledProposals && toolsSection.text.includes('Coming soon'),
+      toolsSection ? toolsSection.text.slice(0, 160) : 'no tools section',
+    );
+
+    // Stat values by label inside the Summary strip (own first, team second).
+    const readStats = (label) =>
+      page.evaluate((lbl) => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        if (!section) return null;
+        const out = [];
+        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+          const labelEl = valueEl.previousElementSibling;
+          if (labelEl && labelEl.textContent.trim() === lbl) out.push(valueEl.textContent.trim());
+        }
+        return out;
+      }, label);
+    const goButton = (en, bn) =>
+      page.evaluate(([e, b]) => {
+        const a = [...document.querySelectorAll('a')].find(
+          (el) => el.textContent.includes(e) || el.textContent.includes(b),
+        );
+        return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
+      }, [en, bn]);
+    const hasTileNamed = (name) =>
+      page.evaluate(
+        (n) => [...document.querySelectorAll('h3')].some((h) => h.textContent === n),
+        name,
+      );
+    const summaryInfo = () =>
+      page.evaluate(() => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        return section ? section.textContent : null;
+      });
+
+    // Leads page (Team Lead 9990002): own 4 follow-ups / 1 due, team 12 / 8.
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
+    const leadsSummary = await summaryInfo();
+    check(
+      'leads page: DEMO summary strip with the LeadFlow note',
+      !!leadsSummary && leadsSummary.includes('DEMO DATA') && leadsSummary.includes('live lead data arrives with the LeadFlow connection'),
+      leadsSummary ? leadsSummary.slice(0, 160) : 'no summary strip',
+    );
+    check('leads page: follow-ups 4 own + 12 team', JSON.stringify(await readStats("Today's follow-ups")) === JSON.stringify(['4', '12']));
+    check('leads page: dues 1 own + 8 team', JSON.stringify(await readStats('Dues this week')) === JSON.stringify(['1', '8']));
+    const leadsGo = await goButton('Go to Lead Management', 'লিড ম্যানেজমেন্টে যান');
+    check(
+      'leads page: Go button links same-tab to LeadFlow',
+      leadsGo?.href === 'https://lead-flow-jet.vercel.app' && !leadsGo.target,
+      JSON.stringify(leadsGo),
+    );
+    check('leads page: no ModuleTile (Go button replaces it)', !(await hasTileNamed('LeadFlow')));
+
+    // Learning page (Team Lead): own 80% + Art of Selling, team 45% + 5 members.
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
+    const learningSummary = await summaryInfo();
+    check(
+      'learning page: DEMO summary strip with the Learning Hub note',
+      !!learningSummary && learningSummary.includes('DEMO DATA') && learningSummary.includes('live learning data arrives with the Learning Hub connection'),
+      learningSummary ? learningSummary.slice(0, 160) : 'no summary strip',
+    );
+    check('learning page: progress 80% own + 45% team', JSON.stringify(await readStats('Learning in progress')) === JSON.stringify(['80%', '45%']));
+    check(
+      'learning page: own course + team members line',
+      !!learningSummary &&
+        learningSummary.includes('The Art of Selling — Communication Masterclass') &&
+        learningSummary.includes('5 team members learning in progress'),
+      learningSummary ? learningSummary.slice(0, 240) : 'no summary strip',
+    );
+    const learningGo = await goButton('Go to Learning', 'লার্নিং-এ যান');
+    check(
+      'learning page: Go button links same-tab to Learning Hub',
+      learningGo?.href === 'https://shanta-life-learning-hub.vercel.app' && !learningGo.target,
+      JSON.stringify(learningGo),
+    );
+    check('learning page: no ModuleTile (Go button replaces it)', !(await hasTileNamed('Learning Hub')));
+
+    // Calculators page: unchanged — 3 tiles, no summary, no Go button.
+    await clickNav(page, 'ক্যালকুলেটর', 'Calculators');
+    await page.waitForFunction(() => document.body.textContent.includes('PremiumPulse'), { timeout: 5000 });
+    const calcTiles = await page.evaluate(() =>
+      ['PremiumPulse', 'SDPP Projection', 'Income Calculator'].every((n) =>
+        [...document.querySelectorAll('h3')].some((h) => h.textContent === n),
+      ),
+    );
+    check('calculators page: unchanged, 3 tiles present', calcTiles);
+    check(
+      'calculators page: no summary strip, no Go button',
+      (await summaryInfo()) === null && !(await goButton('Go to', 'যান')),
+      'summary/go must be absent here',
+    );
+
+    // Proposals page: unchanged — disabled tile + IT note, no summary, no Go button.
+    await clickNav(page, 'প্রপোজাল', 'Proposals');
+    await page.waitForFunction(() => document.body.textContent.includes('Proposals'), { timeout: 5000 });
+    const proposalsOk = await page.evaluate(
+      () =>
+        [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Proposals') &&
+        document.body.textContent.includes('production portal link is not confirmed yet'),
+    );
+    check('proposals page: unchanged, disabled tile + IT note', proposalsOk);
+    check(
+      'proposals page: no summary strip, no Go button',
+      (await summaryInfo()) === null && !(await goButton('Go to', 'যান')),
+      'summary/go must be absent here',
+    );
+    // Screenshots of the two new data pages (device gate).
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    await page.screenshot({ path: path.join(QA_DIR, 'leads-1440.png'), fullPage: true });
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    await page.screenshot({ path: path.join(QA_DIR, 'learning-1440.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---- 20b. Leads/Learning pages at 375 px (device gate) ----
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    const leadsOv = await overflowCheck(page);
+    check('screenshot leads-375: no horizontal overflow', !leadsOv.overflow, `scrollWidth=${leadsOv.scrollWidth} innerWidth=${leadsOv.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'leads-375.png'), fullPage: true });
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    const learningOv = await overflowCheck(page);
+    check('screenshot learning-375: no horizontal overflow', !learningOv.overflow, `scrollWidth=${learningOv.scrollWidth} innerWidth=${learningOv.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'learning-375.png'), fullPage: true });
+    await ctx.close();
   }
 } finally {
   await browser.close();

@@ -11,6 +11,22 @@
     />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+    <!-- Instant-open: warm the TLS connections to every module origin on
+         Hub load, so a tile click starts from a warm connection. The
+         document itself is prefetched on tile intent (hover / focus /
+         touch) — see src/performance/prefetch.ts. -->
+    <link rel="dns-prefetch" href="https://lead-flow-jet.vercel.app" />
+    <link rel="preconnect" href="https://lead-flow-jet.vercel.app" />
+    <link rel="dns-prefetch" href="https://shanta-life-learning-hub.vercel.app" />
+    <link rel="preconnect" href="https://shanta-life-learning-hub.vercel.app" />
+    <link rel="dns-prefetch" href="https://premium-illustrator.vercel.app" />
+    <link rel="preconnect" href="https://premium-illustrator.vercel.app" />
+    <link rel="dns-prefetch" href="https://sdpp-value-projection.vercel.app" />
+    <link rel="preconnect" href="https://sdpp-value-projection.vercel.app" />
+    <link rel="dns-prefetch" href="https://incomecalculator-delta.vercel.app" />
+    <link rel="preconnect" href="https://incomecalculator-delta.vercel.app" />
+    <link rel="dns-prefetch" href="https://retail-dashboard-zeta.vercel.app" />
+    <link rel="preconnect" href="https://retail-dashboard-zeta.vercel.app" />
     <title>Agent Hub — Shanta Life</title>
   </head>
   <body>

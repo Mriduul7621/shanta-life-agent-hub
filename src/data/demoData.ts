@@ -8,13 +8,14 @@
  * - Manager: downline totals (bigger numbers, team section).
  * - Admin: zero states everywhere (never-empty rule: cards say so plainly).
  *
- * Milestone 3: the Dashboard page now loads REAL Sales Command Center data
- * (live gviz CSV — see sccData.ts). The due-premium rows below stay DEMO:
- * the Due & Lapse sheet needs a service-account secret the Hub must not
- * hold (see M3_DESIGN.md §2.6), so the widget shows fictional rows until a
- * server-side due feed exists. The row shape mirrors the verified Due &
- * Lapse mapping (policy, owner, nextDue, premium, duePrem, status) so the
- * real feed can drop in later without a UI change.
+ * The Dashboard page now loads REAL Retail Sales data, role-scoped, via
+ * the Hub-side proxy (see api/retail-data.js and src/data/retailData.ts).
+ * The due-premium rows below stay DEMO: the Due & Lapse sheet needs a
+ * service-account secret the Hub must not hold (see M3_DESIGN.md §2.6),
+ * so the widget shows fictional rows until a server-side due feed exists.
+ * The row shape mirrors the verified Due & Lapse mapping (policy, owner,
+ * nextDue, premium, duePrem, status) so the real feed can drop in later
+ * without a UI change.
  */
 import type { Role } from '../auth/types';
 

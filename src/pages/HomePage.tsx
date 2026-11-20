@@ -2,10 +2,10 @@ import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { DEMO_DASHBOARDS, formatBdt } from '../data/demoData';
 import type { WidgetData } from '../data/demoData';
-import { GROUP_ORDER, GROUP_TITLE_KEY, MODULES } from '../data/modules';
+import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
-import { ModuleTile } from '../components/ModuleTile';
+import { QuickActionTile } from '../components/QuickActionTile';
 import { IconCheck, IconCoin, IconLearning, IconPhone } from '../components/icons';
 
 function greetingKey(hour: number) {
@@ -105,27 +105,16 @@ export function HomePage() {
         </section>
       )}
 
-      {/* Module grid, grouped */}
+      {/* Quick actions — one flat grid, icon + name (Mahadi 2026-11-20).
+          No group sections: every tool is one tap away, like an app
+          launcher. Tapping opens the app same-tab (see QuickActionTile). */}
       <section aria-label={t('modulesTitle')}>
         <h2 className="text-lg font-bold text-charcoal">{t('modulesTitle')}</h2>
         <p className="mt-1 text-sm text-charcoal/60">{t('modulesSubtitle')}</p>
-        <div className="mt-4 space-y-6">
-          {GROUP_ORDER.map((group) => {
-            const tiles = MODULES.filter((m) => m.group === group);
-            if (tiles.length === 0) return null;
-            return (
-              <div key={group}>
-                <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-charcoal/55">
-                  {t(GROUP_TITLE_KEY[group])}
-                </h3>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-                  {tiles.map((m) => (
-                    <ModuleTile key={m.id} module={m} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 xl:grid-cols-7">
+          {MODULES.map((m) => (
+            <QuickActionTile key={m.id} module={m} />
+          ))}
         </div>
       </section>
     </div>

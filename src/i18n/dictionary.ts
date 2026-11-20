@@ -67,6 +67,12 @@ export type DictKey =
   | 'opensInThisTab'
   | 'comingSoon'
   | 'proposalsSoon'
+  | 'demoBadge'
+  | 'moduleSummaryTitle'
+  | 'leadsDemoNote'
+  | 'learningDemoNote'
+  | 'goToLeadManagement'
+  | 'goToLearning'
   | 'profileTitle'
   | 'profileName'
   | 'profileRole'
@@ -103,18 +109,24 @@ export type DictKey =
   | 'teamLearningInProgress'
   | 'demoRoleNote'
   | 'demoFirstLoginChange'
-  // Milestone 3 — Dashboard (Sales Command Center summary)
+  // Retail Dashboard — scoped retail KPIs (replaces the SCC summary)
+  | 'dashboardPageTitle'
   | 'dashboardLiveFrom'
-  | 'dashboardOrgWide'
+  | 'dashboardScopeOwn'
+  | 'dashboardScopeTeam'
+  | 'dashboardScopeSubtree'
+  | 'dashboardScopeOrg'
+  | 'dashboardDemoBadge'
+  | 'dashboardDemoNote'
   | 'dashboardLastSynced'
   | 'dashboardRefresh'
   | 'dashboardRefreshing'
-  | 'dashboardSalesTitle'
-  | 'dashboardSalesSubtitle'
-  | 'dashboardTrainingTitle'
-  | 'dashboardTrainingSubtitle'
-  | 'dashboardLeadersTitle'
-  | 'dashboardLeadersSubtitle'
+  | 'dashboardBusinessTitle'
+  | 'dashboardBusinessSubtitle'
+  | 'dashboardLeadersReportsTitle'
+  | 'dashboardLeadersReportsSubtitle'
+  | 'dashboardLeadersBeTitle'
+  | 'dashboardLeadersBeSubtitle'
   | 'dashboardUnassigned'
   | 'dashboardUnassignedNote'
   | 'dashboardOpenFull'
@@ -123,33 +135,23 @@ export type DictKey =
   | 'dashboardLoadErrorDetail'
   | 'dashboardRetry'
   | 'dashboardRefreshFailed'
-  | 'dashboardSessionsUnavailable'
   | 'dashboardNoLeaders'
-  | 'kpiNewPremium'
+  | 'dashboardEmptyTitle'
+  | 'dashboardEmptyNoCode'
+  | 'dashboardEmptyNoRows'
+  | 'kpiTotalPremium'
+  | 'kpiFycp'
   | 'kpiPolicyQty'
-  | 'kpiLifetimePremium'
-  | 'kpiActiveProducers'
-  | 'kpiAvgPremiumFa'
-  | 'kpiAvgPolicyFa'
-  | 'kpiTotalSessions'
-  | 'kpiTotalParticipants'
-  | 'kpiTotalCost'
-  | 'kpiFaTrained'
-  | 'kpiSubAllProducers'
+  | 'kpiDuePremium'
+  | 'kpiPersistency'
+  | 'kpiActiveFas'
+  | 'kpiActiveFasValue'
   | 'kpiSubNewPolicies'
   | 'kpiSubAllTime'
-  | 'kpiSubFaActive'
-  | 'kpiSubPerActiveFa'
-  | 'kpiSubAllSessions'
-  | 'kpiSubTotalTrained'
-  | 'kpiSubFaTrained'
-  | 'trainingDetailTitle'
-  | 'trainingBasic'
-  | 'trainingReview'
-  | 'trainingFoundation'
-  | 'trainingGap'
-  | 'trainingGapSub'
-  | 'trainingGapSubOne'
+  | 'kpiSubRatios'
+  | 'kpiSubPersistency'
+  | 'kpiSubNoPolicies'
+  | 'kpiSubActiveFas'
   | 'leadersPolicies'
   // Milestone 3 — Due-premium widget (demo data)
   | 'dueWidgetTitle'
@@ -230,6 +232,14 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     opensInThisTab: 'Opens in this tab',
     comingSoon: 'Coming soon',
     proposalsSoon: 'Link to confirm with IT',
+    demoBadge: 'DEMO DATA',
+    moduleSummaryTitle: 'Summary',
+    leadsDemoNote:
+      'Demo data — live lead data arrives with the LeadFlow connection in a later milestone.',
+    learningDemoNote:
+      'Demo data — live learning data arrives with the Learning Hub connection in a later milestone.',
+    goToLeadManagement: 'Go to Lead Management',
+    goToLearning: 'Go to Learning',
     profileTitle: 'Profile',
     profileName: 'Name',
     profileRole: 'Role',
@@ -257,7 +267,7 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     pageLeadsIntro: 'Your leads, follow-ups and reminders live in LeadFlow.',
     pageLearningIntro: 'Your courses, quizzes and certificates live in the Learning Hub.',
     pageCalculatorsIntro: 'Premium, SDPP and income calculators.',
-    pageDashboardIntro: 'Production, product mix and team contribution.',
+    pageDashboardIntro: 'Sales business, dues and persistency — scoped to what you can see.',
     pageProposalsIntro: 'Proposal submission stays with the official agent portal (IT-owned).',
     pageProposalsNote: 'The production portal link is not confirmed yet. Please check with IT.',
     backHome: 'Back to Home',
@@ -266,53 +276,50 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamLearningInProgress: '{count} team members learning in progress',
     demoRoleNote: 'Demo view for this role — real data arrives in a later milestone.',
     demoFirstLoginChange: 'first-login PIN change',
-    dashboardLiveFrom: 'Live from Sales Command Center',
-    dashboardOrgWide: 'Organisation-wide',
+    dashboardPageTitle: 'Retail Sales Dashboard',
+    dashboardLiveFrom: 'Live from Retail Sales Dashboard',
+    dashboardScopeOwn: 'Own data',
+    dashboardScopeTeam: 'Own + team',
+    dashboardScopeSubtree: 'Own + subtree',
+    dashboardScopeOrg: 'Org-wide',
+    dashboardDemoBadge: 'DEMO DATA',
+    dashboardDemoNote: 'Demo data — fictional figures for the preview.',
     dashboardLastSynced: 'Last synced {time}',
     dashboardRefresh: 'Refresh',
     dashboardRefreshing: 'Refreshing…',
-    dashboardSalesTitle: 'Sales',
-    dashboardSalesSubtitle: 'All producers · all time',
-    dashboardTrainingTitle: 'Training',
-    dashboardTrainingSubtitle: 'Sessions and field-force training',
-    dashboardLeadersTitle: 'Top General Managers',
-    dashboardLeadersSubtitle: 'By new premium · active producers only',
+    dashboardBusinessTitle: 'Business overview',
+    dashboardBusinessSubtitle: 'All time · Due Premium is this month',
+    dashboardLeadersReportsTitle: 'Top team members',
+    dashboardLeadersReportsSubtitle: 'By total premium · your direct reports',
+    dashboardLeadersBeTitle: 'Top Business Executives',
+    dashboardLeadersBeSubtitle: 'By total premium · org-wide',
     dashboardUnassigned: 'Unassigned',
-    dashboardUnassignedNote: 'Premiums with no GM recorded',
+    dashboardUnassignedNote: 'Premiums that cannot be placed under a person in scope',
     dashboardOpenFull: 'Open the full dashboard',
     dashboardLoading: 'Loading live dashboard…',
     dashboardLoadError: 'Could not load the live dashboard.',
     dashboardLoadErrorDetail:
-      'Check your connection and try again, or open the full Sales Command Center.',
+      'Check your connection and try again, or open the full Retail Sales Dashboard.',
     dashboardRetry: 'Try again',
     dashboardRefreshFailed: 'Refresh failed — showing data from {time}',
-    dashboardSessionsUnavailable: 'Session data unavailable',
-    dashboardNoLeaders: 'No ranked managers yet',
-    kpiNewPremium: 'New premium',
+    dashboardNoLeaders: 'No business in scope yet',
+    dashboardEmptyTitle: 'No sales data in scope',
+    dashboardEmptyNoCode:
+      'No producer code is linked to this Employee ID yet. Ask T&D or your admin to link your code.',
+    dashboardEmptyNoRows: 'No business recorded in your scope yet.',
+    kpiTotalPremium: 'Total premium received',
+    kpiFycp: 'FYCP',
     kpiPolicyQty: 'Policies',
-    kpiLifetimePremium: 'Lifetime premium',
-    kpiActiveProducers: 'Active producers',
-    kpiAvgPremiumFa: 'Avg premium / FA',
-    kpiAvgPolicyFa: 'Avg policies / FA',
-    kpiTotalSessions: 'Training sessions',
-    kpiTotalParticipants: 'Participants',
-    kpiTotalCost: 'Training cost',
-    kpiFaTrained: 'FAs trained',
-    kpiSubAllProducers: 'All producers',
+    kpiDuePremium: 'Due premium — this month',
+    kpiPersistency: 'Persistency',
+    kpiActiveFas: 'Active field FAs',
+    kpiActiveFasValue: '{active} of {total}',
     kpiSubNewPolicies: 'New policies',
     kpiSubAllTime: 'All time',
-    kpiSubFaActive: 'FA tier, active status',
-    kpiSubPerActiveFa: 'Per active FA',
-    kpiSubAllSessions: 'All sessions',
-    kpiSubTotalTrained: 'Total trained',
-    kpiSubFaTrained: '{count} of {total} active FAs',
-    trainingDetailTitle: 'Training detail',
-    trainingBasic: 'Basic done',
-    trainingReview: 'Review done',
-    trainingFoundation: 'Foundation done',
-    trainingGap: 'Training gap',
-    trainingGapSub: '{count} active FAs not yet trained',
-    trainingGapSubOne: '1 active FA not yet trained',
+    kpiSubRatios: 'Deferred {deferred}% · Renewal {renewal}%',
+    kpiSubPersistency: '{inf} of {all} inforce',
+    kpiSubNoPolicies: 'No policies in scope',
+    kpiSubActiveFas: 'Sold in the last 6 months',
     leadersPolicies: '{count} policies',
     dueWidgetTitle: 'Due premiums',
     dueWidgetDemoNote:
@@ -392,6 +399,13 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     opensInThisTab: 'এই ট্যাবেই খুলবে',
     comingSoon: 'শীঘ্রই আসছে',
     proposalsSoon: 'লিংক আইটির সঙ্গে নিশ্চিত করতে হবে',
+    demoBadge: 'DEMO DATA',
+    moduleSummaryTitle: 'সারসংক্ষেপ',
+    leadsDemoNote: 'ডেমো ডেটা — লাইভ লিড ডেটা পরের মাইলস্টোনে লিডফ্লো সংযোগের সঙ্গে আসবে।',
+    learningDemoNote:
+      'ডেমো ডেটা — লাইভ লার্নিং ডেটা পরের মাইলস্টোনে লার্নিং হাব সংযোগের সঙ্গে আসবে।',
+    goToLeadManagement: 'লিড ম্যানেজমেন্টে যান',
+    goToLearning: 'লার্নিং-এ যান',
     profileTitle: 'প্রোফাইল',
     profileName: 'নাম',
     profileRole: 'ভূমিকা',
@@ -419,7 +433,7 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     pageLeadsIntro: 'আপনার লিডস, ফলো-আপ ও রিমাইন্ডার লিডফ্লোতে থাকে।',
     pageLearningIntro: 'আপনার কোর্স, কুইজ ও সার্টিফিকেট লার্নিং হাবে থাকে।',
     pageCalculatorsIntro: 'প্রিমিয়াম, এসডিপিপি ও ইনকাম ক্যালকুলেটর।',
-    pageDashboardIntro: 'প্রোডাকশন, প্রোডাক্ট মিক্স ও টিম অবদান।',
+    pageDashboardIntro: 'সেলস ব্যবসা, বকেয়া ও পারসিস্টেন্সি — আপনি যা দেখতে পারেন শুধু তা-ই।',
     pageProposalsIntro: 'প্রপোজাল জমা অফিসিয়াল এজেন্ট পোর্টালেই থাকে (আইটির তত্ত্বাবধানে)।',
     pageProposalsNote: 'প্রোডাকশন পোর্টালের লিংক এখনো নিশ্চিত হয়নি। আইটির সঙ্গে যোগাযোগ করুন।',
     backHome: 'হোমে ফিরুন',
@@ -428,53 +442,50 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamLearningInProgress: '{count} জন টিম মেম্বার শিখছেন',
     demoRoleNote: 'এই ভূমিকার ডেমো ভিউ — বাস্তব ডেটা পরের মাইলস্টোনে আসবে।',
     demoFirstLoginChange: 'প্রথম সাইন-ইনে পিন পরিবর্তন',
-    dashboardLiveFrom: 'সেলস কমান্ড সেন্টার থেকে লাইভ',
-    dashboardOrgWide: 'সারা প্রতিষ্ঠানজুড়ে',
+    dashboardPageTitle: 'রিটেইল সেলস ড্যাশবোর্ড',
+    dashboardLiveFrom: 'রিটেইল সেলস ড্যাশবোর্ড থেকে লাইভ',
+    dashboardScopeOwn: 'নিজের ডেটা',
+    dashboardScopeTeam: 'নিজের + টিম',
+    dashboardScopeSubtree: 'নিজের + অধীনস্থ সংগঠন',
+    dashboardScopeOrg: 'সারা প্রতিষ্ঠানজুড়ে',
+    dashboardDemoBadge: 'DEMO DATA',
+    dashboardDemoNote: 'ডেমো ডেটা — প্রিভিউয়ের জন্য কাল্পনিক হিসাব।',
     dashboardLastSynced: 'সর্বশেষ সিঙ্ক {time}',
     dashboardRefresh: 'রিফ্রেশ',
     dashboardRefreshing: 'রিফ্রেশ হচ্ছে…',
-    dashboardSalesTitle: 'সেলস',
-    dashboardSalesSubtitle: 'সব প্রোডিউসার · সর্বমোট',
-    dashboardTrainingTitle: 'ট্রেনিং',
-    dashboardTrainingSubtitle: 'সেশন ও ফিল্ড ফোর্স ট্রেনিং',
-    dashboardLeadersTitle: 'শীর্ষ জেনারেল ম্যানেজার',
-    dashboardLeadersSubtitle: 'নতুন প্রিমিয়াম অনুযায়ী · শুধুমাত্র সক্রিয় প্রোডিউসার',
+    dashboardBusinessTitle: 'ব্যবসার সারসংক্ষেপ',
+    dashboardBusinessSubtitle: 'সর্বমোট · বকেয়া প্রিমিয়াম এই মাসের',
+    dashboardLeadersReportsTitle: 'শীর্ষ টিম মেম্বার',
+    dashboardLeadersReportsSubtitle: 'মোট প্রিমিয়াম অনুযায়ী · আপনার সরাসরি রিপোর্টরা',
+    dashboardLeadersBeTitle: 'শীর্ষ বিজনেস এক্সিকিউটিভ',
+    dashboardLeadersBeSubtitle: 'মোট প্রিমিয়াম অনুযায়ী · সারা প্রতিষ্ঠানজুড়ে',
     dashboardUnassigned: 'বরাদ্দহীন',
-    dashboardUnassignedNote: 'যেসব প্রিমিয়ামের জিএম রেকর্ড নেই',
+    dashboardUnassignedNote: 'যেসব প্রিমিয়াম এই স্কোপে কারো অধীনে বসানো যায়নি',
     dashboardOpenFull: 'পূর্ণ ড্যাশবোর্ড খুলুন',
     dashboardLoading: 'লাইভ ড্যাশবোর্ড লোড হচ্ছে…',
     dashboardLoadError: 'লাইভ ড্যাশবোর্ড লোড করা যায়নি।',
     dashboardLoadErrorDetail:
-      'আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন, অথবা পূর্ণ সেলস কমান্ড সেন্টার খুলুন।',
+      'আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন, অথবা পূর্ণ রিটেইল সেলস ড্যাশবোর্ড খুলুন।',
     dashboardRetry: 'আবার চেষ্টা করুন',
     dashboardRefreshFailed: 'রিফ্রেশ ব্যর্থ — {time}-এর ডেটা দেখানো হচ্ছে',
-    dashboardSessionsUnavailable: 'সেশন ডেটা পাওয়া যায়নি',
-    dashboardNoLeaders: 'এখনো কোনো র‍্যাঙ্ক করা ম্যানেজার নেই',
-    kpiNewPremium: 'নতুন প্রিমিয়াম',
+    dashboardNoLeaders: 'এই স্কোপে এখনো কোনো ব্যবসা নেই',
+    dashboardEmptyTitle: 'এই স্কোপে কোনো সেলস ডেটা নেই',
+    dashboardEmptyNoCode:
+      'এই এমপ্লয়ি আইডির সাথে এখনো কোনো প্রোডিউসার কোড যুক্ত হয়নি। আপনার কোড যুক্ত করতে টি অ্যান্ড ডি বা অ্যাডমিনের সাথে যোগাযোগ করুন।',
+    dashboardEmptyNoRows: 'আপনার স্কোপে এখনো কোনো ব্যবসা রেকর্ড হয়নি।',
+    kpiTotalPremium: 'মোট প্রাপ্ত প্রিমিয়াম',
+    kpiFycp: 'এফওয়াইসিপি',
     kpiPolicyQty: 'পলিসি',
-    kpiLifetimePremium: 'লাইফটাইম প্রিমিয়াম',
-    kpiActiveProducers: 'সক্রিয় প্রোডিউসার',
-    kpiAvgPremiumFa: 'গড় প্রিমিয়াম / এফএ',
-    kpiAvgPolicyFa: 'গড় পলিসি / এফএ',
-    kpiTotalSessions: 'ট্রেনিং সেশন',
-    kpiTotalParticipants: 'অংশগ্রহণকারী',
-    kpiTotalCost: 'ট্রেনিং খরচ',
-    kpiFaTrained: 'প্রশিক্ষিত এফএ',
-    kpiSubAllProducers: 'সব প্রোডিউসার',
+    kpiDuePremium: 'বকেয়া প্রিমিয়াম — এই মাসে',
+    kpiPersistency: 'পারসিস্টেন্সি',
+    kpiActiveFas: 'সক্রিয় ফিল্ড এফএ',
+    kpiActiveFasValue: '{total} জনের মধ্যে {active} জন',
     kpiSubNewPolicies: 'নতুন পলিসি',
     kpiSubAllTime: 'সর্বমোট',
-    kpiSubFaActive: 'এফএ টিয়ার, সক্রিয়',
-    kpiSubPerActiveFa: 'সক্রিয় এফএ প্রতি',
-    kpiSubAllSessions: 'সব সেশন',
-    kpiSubTotalTrained: 'মোট প্রশিক্ষিত',
-    kpiSubFaTrained: '{total} জন সক্রিয় এফএর মধ্যে {count} জন',
-    trainingDetailTitle: 'ট্রেনিং বিস্তারিত',
-    trainingBasic: 'বেসিক সম্পন্ন',
-    trainingReview: 'রিভিউ সম্পন্ন',
-    trainingFoundation: 'ফাউন্ডেশন সম্পন্ন',
-    trainingGap: 'ট্রেনিং ঘাটতি',
-    trainingGapSub: '{count} জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন',
-    trainingGapSubOne: '1 জন সক্রিয় এফএ এখনো প্রশিক্ষিত নন',
+    kpiSubRatios: 'ডেফার্ড {deferred}% · রিনিউয়াল {renewal}%',
+    kpiSubPersistency: '{all}টির মধ্যে {inf}টি ইনফোর্স',
+    kpiSubNoPolicies: 'এই স্কোপে কোনো পলিসি নেই',
+    kpiSubActiveFas: 'গত ৬ মাসে বিক্রি করেছেন',
     leadersPolicies: '{count}টি পলিসি',
     dueWidgetTitle: 'বকেয়া প্রিমিয়াম',
     dueWidgetDemoNote:

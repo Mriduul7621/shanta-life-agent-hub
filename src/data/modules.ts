@@ -158,8 +158,6 @@ export const MODULES: HubModule[] = MODULE_DEFS.map((m) =>
   URL_OVERRIDES[m.id] ? { ...m, url: URL_OVERRIDES[m.id] } : m,
 );
 
-export const GROUP_ORDER: ModuleGroup[] = ['leads', 'learning', 'calculators', 'dashboard', 'proposals'];
-
 export const GROUP_TITLE_KEY: Record<ModuleGroup, DictKey> = {
   leads: 'groupLeads',
   learning: 'groupLearning',

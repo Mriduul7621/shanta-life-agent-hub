@@ -11,9 +11,13 @@ import tailwindcss from '@tailwindcss/vite';
  * - dev: local development — demo auth and local signing allowed.
  * - qa: QA builds — demo auth and local signing allowed (`npm run qa`
  *   forces HUB_BUILD_TARGET=qa itself).
- * - production: a production-target build FAILS FAST if VITE_DEMO_AUTH=true
- *   or any VITE_JWT_* signing variable is set, because demo users and
- *   signing keys must never ship in a production bundle.
+ * - production: a production-target build FAILS FAST if VITE_DEMO_AUTH=true,
+ *   any VITE_JWT_* signing variable is set, or HUB_DEMO_FIXTURE=true —
+ *   because demo users, signing keys and the synthetic retail demo slice
+ *   must never ship in a production bundle. (HUB_DEMO_FIXTURE is a
+ *   server-side flag for the /api/retail-data proxy, but the build guard
+ *   fails on it too so a production build can never be cut from an
+ *   environment that has it on.)
  *
  * The guard runs for `vite build` only — the dev server is local-only by
  * definition. It reads the merged environment the same way Vite does:
@@ -41,6 +45,13 @@ function assertProductionSafe(mode: string, target: BuildTarget): void {
       'Agent Hub build guard: refusing a production-target build with VITE_DEMO_AUTH=true.\n' +
         'Demo auth must never ship in a production build. Set HUB_BUILD_TARGET=dev (local dev) ' +
         'or HUB_BUILD_TARGET=qa (QA) for builds that need demo users.',
+    );
+  }
+  if (merged.HUB_DEMO_FIXTURE === 'true') {
+    throw new Error(
+      'Agent Hub build guard: refusing a production-target build with HUB_DEMO_FIXTURE=true.\n' +
+        'The synthetic retail demo slice (api/_lib/demoFixture.js) is a Preview-only feature. ' +
+        'Set HUB_BUILD_TARGET=dev or HUB_BUILD_TARGET=qa for builds that serve it.',
     );
   }
   const signingVars = Object.keys(merged).filter(
