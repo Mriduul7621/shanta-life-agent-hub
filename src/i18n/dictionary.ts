@@ -132,7 +132,9 @@ export type DictKey =
   | 'dueWidgetTitle'
   | 'dueWidgetOverdue'
   | 'dueWidgetDueOn'
-  | 'dueWidgetRecentTitle'
+  | 'dueWidgetUpcomingTitle'
+  | 'dueWidgetNoUpcoming'
+  | 'dueWidgetNoOverdue'
   // Phase 2 — live feeds (LeadFlow / Learning Hub / retail dues)
   | 'feedLoadError'
   | 'feedRetry'
@@ -317,7 +319,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetTitle: 'Due premiums',
     dueWidgetOverdue: 'Overdue',
     dueWidgetDueOn: 'Due {date}',
-    dueWidgetRecentTitle: 'Recent dues',
+    dueWidgetUpcomingTitle: 'Upcoming dues',
+    dueWidgetNoUpcoming: 'No upcoming dues',
+    dueWidgetNoOverdue: 'No overdue premiums',
     feedLoadError: 'Could not load this data.',
     feedRetry: 'Try again',
     moduleLoading: 'Loading…',
@@ -497,7 +501,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetTitle: 'বকেয়া প্রিমিয়াম',
     dueWidgetOverdue: 'মেয়াদোত্তীর্ণ',
     dueWidgetDueOn: '{date}-এ বকেয়া',
-    dueWidgetRecentTitle: 'সাম্প্রতিক বকেয়া',
+    dueWidgetUpcomingTitle: 'আসন্ন বকেয়া',
+    dueWidgetNoUpcoming: 'কোনো আসন্ন বকেয়া নেই',
+    dueWidgetNoOverdue: 'কোনো মেয়াদোত্তীর্ণ প্রিমিয়াম নেই',
     feedLoadError: 'এই ডেটা লোড করা যায়নি।',
     feedRetry: 'আবার চেষ্টা করুন',
     moduleLoading: 'লোড হচ্ছে…',

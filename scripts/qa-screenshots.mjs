@@ -1124,10 +1124,11 @@ try {
   // One widget only, on Home. Three states, no demo anywhere:
   // (a) unseeded Team Lead — the retail fetch fails under file://, so
   // the widget shows the error state + retry, never fixture figures;
-  // (b) Manager with a seeded cache — the live widget with the 3
-  // recent dues + MTD totals; (c) Admin with a seeded EMPTY summary —
-  // the plain empty state. The old demo rows ("DEMO-" policies) and
-  // the "showing 5 of 31" line are gone with the demo code.
+  // (b) Manager with a seeded cache — the two-column live widget
+  // (Upcoming + Overdue) + MTD totals; (c) Admin with a seeded EMPTY
+  // summary — the plain empty state. The old demo rows ("DEMO-"
+  // policies) and the "showing 5 of 31" line are gone with the demo
+  // code.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
@@ -1180,15 +1181,43 @@ try {
       widget.slice(0, 200),
     );
     check(
-      'due widget (manager, seeded): 3 recent dues (10 Oct ৳3,000, 10 Nov ৳5,000, 12 Nov ৳4,000)',
-      widget.includes('10 Oct 2026') && widget.includes('10 Nov 2026') && widget.includes('12 Nov 2026') &&
-        widget.includes('৳3,000') && widget.includes('৳5,000') && widget.includes('৳4,000'),
-      widget.slice(0, 400),
+      'due widget (manager, seeded): two columns — Overdue 10 Oct ৳3,000, 10 Nov ৳5,000, 12 Nov ৳4,000; Upcoming 20 Nov ৳8,000, 5 Dec ৳6,000, 8 Dec ৳2,000',
+      widget.includes('Upcoming dues') &&
+        widget.includes('Overdue') &&
+        widget.includes('10 Oct 2026') && widget.includes('10 Nov 2026') && widget.includes('12 Nov 2026') &&
+        widget.includes('20 Nov 2026') && widget.includes('5 Dec 2026') && widget.includes('8 Dec 2026') &&
+        widget.includes('৳3,000') && widget.includes('৳5,000') && widget.includes('৳4,000') &&
+        widget.includes('৳8,000') && widget.includes('৳6,000') && widget.includes('৳2,000'),
+      widget.slice(0, 500),
     );
     check(
       'due widget (manager, seeded): no demo text, no DEMO- rows',
       !/demo|ডেমো/i.test(widget) && !widget.includes('DEMO-'),
       widget.slice(0, 120),
+    );
+    await ctx.close();
+  }
+  {
+    // One column empty: the empty column shows its honest empty
+    // state, the other column still shows its rows.
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990003');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Manager'), { timeout: 5000 });
+    const oneColumn = testSummaryFor('9990003', 'manager', 'this-month');
+    oneColumn.dueRowsOverdue = [];
+    await seedFeedCaches(page, '9990003', { leadflow: null, learning: null, retail: oneColumn }, 'this-month');
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('৳38,000'), { timeout: 5000 });
+    const widget = await page.evaluate(() => {
+      const el = document.querySelector(
+        'section[aria-label="বকেয়া প্রিমিয়াম"], section[aria-label="Due premiums"]',
+      );
+      return el ? el.textContent : '';
+    });
+    check(
+      'due widget (one column empty): Overdue column says "No overdue premiums", Upcoming still shows rows',
+      widget.includes('No overdue premiums') && widget.includes('Upcoming dues') && widget.includes('20 Nov 2026') && widget.includes('৳8,000'),
+      widget.slice(0, 400),
     );
     await ctx.close();
   }
@@ -1201,7 +1230,8 @@ try {
     emptySummary.emptyReason = 'no-code';
     emptySummary.duePolicies = 0;
     emptySummary.duePremium = 0;
-    emptySummary.dueRows = [];
+    emptySummary.dueRowsOverdue = [];
+    emptySummary.dueRowsUpcoming = [];
     await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: emptySummary }, 'this-month');
     await page.reload({ waitUntil: 'networkidle0' });
     await page.waitForFunction(
@@ -2126,20 +2156,48 @@ try {
       dueWidgets[0]?.slice(0, 200),
     );
     check(
-      'home live due widget: 3 recent dues (10 Oct ৳3,000, 10 Nov ৳5,000, 20 Nov ৳8,000)',
-      dueWidgets[0]?.includes('Recent dues') &&
+      'home live due widget: two columns — Upcoming (20 Nov ৳8,000, 8 Dec ৳2,000, 9 Dec ৳2,500), Overdue (10 Oct ৳3,000, 10 Nov ৳5,000)',
+      dueWidgets[0]?.includes('Upcoming dues') &&
+        dueWidgets[0]?.includes('Overdue') &&
         dueWidgets[0]?.includes('10 Oct 2026') &&
         dueWidgets[0]?.includes('10 Nov 2026') &&
         dueWidgets[0]?.includes('20 Nov 2026') &&
+        dueWidgets[0]?.includes('8 Dec 2026') &&
+        dueWidgets[0]?.includes('9 Dec 2026') &&
         dueWidgets[0]?.includes('৳3,000') &&
         dueWidgets[0]?.includes('৳5,000') &&
-        dueWidgets[0]?.includes('৳8,000'),
-      dueWidgets[0]?.slice(0, 400),
+        dueWidgets[0]?.includes('৳8,000') &&
+        dueWidgets[0]?.includes('৳2,000') &&
+        dueWidgets[0]?.includes('৳2,500'),
+      dueWidgets[0]?.slice(0, 500),
     );
     check(
-      'home live due widget: overdue rows marked Overdue, no mobile anywhere',
-      dueWidgets[0]?.includes('Overdue') && !/mobile|মোবাইল|01[3-9]\d{8}/i.test(dueWidgets[0] ?? ''),
+      'home live due widget: no mobile anywhere in the widget',
+      !/mobile|মোবাইল|01[3-9]\d{8}/i.test(dueWidgets[0] ?? ''),
       dueWidgets[0]?.slice(0, 400),
+    );
+    // Two-column layout at desktop width: Upcoming left, Overdue
+    // right, on the same row, no overlap.
+    const dueLayout1440 = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+      if (!section) return null;
+      const heads = [...section.querySelectorAll('h4')].map((h) => {
+        const r = h.getBoundingClientRect();
+        return { text: h.textContent.trim(), top: r.top, left: r.left, right: r.right, bottom: r.bottom };
+      });
+      return {
+        up: heads.find((h) => h.text === 'Upcoming dues' || h.text === 'আসন্ন বকেয়া') ?? null,
+        over: heads.find((h) => h.text === 'Overdue' || h.text === 'মেয়াদোত্তীর্ণ') ?? null,
+      };
+    });
+    check(
+      'home live due widget: columns side-by-side at 1440 (Upcoming left, Overdue right)',
+      dueLayout1440?.up != null &&
+        dueLayout1440?.over != null &&
+        Math.abs(dueLayout1440.up.top - dueLayout1440.over.top) <= 2 &&
+        dueLayout1440.up.left < dueLayout1440.over.left &&
+        dueLayout1440.up.right < dueLayout1440.over.left,
+      JSON.stringify(dueLayout1440),
     );
     check(
       'home live due widget: scope + full-dashboard link, no live-note line',
@@ -2327,6 +2385,37 @@ try {
     await page.reload({ waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.body.textContent.includes('৳34,000'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
+    // Due columns: stacked at 375 (Upcoming above Overdue),
+    // side-by-side at 768 (Upcoming left, Overdue right).
+    const dueLayout = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+      if (!section) return null;
+      const heads = [...section.querySelectorAll('h4')].map((h) => {
+        const r = h.getBoundingClientRect();
+        return { text: h.textContent.trim(), top: r.top, left: r.left, right: r.right, bottom: r.bottom };
+      });
+      return {
+        up: heads.find((h) => h.text === 'Upcoming dues' || h.text === 'আসন্ন বকেয়া') ?? null,
+        over: heads.find((h) => h.text === 'Overdue' || h.text === 'মেয়াদোত্তীর্ণ') ?? null,
+      };
+    });
+    if (width === 375) {
+      check(
+        'home live 375: due columns stacked (Upcoming above Overdue)',
+        dueLayout?.up != null && dueLayout?.over != null && dueLayout.over.top >= dueLayout.up.bottom,
+        JSON.stringify(dueLayout),
+      );
+    } else {
+      check(
+        'home live 768: due columns side-by-side (Upcoming left, Overdue right)',
+        dueLayout?.up != null &&
+          dueLayout?.over != null &&
+          Math.abs(dueLayout.up.top - dueLayout.over.top) <= 2 &&
+          dueLayout.up.left < dueLayout.over.left &&
+          dueLayout.up.right < dueLayout.over.left,
+        JSON.stringify(dueLayout),
+      );
+    }
     const ov = await overflowCheck(page);
     check(`home live ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await waitForSplashGone(page);
@@ -2358,7 +2447,8 @@ try {
       duePolicies: 0,
       duePremium: 0,
       duesThisWeek: { count: 0, amount: 0, weekStart: '2026-11-15', weekEnd: '2026-11-21' },
-      dueRows: [],
+      dueRowsOverdue: [],
+      dueRowsUpcoming: [],
     };
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail });
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'this-month');
@@ -2928,6 +3018,8 @@ try {
     'By total premium · your direct reports',
     'By total premium · org-wide',
     'Due Premium is month-to-date',
+    // Old Due widget heading (split into Upcoming / Overdue columns).
+    'Recent dues',
     // Demo / live notes, badges, synced lines.
     'DEMO DATA',
     'Demo data — fictional figures for the preview.',

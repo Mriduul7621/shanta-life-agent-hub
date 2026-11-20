@@ -52,8 +52,10 @@
  *     resolve hook in scripts/qa-ts-resolve-hooks.mjs) must accept an
  *     OLD-shape proxy response (no newPremium/deferredPremium) and
  *     default the two fields to 0, on both the fresh-fetch and the
- *     cached paths; other required checks still reject bad shapes.
- *     Also asserts the service-worker cache name is v2.
+ *     cached paths; a pre-split response (legacy `dueRows` only)
+ *     must normalize into the two split lists; other required checks
+ *     still reject bad shapes. Also asserts the service-worker cache
+ *     name is v2.
  *  9. Retail-app reconciliation (stubbed payload): the Due Premium
  *     and Active FA definitions reconciled with the retail app
  *     (2026-11-20, Mahadi) — Due is month-to-date (a due later in
@@ -195,28 +197,43 @@ check(
   (admin.duesThisWeek?.amount ?? 0) >= weekSheet && withinPct(admin.duesThisWeek?.amount ?? 0, weekSheet, 5) && (admin.duesThisWeek?.count ?? 0) >= weekSheetPolicies,
   `${fmt(admin.duesThisWeek?.amount ?? 0)} (${admin.duesThisWeek?.count} pol) vs sheet ${fmt(weekSheet)} (${weekSheetPolicies} pol)`,
 );
-// Due rows: exactly 3 (or fewer when the scope has fewer dues),
-// sorted by nextDue ascending, each row owner + nextDue + premium
-// ONLY — no policy number, no mobile field anywhere.
-check('recompute: admin dueRows is 3 rows, sorted by nextDue', Array.isArray(admin.dueRows) && admin.dueRows.length === 3 && admin.dueRows.every((r, i) => i === 0 || admin.dueRows[i - 1].nextDue <= r.nextDue), JSON.stringify(admin.dueRows));
+// Due rows, split by today (Mahadi 2026-11-20): Overdue = nextDue
+// before today, earliest first; Upcoming = nextDue today or later,
+// nearest first; 3 rows each, each row owner + nextDue + premium
+// ONLY — no policy number, no mobile field anywhere. Recomputed
+// independently from the raw payload (same sort + policy tie-break),
+// so the checks hold whatever day the suite runs.
+const dueRowsSorted = payload.duePolicies
+  .filter((d) => d.policy && d.nextDue && String(d.status || '').trim().toLowerCase() === 'inforce' && num(d.premium) > 0)
+  .map((d) => ({ owner: String(d.owner || ''), nextDue: d.nextDue, premium: num(d.premium), policy: String(d.policy) }))
+  .sort((a, b) => (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : a.policy < b.policy ? -1 : 1));
+const stripRows = (list) => list.map(({ owner, nextDue, premium }) => ({ owner, nextDue, premium }));
+const overdueExp = stripRows(dueRowsSorted.filter((r) => r.nextDue < today).slice(0, 3));
+const upcomingExp = stripRows(dueRowsSorted.filter((r) => r.nextDue >= today).slice(0, 3));
 check(
-  'recompute: dueRows carry only owner/nextDue/premium (no mobile, no policy)',
-  Array.isArray(admin.dueRows) && admin.dueRows.every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium'),
-  JSON.stringify(admin.dueRows?.[0] ?? null),
+  'recompute: admin dueRowsOverdue == 3 earliest overdue Inforce dues',
+  JSON.stringify(admin.dueRowsOverdue) === JSON.stringify(overdueExp),
+  JSON.stringify(admin.dueRowsOverdue),
 );
 check(
-  'recompute: dueRows are the 3 earliest Inforce dues',
-  Array.isArray(admin.dueRows) &&
-    JSON.stringify(admin.dueRows.map((r) => r.nextDue)) ===
-      JSON.stringify(
-        payload.duePolicies
-          .filter((d) => d.policy && d.nextDue && String(d.status || '').trim().toLowerCase() === 'inforce' && num(d.premium) > 0)
-          .map((d) => d.nextDue)
-          .sort()
-          .slice(0, 3),
-      ),
-  JSON.stringify(admin.dueRows?.map((r) => r.nextDue)),
+  'recompute: admin dueRowsUpcoming == 3 nearest upcoming Inforce dues',
+  JSON.stringify(admin.dueRowsUpcoming) === JSON.stringify(upcomingExp),
+  JSON.stringify(admin.dueRowsUpcoming),
 );
+check(
+  'recompute: overdue top-3 are PRODIP DAS / AFIFA RAHMAN / MOHAMMAD HASAN (Aug 2026)',
+  JSON.stringify((admin.dueRowsOverdue ?? []).map((r) => [r.owner, r.nextDue, r.premium])) ===
+    JSON.stringify([['PRODIP DAS', '2026-08-28', 4150], ['AFIFA RAHMAN', '2026-08-28', 2000], ['MOHAMMAD HASAN', '2026-08-29', 5000]]),
+  JSON.stringify(admin.dueRowsOverdue),
+);
+check(
+  'recompute: due rows carry only owner/nextDue/premium (no mobile, no policy)',
+  Array.isArray(admin.dueRowsOverdue) &&
+    Array.isArray(admin.dueRowsUpcoming) &&
+    [...admin.dueRowsOverdue, ...admin.dueRowsUpcoming].every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium'),
+  JSON.stringify(admin.dueRowsOverdue?.[0] ?? admin.dueRowsUpcoming?.[0] ?? null),
+);
+check('recompute: no legacy dueRows field in the summary', !('dueRows' in admin));
 
 // ---- 4. Scoping (live payload) ----
 const um = summarizeWithIndex(index, { employeeId: '1101020102', role: 'team_lead' });
@@ -317,12 +334,20 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture mgr duesThisWeek 17000 (2)', mgr.duesThisWeek.count === 2 && mgr.duesThisWeek.amount === 17000, JSON.stringify(mgr.duesThisWeek));
   check('fixture lead duesThisWeek 17000 (2)', lead.duesThisWeek.count === 2 && lead.duesThisWeek.amount === 17000, JSON.stringify(lead.duesThisWeek));
   check('fixture emp duesThisWeek 0', emp.duesThisWeek.count === 0 && emp.duesThisWeek.amount === 0, JSON.stringify(emp.duesThisWeek));
-  // Due rows (top 3, nearest due date first; owner + nextDue +
-  // premium only). Overdue rows come first (D1012, Oct 10).
-  check('fixture admin dueRows D1012/D1001/D2001', JSON.stringify(adm.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRows));
-  check('fixture lead dueRows D1012/D1001/D1011', JSON.stringify(lead.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-20', 8000]]), JSON.stringify(lead.dueRows));
-  check('fixture emp dueRows D1001/D1002 (only 2)', JSON.stringify(emp.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-10', 5000], ['2026-12-08', 2000]]), JSON.stringify(emp.dueRows));
-  check('fixture dueRows carry only owner/nextDue/premium', [adm, mgr, lead, emp].every((s) => s.dueRows.every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium')), JSON.stringify(adm.dueRows[0]));
+  // Due rows, split by today (2026-11-20, pinned): Overdue =
+  // nextDue < today, earliest first; Upcoming = nextDue >= today
+  // (due today counts), nearest first; 3 each, owner + nextDue +
+  // premium only.
+  check('fixture admin overdue D1012/D1001/D2001', JSON.stringify(adm.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRowsOverdue));
+  check('fixture admin upcoming D1011/D1013/D1002', JSON.stringify(adm.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-12-05', 6000], ['2026-12-08', 2000]]), JSON.stringify(adm.dueRowsUpcoming));
+  check('fixture mgr overdue == admin overdue', JSON.stringify(mgr.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(mgr.dueRowsOverdue));
+  check('fixture mgr upcoming D1011/D1013/D1002', JSON.stringify(mgr.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-12-05', 6000], ['2026-12-08', 2000]]), JSON.stringify(mgr.dueRowsUpcoming));
+  check('fixture lead overdue D1012/D1001 (only 2)', JSON.stringify(lead.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000]]), JSON.stringify(lead.dueRowsOverdue));
+  check('fixture lead upcoming D1011/D1002/D1005', JSON.stringify(lead.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-12-08', 2000], ['2026-12-09', 2500]]), JSON.stringify(lead.dueRowsUpcoming));
+  check('fixture emp overdue D1001 (only 1)', JSON.stringify(emp.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-10', 5000]]), JSON.stringify(emp.dueRowsOverdue));
+  check('fixture emp upcoming D1002 (only 1)', JSON.stringify(emp.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-12-08', 2000]]), JSON.stringify(emp.dueRowsUpcoming));
+  check('fixture due rows carry only owner/nextDue/premium', [adm, mgr, lead, emp].every((s) => [...s.dueRowsOverdue, ...s.dueRowsUpcoming].every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium')), JSON.stringify(adm.dueRowsOverdue[0]));
+  check('fixture no legacy dueRows field', [adm, mgr, lead, emp].every((s) => !('dueRows' in s)));
   check('fixture dueWindow is MTD 11-01..11-20', adm.dueWindow?.start === '2026-11-01' && adm.dueWindow?.end === '2026-11-20', JSON.stringify(adm.dueWindow));
 }
 
@@ -750,6 +775,37 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   globalThis.sessionStorage.setItem(cacheKey, JSON.stringify({ summary: oldShape, employeeId: '2025019', syncedAt: Date.now() }));
   const cachedOld = loadRetailCached('2025019', ALL_TIME_SELECTION);
   check('old-shape: old-client cache entry normalizes on read', cachedOld !== null && cachedOld.summary.newPremium === 0 && cachedOld.summary.deferredPremium === 0, cachedOld ? 'normalized' : 'discarded');
+  // Old-proxy due rows (pre-split shape): a response carrying the
+  // legacy `dueRows` field but neither new list must normalize into
+  // the two split lists, by the local date — a browser on the new
+  // bundle against an older deployment's proxy (Vercel skew pin)
+  // still gets split rows instead of none. Dates are relative to
+  // the runtime local date so the check holds any day.
+  const localToday = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const addDays = (iso, n) => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const legacyShape = { ...admin };
+  delete legacyShape.dueRowsOverdue;
+  delete legacyShape.dueRowsUpcoming;
+  legacyShape.dueRows = [
+    { owner: 'Old One', nextDue: addDays(localToday, -2), premium: 1000 },
+    { owner: 'Old Two', nextDue: localToday, premium: 2000 },
+    { owner: 'Old Three', nextDue: addDays(localToday, 5), premium: 3000 },
+  ];
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => legacyShape });
+  const freshLegacy = await loadRetailFresh('test-token', '2025019', ALL_TIME_SELECTION);
+  check(
+    'old-shape: legacy dueRows splits into overdue/upcoming by local today',
+    JSON.stringify(freshLegacy.summary.dueRowsOverdue?.map((r) => r.owner)) === JSON.stringify(['Old One']) &&
+      JSON.stringify(freshLegacy.summary.dueRowsUpcoming?.map((r) => r.owner)) === JSON.stringify(['Old Two', 'Old Three']),
+    JSON.stringify({ o: freshLegacy.summary.dueRowsOverdue, u: freshLegacy.summary.dueRowsUpcoming }),
+  );
   // Other required checks are unchanged: a shape missing totalPremium
   // must still throw.
   const badShape = { ...oldShape };
@@ -825,7 +881,8 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('recon week: Nov 18 due inside the week (24000, 3 pol)', adm.duesThisWeek.count === 3 && adm.duesThisWeek.amount === 24000, JSON.stringify(adm.duesThisWeek));
   check('recon week: Nov 25 due outside the week', adm.duesThisWeek.amount === 17000 + 7000, String(adm.duesThisWeek.amount));
   check('recon ever-sold: never-sold FA in universe, not active (4 of 5)', adm.activeFas.active === 4 && adm.activeFas.total === 5, JSON.stringify(adm.activeFas));
-  check('recon dueRows: top 3 unchanged by the later dues', JSON.stringify(adm.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRows));
+  check('recon dueRowsOverdue: top 3 unchanged by the later dues', JSON.stringify(adm.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRowsOverdue));
+  check('recon dueRowsUpcoming: D1011/X9025/D1013 (Nov 25 due is upcoming, not MTD)', JSON.stringify(adm.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-11-25', 10000], ['2026-12-05', 6000]]), JSON.stringify(adm.dueRowsUpcoming));
 
   const lead = summarizeRetail(fx, { employeeId: '9990002', role: 'team_lead' }, FIXTURE_TODAY);
   check('recon lead: never-sold FA in team universe (3 of 4)', lead.activeFas.active === 3 && lead.activeFas.total === 4, JSON.stringify(lead.activeFas));

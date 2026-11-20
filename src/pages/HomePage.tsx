@@ -326,7 +326,7 @@ export function HomePage() {
       />
 
       {/* Due premiums — own dues. A loaded retail feed shows the
-          summary widget (the 3 most recent dues above the
+          summary widget (upcoming + overdue due columns above the
           month-to-date totals, or the plain empty text when there
           are none); a loading feed shows a skeleton, a failed fetch
           an error state with retry. */}
@@ -337,7 +337,8 @@ export function HomePage() {
             duePremium: retail.duePremium,
             dueMonth: retail.dueMonth,
             scope: retail.scope,
-            dueRows: retail.dueRows,
+            dueRowsOverdue: retail.dueRowsOverdue,
+            dueRowsUpcoming: retail.dueRowsUpcoming,
           }}
         />
       ) : retailFeed.status === 'loading' ? (

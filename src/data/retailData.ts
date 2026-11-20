@@ -80,11 +80,24 @@ export interface RetailSummary {
    *  from older proxy responses — the Home dues card falls back to
    *  the month figures. */
   duesThisWeek?: { count: number; amount: number; weekStart: string; weekEnd: string };
-  /** The 3 most recent dues (nearest due date first) for the Home
-   *  Due widget. Absent from older proxy responses — the widget
-   *  shows only the totals. Each row is owner name + due date +
-   *  premium only (no policy number, no mobile — the payload has
-   *  no mobile field). */
+  /** The 3 most overdue dues (earliest first) for the Home Due
+   *  widget's Overdue column. Absent from older proxy responses —
+   *  normalizeSummary() derives both lists from the old `dueRows`
+   *  field when they are absent (mixed-version tolerance); the
+   *  widget shows only the totals when neither is present. Each row
+   *  is owner name + due date + premium only (no policy number, no
+   *  mobile — the payload has no mobile field). */
+  dueRowsOverdue?: RetailDueRow[];
+  /** The 3 nearest upcoming dues (nearest first; due today counts
+   *  as upcoming) for the Home Due widget's Upcoming column. Same
+   *  absence rules as dueRowsOverdue. */
+  dueRowsUpcoming?: RetailDueRow[];
+  /** @deprecated Old-proxy shape (pre-split): the 3 most recent dues
+   *  (nearest due date first), overdue and upcoming mixed. Kept so a
+   *  browser running the new bundle against an older deployment's
+   *  proxy (Vercel skew pin) still gets rows — normalizeSummary()
+   *  splits it into dueRowsOverdue / dueRowsUpcoming by the local
+   *  date. The proxy no longer sends this field. */
   dueRows?: RetailDueRow[];
   persistency: { pct: number; inf: number; all: number } | null;
   activeFas: { active: number; total: number };
@@ -143,13 +156,30 @@ function isValidSummary(value: unknown): value is RetailSummary {
   );
 }
 
-/** Fill the optional new/deferred premium fields with 0 when absent (old-proxy shape). */
+/** Fill the optional new/deferred premium fields with 0 when absent (old-proxy shape),
+ * and derive the two due-row lists from the old `dueRows` field when the
+ * new fields are absent (a browser on the new bundle against an older
+ * deployment's proxy — Vercel skew pin — still gets split rows instead
+ * of none; the split uses the browser's local date, which is the Dhaka
+ * date for agents in Bangladesh). */
 function normalizeSummary(summary: RetailSummary): RetailSummary {
-  return {
+  const normalized: RetailSummary = {
     ...summary,
     newPremium: typeof summary.newPremium === 'number' ? summary.newPremium : 0,
     deferredPremium: typeof summary.deferredPremium === 'number' ? summary.deferredPremium : 0,
   };
+  if (
+    !Array.isArray(summary.dueRowsOverdue) &&
+    !Array.isArray(summary.dueRowsUpcoming) &&
+    Array.isArray(summary.dueRows)
+  ) {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const sorted = [...summary.dueRows].sort((a, b) => (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : 0));
+    normalized.dueRowsOverdue = sorted.filter((r) => r.nextDue < today);
+    normalized.dueRowsUpcoming = sorted.filter((r) => r.nextDue >= today);
+  }
+  return normalized;
 }
 
 function cacheKey(selection: PeriodSelection): string {

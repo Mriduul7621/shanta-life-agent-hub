@@ -14,8 +14,9 @@
  * The proxy returns ONLY this summary to the browser — never raw rows. The
  * Dashboard page renders aggregates only, so no policy-owner PII ever
  * leaves the server (stricter than spec §9.1, which allows returning the
- * visible slice). The ONE exception is `dueRows`: the Home Due widget
- * shows the viewer's 3 most recent dues, scoped server-side, each row
+ * visible slice). The ONE exception is the Home Due widget's due rows
+ * (`dueRowsOverdue` / `dueRowsUpcoming`): the viewer's 3 most overdue
+ * dues and 3 nearest upcoming dues, scoped server-side, each row
  * carrying ONLY the owner name, the due date and the premium — no
  * policy number, no mobile (the payload has no mobile field anywhere).
  *
@@ -48,8 +49,10 @@
  * newPremium / deferredPremium sums (FYCP = new + deferred) for the
  * Home FYCP card's sub-text, the `dueWindow` MTD range, `duesThisWeek`
  * (Inforce dues inside the current Bangladesh calendar week,
- * Sunday–Saturday, with its week range) and `dueRows` (the 3 most
- * recent dues, nearest due date first).
+ * Sunday–Saturday, with its week range) and the Home Due widget's
+ * two due-row lists (`dueRowsOverdue`: the 3 most overdue dues,
+ * earliest first; `dueRowsUpcoming`: the 3 nearest upcoming dues,
+ * nearest first, due today included).
  */
 import { periodDateWindow } from './periods.js';
 
@@ -729,14 +732,18 @@ function scopeDuesThisWeek(index, scope) {
   return { count: policies.size, amount, weekStart, weekEnd };
 }
 
-// The 3 most recent dues (nearest due date first) for the Home Due
-// widget: Inforce rows, scoped, sorted by nextDue ascending (policy
-// as the tie-break so the order is deterministic). Overdue rows come
-// first — they ARE the most recent dues. Each row carries ONLY the
-// owner name, the due date and the premium: no policy number, no
-// mobile (the payload has no mobile field anywhere — verified on the
-// full payload, 0 occurrences).
-function scopeDueRows(index, scope) {
+// The Home Due widget's two due-row lists (Mahadi 2026-11-20: the
+// widget shows Overdue and Upcoming side by side, 3 rows each):
+// Inforce rows, scoped, split by the Dhaka today — Overdue is
+// nextDue BEFORE today, earliest first (most overdue first);
+// Upcoming is nextDue TODAY or later, earliest first (nearest
+// first). Same rows scopeDuePremium uses (dueRowVisible), same
+// policy tie-break so the order is deterministic. Each row carries
+// ONLY the owner name, the due date and the premium: no policy
+// number, no mobile (the payload has no mobile field anywhere —
+// verified on the full payload, 0 occurrences).
+function scopeDueRowLists(index, scope) {
+  const { today } = index;
   const rows = [];
   for (const d of index.duePolicies) {
     if (!d.policy || !d.nextDue) continue;
@@ -747,7 +754,11 @@ function scopeDueRows(index, scope) {
     rows.push({ owner: String(d.owner || ''), nextDue: d.nextDue, premium, policy: String(d.policy) });
   }
   rows.sort((a, b) => (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : a.policy < b.policy ? -1 : 1));
-  return rows.slice(0, 3).map(({ owner, nextDue, premium }) => ({ owner, nextDue, premium }));
+  const strip = (list) => list.slice(0, 3).map(({ owner, nextDue, premium }) => ({ owner, nextDue, premium }));
+  return {
+    overdue: strip(rows.filter((r) => r.nextDue < today)),
+    upcoming: strip(rows.filter((r) => r.nextDue >= today)),
+  };
 }
 
 // Persistency, cumulative through today (retail pdPersistRows, cumulative):
@@ -898,7 +909,7 @@ export function summarizeWithIndex(index, user) {
   const business = scopeBusiness(index, scope);
   const due = scopeDuePremium(index, scope);
   const duesThisWeek = scopeDuesThisWeek(index, scope);
-  const dueRows = scopeDueRows(index, scope);
+  const dueRowLists = scopeDueRowLists(index, scope);
   const persistency = scopePersistency(index, scope);
   const activeFas = scopeActiveFas(index, scope);
   const leaderboard = scopeLeaderboard(index, scope, resolved, role);
@@ -949,11 +960,12 @@ export function summarizeWithIndex(index, user) {
     dueMonth: index.today.slice(0, 7),
     // The MTD window Due Premium covers, so the UI can show it.
     dueWindow: { start: index.dueStart, end: index.dueEnd },
-    // This week's dues (Bangladesh calendar week) + the 3 most
-    // recent dues for the Home widgets. Both are period-independent
-    // snapshots, like Due Premium.
+    // This week's dues (Bangladesh calendar week) + the Home Due
+    // widget's two due-row lists (3 most overdue, 3 nearest
+    // upcoming). Both are period-independent snapshots, like Due Premium.
     duesThisWeek,
-    dueRows,
+    dueRowsOverdue: dueRowLists.overdue,
+    dueRowsUpcoming: dueRowLists.upcoming,
     persistency,
     activeFas,
     leaderboard,

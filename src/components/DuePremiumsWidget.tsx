@@ -2,13 +2,17 @@
  * Due-premium widget (Milestone 3, live mode in Phase 2) — Home.
  *
  * The real due summary from the retail proxy — count + amount for
- * the month to date, scoped to the caller — plus the 3 most recent
- * dues (nearest due date first) above the totals. Each row carries
+ * the month to date, scoped to the caller — plus the due rows above
+ * the totals, split into two columns (Mahadi 2026-11-20): LEFT the
+ * 3 nearest upcoming dues (due today included), RIGHT the 3 most
+ * overdue dues (most overdue first). On a phone the columns stack,
+ * Upcoming first. Each column shows its own heading + up to 3 rows
+ * + an honest empty state when its list is empty. Each row carries
  * ONLY the owner name, the due date and the premium (no policy
- * number, no mobile — the payload has no mobile field anywhere);
- * overdue rows are marked Overdue. The full due list lives in the
- * Retail Sales Dashboard (linked). An older proxy response has no
- * `dueRows` — the widget then shows only the totals.
+ * number, no mobile — the payload has no mobile field anywhere).
+ * The full due list lives in the Retail Sales Dashboard (linked).
+ * An older proxy response has no row lists — the widget then shows
+ * only the totals.
  *
  * NO DEMO ANYWHERE (Mahadi 2026-11-20): the old demo-rows mode
  * (fictional customers and DEMO- policy numbers from demoData.ts)
@@ -28,9 +32,12 @@ export interface DueLiveSummary {
   /** 'YYYY-MM' — the month the Due Premium figure covers. */
   dueMonth: string;
   scope: RetailScope;
-  /** The 3 most recent dues (nearest due date first). Absent from
-   *  older proxy responses — the widget then shows only the totals. */
-  dueRows?: RetailDueRow[];
+  /** The 3 most overdue dues (earliest first). Absent from older
+   *  proxy responses — the widget then shows only the totals. */
+  dueRowsOverdue?: RetailDueRow[];
+  /** The 3 nearest upcoming dues (nearest first; due today counts
+   *  as upcoming). Absent from older proxy responses. */
+  dueRowsUpcoming?: RetailDueRow[];
 }
 
 const SCOPE_KEY = {
@@ -61,14 +68,74 @@ function formatMonth(ym: string, lang: Lang): string {
   });
 }
 
+/**
+ * One due column (Upcoming or Overdue): its heading, up to 3 rows,
+ * or its empty state. `markOverdue` is true only for the Upcoming
+ * column — the Overdue column's heading already says it, but an
+ * Upcoming row can go overdue on a stale cache (a tab left open
+ * overnight), so it still gets the marker when its date has passed.
+ */
+function DueColumn({
+  title,
+  rows,
+  emptyText,
+  markOverdue,
+  today,
+}: {
+  title: string;
+  rows: RetailDueRow[];
+  emptyText: string;
+  markOverdue: boolean;
+  today: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <h4 className="mb-1 text-xs font-bold uppercase tracking-wide text-charcoal/55">{title}</h4>
+      {rows.length === 0 ? (
+        <p className="py-2 text-sm text-charcoal/60">{emptyText}</p>
+      ) : (
+        <ul className="divide-y divide-cream-dark">
+          {rows.map((row) => (
+            <li
+              key={`${row.nextDue}-${row.owner}-${row.premium}`}
+              className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-charcoal">{row.owner}</p>
+                <p className="truncate text-xs text-charcoal/55">
+                  {t('dueWidgetDueOn', { date: formatDueDate(row.nextDue) })}
+                  {markOverdue && row.nextDue < today && (
+                    <>
+                      {' · '}
+                      <span className="font-semibold text-sunset-dark">{t('dueWidgetOverdue')}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+              <p className="shrink-0 text-sm font-bold tabular-nums text-charcoal">
+                {formatBdt(row.premium)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function DuePremiumsWidget({ live }: { live: DueLiveSummary }) {
   const { t, lang } = useI18n();
   const retailUrl = MODULES.find((m) => m.id === 'retail-dashboard')?.url;
-  const rows = live.dueRows ?? [];
-  // The month totals are month-to-date; the rows are the 3 most
-  // recent dues regardless of window, so rows can exist while the
-  // MTD totals are 0 (all dues later this month, or all overdue).
-  const empty = live.duePolicies === 0 && live.duePremium === 0 && rows.length === 0;
+  const overdue = live.dueRowsOverdue ?? [];
+  const upcoming = live.dueRowsUpcoming ?? [];
+  // Either list present means the proxy sends the split rows; when
+  // neither is present (older proxy) the widget shows only the
+  // totals. The month totals are month-to-date; the rows are
+  // window-independent, so rows can exist while the MTD totals are
+  // 0 (all dues later this month, or all overdue).
+  const hasRowLists = live.dueRowsOverdue !== undefined || live.dueRowsUpcoming !== undefined;
+  const empty = live.duePolicies === 0 && live.duePremium === 0 && overdue.length === 0 && upcoming.length === 0;
   const today = localIso(new Date());
   return (
     <section
@@ -86,37 +153,22 @@ export function DuePremiumsWidget({ live }: { live: DueLiveSummary }) {
         <p className="mt-3 text-base font-medium text-charcoal/70">{t('widgetDuesMonthEmpty')}</p>
       ) : (
         <div className="mt-4 space-y-4">
-          {rows.length > 0 && (
-            <div>
-              <h4 className="mb-1 text-xs font-bold uppercase tracking-wide text-charcoal/55">
-                {t('dueWidgetRecentTitle')}
-              </h4>
-              <ul className="divide-y divide-cream-dark">
-                {rows.map((row) => (
-                  <li
-                    key={`${row.nextDue}-${row.owner}-${row.premium}`}
-                    className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-charcoal">{row.owner}</p>
-                      <p className="truncate text-xs text-charcoal/55">
-                        {t('dueWidgetDueOn', { date: formatDueDate(row.nextDue) })}
-                        {row.nextDue < today && (
-                          <>
-                            {' · '}
-                            <span className="font-semibold text-sunset-dark">
-                              {t('dueWidgetOverdue')}
-                            </span>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-sm font-bold tabular-nums text-charcoal">
-                      {formatBdt(row.premium)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+          {hasRowLists && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <DueColumn
+                title={t('dueWidgetUpcomingTitle')}
+                rows={upcoming}
+                emptyText={t('dueWidgetNoUpcoming')}
+                markOverdue
+                today={today}
+              />
+              <DueColumn
+                title={t('dueWidgetOverdue')}
+                rows={overdue}
+                emptyText={t('dueWidgetNoOverdue')}
+                markOverdue={false}
+                today={today}
+              />
             </div>
           )}
           <div>

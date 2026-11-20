@@ -30,10 +30,14 @@
  * (9990012's is 300 days old and still counts) -> 4 of 4 org-wide.
  * Dues this week (Sun 15 – Sat 21 Nov 2026): sheet D1011 8,000 +
  * T-series ledger T9002 9,000 (instalment on the 15th) = 17,000
- * (2 pol) org-wide; 9990001 has none. Due rows (top 3, nearest due
- * first): org D1012 (10-10, 3,000), D1001 (11-10, 5,000), D2001
- * (11-12, 4,000); team lead D1012, D1001, D1011 (11-20, 8,000);
- * 9990001 has only D1001 and D1002 (12-08, 2,000).
+ * (2 pol) org-wide; 9990001 has none. Due rows (split by today,
+ * Mahadi 2026-11-20 — Overdue: nextDue < today, earliest first;
+ * Upcoming: nextDue >= today, nearest first; 3 each): org overdue
+ * D1012 (10-10, 3,000), D1001 (11-10, 5,000), D2001 (11-12, 4,000);
+ * org upcoming D1011 (11-20, 8,000), D1013 (12-05, 6,000), D1002
+ * (12-08, 2,000); team lead overdue D1012 + D1001, upcoming D1011,
+ * D1002, D1005 (12-09, 2,500); 9990001 overdue D1001 only,
+ * upcoming D1002 only.
  *
  * Period spread (pinned to 2026-11-20 in the QA): D1002 sits 100 days
  * back (in 6m, out of 3m) so the periods differ visibly — org totals:
