@@ -2,6 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
+import { initAndroidBackButton } from './native/backButton';
+
+// Android shell only: back walks WebView history, exits only at the Hub
+// root. Inert in the browser / PWA / QA (no Capacitor runtime there).
+initAndroidBackButton();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

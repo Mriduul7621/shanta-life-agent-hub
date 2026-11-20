@@ -1,9 +1,14 @@
 {
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -16,6 +21,8 @@
   "name": "shanta-life-agent-hub",
   "private": true,
   "scripts": {
+    "android:assets": "node scripts/android-assets.mjs",
+    "android:sync": "npx cap sync android",
     "build": "tsc -b && vite build",
     "dev": "vite",
     "keygen": "node scripts/gen-dev-keys.mjs",

@@ -241,13 +241,27 @@ production build guard fails if the flag is on). If the fetch fails, the
 page shows an error state with Retry and the link to the full Retail Sales
 Dashboard; it never substitutes demo numbers for live ones.
 
-### PWA / Capacitor
+### PWA / Capacitor (Android app)
 
 The app ships a web manifest, a service worker (app-shell caching, registered
 in production builds only) and a geometric app icon. It uses a relative Vite
-base (`base: './'`) so the same build runs from `file://` and, later, from a
-Capacitor webview. Capacitor is **not** initialised yet — that is a later
-milestone.
+base (`base: './'`) so the same build runs from `file://` and from a
+Capacitor webview.
+
+The Android shell is Capacitor 8 (`com.shantalife.agenthub`, "Agent Hub")
+and **remote-loads the live production Hub** (`server.url`) — the APK
+contains no copy of the web app, so every web deploy reaches installed
+phones immediately with no new APK. The six module origins open in-app
+(`server.allowNavigation`); the back button walks WebView history and
+exits only at the Hub root (`src/native/backButton.ts` + the
+`@capacitor/app` plugin); a local error page (`android-web/`,
+`server.errorPath`) replaces the blank WebView when offline. Release
+signing is from day one (release keystore in GitHub Secrets, never in
+the repo); the version is owned by `android/version.properties`. Full
+release procedure: `docs/ANDROID_RELEASE.md`. The CI workflow
+(`.github/workflows/android.yml`) is manual-dispatch only — and it must
+reach the repo via the github.com web UI, because the GitHub App cannot
+push workflow files.
 
 ## What is demo vs real
 
@@ -275,7 +289,9 @@ milestone.
    it has never been run anywhere.
 3. **Proposals portal URL** — only the UAT URL exists in the exploration
    report; the production URL needs IT confirmation. Never link UAT from the Hub.
-4. **Capacitor wrap** for a Play Store / installable build.
+4. **Capacitor wrap** — done (Android shell, remote-load, direct APK
+   distribution; see `docs/ANDROID_RELEASE.md`). Play Store listing is a
+   later decision, not release 1.
 5. **LeadFlow and Learning Hub SSO join** — in-Hub framing + token sign-in;
    real widget data from LeadFlow / Learning Hub.
 6. **Due-premium real data** — needs a Hub-side server endpoint holding the
