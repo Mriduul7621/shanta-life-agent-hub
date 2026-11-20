@@ -7,6 +7,7 @@ import type { AuthError, AuthProvider, HubUser } from './types';
 import { clearRetailCache } from '../data/retailData';
 import { clearLeadflowCache } from '../data/leadflowData';
 import { clearLearningCache } from '../data/learningData';
+import { syncPushSubscription } from '../native/push';
 
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
 const SESSION_CHECK_MS = 30_000;
@@ -100,6 +101,17 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [clearSession]);
+
+  // Native push: keep the FCM topic subscription in step with the
+  // session — subscribe on sign-in / session restore, unsubscribe on
+  // sign-out / expiry. Gated on `restoring` so launch does not
+  // unregister before the saved session is known. A no-op on web
+  // (syncPushSubscription returns immediately off-native) and never
+  // throws — push must never break auth.
+  useEffect(() => {
+    if (restoring) return;
+    void syncPushSubscription(user, token);
+  }, [user, token, restoring]);
 
   // Periodic expiry check: the 1-hour session ends even if the tab stays open.
   useEffect(() => {

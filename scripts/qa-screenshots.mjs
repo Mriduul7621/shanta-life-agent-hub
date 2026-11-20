@@ -221,6 +221,36 @@
  *     android-promo-bn-375.png, login-android-375.png,
  *     login-promo-375.png.
  *
+ * Checks (FCM push notifications — 29):
+ * 29. The pushRouting bundle builds for Node (esbuild, like jwt.ts).
+ *     Pure routing (the REAL src/native/pushRouting.ts): topic
+ *     derivation (valid ID →
+ *     user-<id>, whitespace trimmed, empty / whitespace / bad
+ *     characters / non-string → null) and tap routing (leadflow →
+ *     LeadFlow URL, learning → Learning Hub URL, module fallback,
+ *     learning-hub alias, relative route appended incl. query,
+ *     absolute / protocol-relative / fragment routes ignored,
+ *     unknown / missing / null data → Home '/'). The
+ *     /api/push-subscribe route handler (imported directly): no auth
+ *     → 401, bad token → 401, valid JWT + missing FCM token → 400,
+ *     GET → 405, valid JWT + valid body with no service account →
+ *     503 push_not_configured (graceful degradation — the Firebase
+ *     project does not exist yet). Bundle split (local QA only): the
+ *     eager index chunk contains neither the '@capacitor/
+ *     push-notifications' specifier nor the plugin's registration
+ *     call (`"PushNotifications",{}`), while a lazy chunk does — the
+ *     dynamic import keeps the plugin out of the eager bundle, so the
+ *     web bundle pays nothing for push; and in the harness
+ *     Capacitor.isNativePlatform() is false, so the native guard
+ *     holds (window.Capacitor itself IS defined in any browser — the
+ *     core always installs the global; nativeness is the bridge
+ *     check, not the global's presence).
+ *     (The plugin has no web implementation — its lazy chunk is only
+ *     the registration stub; the real implementation lives in the
+ *     Android shell.) Native push itself (permission, registration,
+ *     tap delivery) cannot run in headless Chrome — it needs the
+ *     device build.
+ *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
  *     Income) render as <img> with the expected live URL, local icons
@@ -447,6 +477,27 @@ let jwtBundleDir = null;
     summarizeAndExit(1);
   }
   jwtNode = await import(pathToFileURL(bundlePath).href);
+}
+
+// ---- Bundle the app's pushRouting.ts for Node (same pattern) ----
+let pushRouting = null;
+let pushBundleDir = null;
+{
+  pushBundleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-push-'));
+  const bundlePath = path.join(pushBundleDir, 'push-routing-bundle.mjs');
+  const esbuild = spawnSync(path.join(ROOT, 'node_modules', '.bin', 'esbuild'), [
+    path.join(ROOT, 'src', 'native', 'pushRouting.ts'),
+    '--bundle',
+    '--platform=node',
+    '--format=esm',
+    '--target=node20',
+    `--outfile=${bundlePath}`,
+  ], { encoding: 'utf8' });
+  check('pushRouting bundle builds for Node (esbuild)', esbuild.status === 0, esbuild.status === 0 ? '' : `${esbuild.stdout ?? ''}${esbuild.stderr ?? ''}`.slice(-300));
+  if (esbuild.status !== 0) {
+    summarizeAndExit(1);
+  }
+  pushRouting = await import(pathToFileURL(bundlePath).href);
 }
 
 // ---------------------------------------------------------------------------
@@ -3318,9 +3369,134 @@ try {
     }
     await ctx.close();
   }
+
+  // ---- 29. FCM push notifications (Mahadi 2026-11-21) ----
+  // Pure routing through the REAL pushRouting module (bundled above).
+  // Native push itself (permission, registration, tap delivery) cannot
+  // run in headless Chrome — it needs the device build — so this
+  // section proves the parts that CAN be proven here: topic names,
+  // tap targets, the subscribe route's auth + graceful degradation,
+  // and that the web bundle never pays for the plugin.
+  {
+    const { userPushTopic, resolvePushTarget } = pushRouting;
+    const LF = 'https://lead-flow-jet.vercel.app';
+    const LH = 'https://shanta-life-learning-hub.vercel.app';
+    check("push topic: '2025019' → user-2025019", userPushTopic('2025019') === 'user-2025019', userPushTopic('2025019') ?? 'null');
+    check("push topic: whitespace is trimmed", userPushTopic('  2025019  ') === 'user-2025019', userPushTopic('  2025019  ') ?? 'null');
+    check('push topic: empty → null', userPushTopic('') === null);
+    check('push topic: whitespace-only → null', userPushTopic('   ') === null);
+    check("push topic: slash → null", userPushTopic('abc/def') === null);
+    check("push topic: space → null", userPushTopic('user 1') === null);
+    check('push topic: non-string → null', userPushTopic(123) === null);
+    check('push route: leadflow → LeadFlow URL', resolvePushTarget({ source: 'leadflow' }) === LF, resolvePushTarget({ source: 'leadflow' }));
+    check('push route: learning → Learning Hub URL', resolvePushTarget({ source: 'learning' }) === LH, resolvePushTarget({ source: 'learning' }));
+    check('push route: module fallback (no source)', resolvePushTarget({ module: 'leadflow' }) === LF, resolvePushTarget({ module: 'leadflow' }));
+    check("push route: 'learning-hub' alias", resolvePushTarget({ source: 'learning-hub' }) === LH, resolvePushTarget({ source: 'learning-hub' }));
+    check('push route: relative route is appended', resolvePushTarget({ source: 'leadflow', route: '/workbench' }) === `${LF}/workbench`, resolvePushTarget({ source: 'leadflow', route: '/workbench' }));
+    check('push route: route with query is appended', resolvePushTarget({ source: 'learning', route: '/courses/abc?x=1' }) === `${LH}/courses/abc?x=1`, resolvePushTarget({ source: 'learning', route: '/courses/abc?x=1' }));
+    check('push route: absolute URL route is ignored', resolvePushTarget({ source: 'leadflow', route: 'https://evil.example.com/x' }) === LF, resolvePushTarget({ source: 'leadflow', route: 'https://evil.example.com/x' }));
+    check('push route: protocol-relative route is ignored', resolvePushTarget({ source: 'leadflow', route: '//evil.example.com/x' }) === LF, resolvePushTarget({ source: 'leadflow', route: '//evil.example.com/x' }));
+    check('push route: fragment is stripped from the route', resolvePushTarget({ source: 'leadflow', route: '/a#b' }) === `${LF}/a`, resolvePushTarget({ source: 'leadflow', route: '/a#b' }));
+    check("push route: unknown source → Home '/'", resolvePushTarget({ source: 'unknown' }) === '/', resolvePushTarget({ source: 'unknown' }));
+    check("push route: empty data → Home '/'", resolvePushTarget({}) === '/', resolvePushTarget({}));
+    check("push route: null data → Home '/'", resolvePushTarget(null) === '/', resolvePushTarget(null));
+  }
+
+  // The subscribe route handler, imported directly (plain Node ESM —
+  // no bundling needed). The Firebase project does not exist yet, so
+  // no service account is configured in this process: the success
+  // path is untestable here, and the 503 graceful-degradation path is
+  // exactly what must hold until the project exists.
+  {
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+    const { default: pushSubscribe } = await import(pathToFileURL(path.join(ROOT, 'api', 'push-subscribe.js')).href);
+    const fakeRes = () => {
+      const res = { statusCode: null, headers: {}, body: null };
+      res.setHeader = (k, v) => { res.headers[k] = v; };
+      res.status = (code) => { res.statusCode = code; return res; };
+      res.json = (obj) => { res.body = obj; return res; };
+      res.end = () => res;
+      return res;
+    };
+    const validToken = await jwtNode.signSsoToken({ sub: '9990001', name: 'Test Agent', role: 'employee' }, privateB64);
+    const authHeader = { authorization: `Bearer ${validToken}` };
+
+    let res = fakeRes();
+    await pushSubscribe({ method: 'POST', headers: {}, body: { token: 'fcm-token-123' } }, res);
+    check('push-subscribe: no auth → 401', res.statusCode === 401, String(res.statusCode));
+
+    res = fakeRes();
+    await pushSubscribe({ method: 'POST', headers: { authorization: 'Bearer not-a-token' }, body: { token: 'fcm-token-123' } }, res);
+    check('push-subscribe: bad token → 401', res.statusCode === 401, String(res.statusCode));
+
+    res = fakeRes();
+    await pushSubscribe({ method: 'POST', headers: authHeader, body: {} }, res);
+    check('push-subscribe: valid JWT + missing FCM token → 400', res.statusCode === 400, String(res.statusCode));
+
+    res = fakeRes();
+    await pushSubscribe({ method: 'GET', headers: authHeader, body: {} }, res);
+    check('push-subscribe: GET → 405', res.statusCode === 405, String(res.statusCode));
+
+    res = fakeRes();
+    await pushSubscribe({ method: 'POST', headers: authHeader, body: { token: 'fcm-token-123' } }, res);
+    check(
+      'push-subscribe: valid JWT + valid body, no service account → 503 push_not_configured',
+      res.statusCode === 503 && res.body?.error === 'push_not_configured',
+      `${res.statusCode} ${JSON.stringify(res.body)}`,
+    );
+  }
+
+  // Bundle split (local QA only — HUB_QA_URL mode has no local dist):
+  // the eager index chunk must not contain the plugin at all — the
+  // dynamic import keeps it in a lazy chunk. The canary is the
+  // plugin's registration call (`"PushNotifications",{}`): it exists
+  // only in the plugin's registration chunk (push.ts references the
+  // plugin by property name, never by that call), so its absence from
+  // the index chunk + presence in some lazy chunk proves the split.
+  // And in this harness there is no Capacitor runtime at all, so the
+  // native guard is false.
+  if (LOCAL_QA) {
+    const assetFiles = fs.readdirSync(path.join(ROOT, 'dist', 'assets')).filter((f) => f.endsWith('.js'));
+    const indexFile = assetFiles.find((f) => f.startsWith('index-'));
+    const indexText = indexFile ? fs.readFileSync(path.join(ROOT, 'dist', 'assets', indexFile), 'utf8') : '';
+    const lazyTexts = assetFiles
+      .filter((f) => f !== indexFile)
+      .map((f) => fs.readFileSync(path.join(ROOT, 'dist', 'assets', f), 'utf8'));
+    check(
+      "push bundle: eager index chunk has no '@capacitor/push-notifications' specifier",
+      indexFile !== undefined && !indexText.includes('@capacitor/push-notifications'),
+      indexFile ?? 'no index chunk',
+    );
+    check(
+      'push bundle: eager index chunk has no plugin registration call ("PushNotifications",{})',
+      indexFile !== undefined && !indexText.includes('"PushNotifications",{}'),
+      indexFile ?? 'no index chunk',
+    );
+    check(
+      'push bundle: a lazy chunk carries the plugin registration (dynamic import split it out)',
+      lazyTexts.some((t) => t.includes('"PushNotifications",{}')),
+      `${lazyTexts.length} lazy chunk(s)`,
+    );
+  }
+  {
+    // window.Capacitor IS defined in any browser (the core always
+    // installs the global) — what the native guard actually checks is
+    // isNativePlatform(), i.e. the native bridge's presence. That is
+    // what this check asserts: the function exists and returns false.
+    const { ctx, page } = await newPage(browser, 375);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    const probe = await page.evaluate(() => {
+      const cap = window.Capacitor;
+      if (!cap || typeof cap.isNativePlatform !== 'function') return 'missing';
+      return cap.isNativePlatform() ? 'native' : 'web';
+    });
+    check('push web: Capacitor reports non-native in the browser harness (native guard is false)', probe === 'web', probe);
+    await ctx.close();
+  }
 } finally {
   await browser.close();
-  for (const dir of [jwtBundleDir, prodTmp, stubTmpDir]) {
+  for (const dir of [jwtBundleDir, pushBundleDir, prodTmp, stubTmpDir]) {
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   }
 }
