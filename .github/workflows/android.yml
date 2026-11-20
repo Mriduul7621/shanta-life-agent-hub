@@ -4,9 +4,10 @@
 # builds the signed release APK from the checked-in version source
 # (android/version.properties), publishes it to GitHub Releases (a
 # versioned v<versionName> release plus the rolling `latest` release —
-# the asset is named "Agent Hub V-<versionName>.<versionCode>.apk" so
+# the asset is named "Agent-Hub-V-<versionName>.<versionCode>.apk" so
 # the downloaded file carries the app name + version, Mahadi
-# 2026-11-21; the web app's popup and login link point at the Hub's
+# 2026-11-21 (dashes, not spaces: GitHub turns spaces into dots in
+# release asset names); the web app's popup and login link point at the Hub's
 # /api/download-apk route, which redirects to the newest .apk asset —
 # so the Hub link never changes across versions), and uploads it as a
 # workflow artifact (90-day backup).
@@ -155,7 +156,7 @@ jobs:
             echo "## Agent Hub Android release"
             echo ""
             echo "- Version: ${{ steps.version.outputs.name }} (versionCode ${{ steps.version.outputs.code }})"
-            echo "- APK: Agent Hub V-${{ steps.version.outputs.name }}.${{ steps.version.outputs.code }}.apk"
+            echo "- APK: Agent-Hub-V-${{ steps.version.outputs.name }}.${{ steps.version.outputs.code }}.apk"
             echo "- SHA-256: \`$(cat "$APK.sha256")\`"
             echo "- Signer: release keystore (verified — fingerprint matches AGENTHUB_KEYSTORE_B64)"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -169,11 +170,14 @@ jobs:
           CODE="${{ steps.version.outputs.code }}"
           SHA256=$(cat "$APK.sha256")
           # The file users download carries the app name + version
-          # (Mahadi 2026-11-21): "Agent Hub V-1.0.0.1.apk" —
-          # versionName.versionCode. The Hub's download route
-          # (/api/download-apk) redirects to the newest .apk asset,
-          # so the Hub link never changes when the version does.
-          APK_NAME="Agent Hub V-$VERSION.$CODE.apk"
+          # (Mahadi 2026-11-21): "Agent-Hub-V-1.0.0.1.apk" —
+          # versionName.versionCode, with DASHES: GitHub turns spaces
+          # into dots in release asset names (verified live 2026-11-21
+          # — the spaced name was served as Agent.Hub.V-1.0.0.1.apk).
+          # The Hub's download route (/api/download-apk) redirects to
+          # the newest .apk asset, so the Hub link never changes when
+          # the version does.
+          APK_NAME="Agent-Hub-V-$VERSION.$CODE.apk"
           cp "$APK" "$RUNNER_TEMP/$APK_NAME"
           cp "$APK.sha256" "$RUNNER_TEMP/$APK_NAME.sha256"
           # Two releases, both public (no login needed to download):
