@@ -27,9 +27,13 @@
  * proxy is built against it. Two columns are treated as OPTIONAL and
  * retried without on a 400: users.subordinates (BFS over manager_id
  * covers scoping) and leads.custom_fields (the assignedTo fallback
- * arm is dropped). Terminal statuses come from the lead_status
- * dictionary; on any failure they fall back to Converted + Not
- * Interested and `terminalFallback: true` is reported.
+ * arm is dropped). Terminal statuses come from the Metadata Engine
+ * `options` table (field_key 'FollowUpStatus' / 'lead_status',
+ * meta.isTerminal) — the runtime source of truth. The legacy
+ * lead_status table (migration 013) has NO meta column, so selecting
+ * status_name,meta 400s live (found 2026-11-20); on any failure the
+ * statuses fall back to Converted + Not Interested and
+ * `terminalFallback: true` is reported.
  *
  * Demo: when HUB_DEMO_FIXTURE=true AND the caller is a 999xxxx demo
  * user, a synthetic fixture slice is summarized instead (same
@@ -129,11 +133,18 @@ async function getTerminalStatuses(cfg) {
   let set = null;
   let fallback = false;
   try {
-    const rows = await supaGet(cfg, 'lead_status', { select: 'status_name,meta' });
+    // Metadata Engine options table: type is stored in field_key,
+    // status name in option_value, flags in meta. The seed uses
+    // 'FollowUpStatus'; the client types still name 'lead_status' —
+    // query both keys.
+    const rows = await supaGet(cfg, 'options', {
+      select: 'option_value,meta',
+      filters: { field_key: 'in.(FollowUpStatus,lead_status)' },
+    });
     const found = new Set();
     for (const row of rows) {
       const meta = row && typeof row.meta === 'object' ? row.meta : null;
-      if (meta && meta.isTerminal === true && row.status_name) found.add(String(row.status_name));
+      if (meta && meta.isTerminal === true && row.option_value) found.add(String(row.option_value));
     }
     set = found.size > 0 ? found : null;
     if (!set) fallback = true;

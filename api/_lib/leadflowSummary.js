@@ -19,7 +19,8 @@
  *     never selected (no customer_name, no mobile — counts and
  *     aggregates only, spec §15.10 default).
  *   terminalStatuses: Set of terminal status names (from the
- *     lead_status dictionary; defaults Converted + Not Interested).
+ *     Metadata Engine options table; defaults Converted + Not
+ *     Interested).
  *
  * Output: LeadFlowSummary (spec §7.2, WITHOUT todayItems — the Hub
  * shows counts only in this slice; the agent opens LeadFlow itself
@@ -178,12 +179,13 @@ export function resolveDownline(users, caller) {
 export function scopeSetsFor(users, employeeId, role) {
   const { byUuid, byEmp } = buildUserMaps(users);
   const caller = byEmp.get(upper(employeeId)) || null;
-  if (!caller) return null;
   const toPair = (u) => ({ uuid: String(u.id), emp: upper(u.employee_id) });
   if (role === 'admin') {
-    // Admin aggregates org-wide: the own sets hold every user. (The
-    // proxy still sends no user filter for admin — the sets are for
-    // aggregation only.)
+    // Admin aggregates org-wide EVEN WITHOUT a LeadFlow row (Mahadi's
+    // standing rule: Admin/T&D sees org-wide; T&D staff have no
+    // LeadFlow account — live finding 2026-11-20: 2025019 has none).
+    // The proxy still sends no user filter for admin — the sets are
+    // for aggregation only.
     const all = [...byUuid.values()].map(toPair);
     return {
       caller,
@@ -196,6 +198,7 @@ export function scopeSetsFor(users, employeeId, role) {
       teamPairs: [],
     };
   }
+  if (!caller) return null;
   const { downline } = resolveDownline(users, caller);
   return {
     caller,
@@ -258,15 +261,17 @@ export function summarizeLeadflow(input, user, todayIso) {
     syncedAt: Date.now(),
   };
 
-  if (!caller) {
+  if (!caller && role !== 'admin') {
     base.empty = true;
     base.emptyReason = 'no-leadflow-account';
     return base;
   }
 
-  const { downline } = resolveDownline(users, caller);
-  const ownUuids = new Set([String(caller.id)]);
-  const ownEmpIds = new Set([upper(caller.employee_id)]);
+  const downline = caller ? resolveDownline(users, caller).downline : [];
+  // Admin without a LeadFlow row has no own sets (the admin branch
+  // below uses the org-wide sets instead, so these stay empty).
+  const ownUuids = caller ? new Set([String(caller.id)]) : new Set();
+  const ownEmpIds = caller ? new Set([upper(caller.employee_id)]) : new Set();
 
   // Admin: the proxy passes the org-wide counts as ownCounts, so the
   // own fields carry the org totals (visibility rule); team_lead /

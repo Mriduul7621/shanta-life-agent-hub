@@ -163,11 +163,14 @@ if (!hasLive) {
     check(`live leads column: ${col}`, leadsCols.includes(col), leadsCols.length > 0 ? '' : '(no rows returned — columns unverifiable)');
   }
   console.log(`INFO  live leads has customer_name: ${leadsCols.includes('customer_name')} · mobile: ${leadsCols.includes('mobile')} (proxy never selects them)`);
-  const statusProbe = await probe('lead_status');
-  check('live lead_status table readable', statusProbe.ok, `HTTP ${statusProbe.status}`);
+  // Terminal statuses come from the Metadata Engine options table, not
+  // the legacy lead_status table (migration 013 has no meta column —
+  // live finding 2026-11-20).
+  const statusProbe = await probe('options');
+  check('live options table readable', statusProbe.ok, `HTTP ${statusProbe.status}`);
   if (statusProbe.ok) {
-    for (const col of ['status_name', 'meta']) {
-      check(`live lead_status column: ${col}`, statusProbe.columns.includes(col), '');
+    for (const col of ['field_key', 'option_value', 'meta']) {
+      check(`live options column: ${col}`, statusProbe.columns.includes(col), '');
     }
   }
 
@@ -204,7 +207,10 @@ if (!hasLive) {
     liveAdmin = json;
     bodies.push(res.body);
     check('live admin: 200, org scope, demo:false', res.statusCode === 200 && json?.scope === 'org' && json?.demo === false, `status=${res.statusCode} scope=${json?.scope}`);
-    check('live admin: org has leads', (json?.leads?.total ?? 0) > 0, `total=${json?.leads?.total}`);
+    // NOTE: org lead volume is data, not an invariant — a young
+    // LeadFlow may genuinely hold zero leads. Check well-formedness;
+    // the INFO line below reports the live count.
+    check('live admin: org total is a number', typeof json?.leads?.total === 'number', `total=${json?.leads?.total}`);
     check('live admin: terminalFallback is boolean', typeof json?.terminalFallback === 'boolean', `terminalFallback=${json?.terminalFallback}`);
     console.log(`INFO  live org — follow-ups today ${json?.followups?.today} · overdue ${json?.followups?.overdue} · upcoming ${json?.followups?.upcoming} · total leads ${json?.leads?.total} · open ${json?.leads?.open} · converted ${json?.leads?.converted}`);
   } else {
@@ -373,9 +379,9 @@ function summarizeFixture(employeeId, role) {
     { id: '00000000-0000-0000-0002-000000000003', current_status: 'Interested', next_follow_up_at: at10(addDays(STUB_TODAY, 1)), assigned_to: stubUserId, custom_fields: {}, created_at: at10(addDays(STUB_TODAY, -5)), is_deleted: false },
   ];
   const stubStatuses = [
-    { status_name: 'Converted', meta: { isTerminal: true } },
-    { status_name: 'Not Interested', meta: { isTerminal: true } },
-    { status_name: 'Follow-up Set', meta: { isTerminal: false } },
+    { option_value: 'Converted', meta: { isTerminal: true } },
+    { option_value: 'Not Interested', meta: { isTerminal: true } },
+    { option_value: 'Follow-up Set', meta: { isTerminal: false } },
   ];
 
   // Naive timestamps parse as UTC (mirrors supabase.js parseTsMs).
@@ -483,8 +489,8 @@ function summarizeFixture(employeeId, role) {
         const offset = Number(params.get('offset') || 0);
         return jsonRes(rows.slice(offset, offset + limit));
       }
-      if (table === 'lead_status') {
-        if (mode === 'no-lead-status') return jsonRes({ message: 'boom' }, 500);
+      if (table === 'options') {
+        if (mode === 'no-options') return jsonRes({ message: 'boom' }, 500);
         return jsonRes(stubStatuses);
       }
       if (table === 'leads') {
@@ -601,6 +607,16 @@ function summarizeFixture(employeeId, role) {
     check('proxy: unknown stub user -> empty, no-leadflow-account', res.statusCode === 200 && json?.empty === true && json?.emptyReason === 'no-leadflow-account', `empty=${json?.empty} reason=${json?.emptyReason}`);
   }
   {
+    // Admin WITHOUT a LeadFlow row still sees org-wide (standing
+    // rule: Admin/T&D sees org-wide; T&D staff have no LeadFlow
+    // account — live finding 2026-11-20: 2025019 has none). Stub org
+    // total = 83 fixture leads + 3 extra stub leads.
+    const t = signToken({ sub: '2025999', name: 'Nobody', role: 'admin' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t }));
+    check('proxy: admin w/o account -> org-wide, not empty', res.statusCode === 200 && json?.scope === 'org' && json?.demo === false && json?.empty === false, `status=${res.statusCode} scope=${json?.scope} empty=${json?.empty}`);
+    check('proxy: admin w/o account -> org total 86', json?.leads?.total === 86, `total=${json?.leads?.total}`);
+  }
+  {
     // VERCEL_ENV is 'production' on this project's deployments — the
     // fixture must serve with the flag set regardless (live bug
     // 2026-11-20).
@@ -613,15 +629,15 @@ function summarizeFixture(employeeId, role) {
   check('proxy: users fetched once (5-min cache)', normalStub.userFetchCount() === 1, `${normalStub.userFetchCount()} calls`);
   check('proxy: row fetch carries the scope filter', normalStub.sawScopedRowFetch() === true, '');
 
-  // Drift: lead_status unreadable -> terminal fallback, same numbers
+  // Drift: options unreadable -> terminal fallback, same numbers
   // (the fallback set equals the fixture's terminal set).
   {
     delete process.env.HUB_DEMO_FIXTURE;
-    globalThis.fetch = makeStub('no-lead-status');
-    const { default: h2 } = await import('../api/leadflow-data.js?stub=no-lead-status');
+    globalThis.fetch = makeStub('no-options');
+    const { default: h2 } = await import('../api/leadflow-data.js?stub=no-options');
     const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res, json } = await callHandler(h2, mockReq({ token: t }));
-    check('proxy: lead_status down -> terminalFallback true, counts intact', res.statusCode === 200 && json?.terminalFallback === true && json?.leads?.total === 3, `fallback=${json?.terminalFallback} total=${json?.leads?.total}`);
+    check('proxy: options down -> terminalFallback true, counts intact', res.statusCode === 200 && json?.terminalFallback === true && json?.leads?.total === 3, `fallback=${json?.terminalFallback} total=${json?.leads?.total}`);
     process.env.HUB_DEMO_FIXTURE = 'true';
   }
   // Drift: users.subordinates missing -> retry without it, BFS over

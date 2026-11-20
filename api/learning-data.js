@@ -243,7 +243,11 @@ export default async function handler(req, res) {
     const [courseModules, courses, progress, enrollments, certificates, creditBalances] = await Promise.all([
       getCourseModules(cfg),
       getCourses(cfg),
-      fetchScopedRows(cfg, 'module_progress', 'employee_id,course_id,module_key,read_done,quiz_passed,best_score,attempts,updated_at', visibleIds, 'updated_at.desc'),
+      // NOTE: module_progress has NO module_key column live — it keys
+      // modules by module_id (PostgREST 400, found 2026-11-20). The
+      // summarizer groups by (employee, course) and never reads the
+      // module key, so it is simply not selected.
+      fetchScopedRows(cfg, 'module_progress', 'employee_id,course_id,read_done,quiz_passed,best_score,attempts,updated_at', visibleIds, 'updated_at.desc'),
       fetchScopedRows(cfg, 'enrollments', 'employee_id,course_id,status,completed_at', visibleIds, 'employee_id'),
       fetchScopedRows(cfg, 'certificates', 'employee_id,course_id,certificate_no,final_score,issued_at', visibleIds, 'employee_id'),
       fetchScopedRows(cfg, 'credit_balances', 'employee_id,balance', visibleIds, 'employee_id'),

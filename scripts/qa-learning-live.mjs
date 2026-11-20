@@ -146,7 +146,9 @@ if (!hasLive) {
   }
   const required = {
     employees: ['employee_id', 'full_name', 'designation', 'supervisor_id', 'is_active'],
-    module_progress: ['employee_id', 'course_id', 'module_key', 'read_done', 'quiz_passed', 'best_score', 'attempts', 'updated_at'],
+    // NOTE: module_progress has NO module_key live (it keys modules by
+    // module_id) — the proxy does not select it (live finding 2026-11-20).
+    module_progress: ['employee_id', 'course_id', 'read_done', 'quiz_passed', 'best_score', 'attempts', 'updated_at'],
     course_modules: ['course_id', 'module_key', 'title', 'sort_order'],
     courses: ['id', 'title', 'title_bn', 'is_published'],
     enrollments: ['employee_id', 'course_id', 'status', 'completed_at'],
@@ -332,7 +334,7 @@ function summarizeFixture(employeeId, role, overrides = {}) {
     stubProgress.push({
       employee_id: '2025001',
       course_id: COURSE_A_ID,
-      module_key: `aos-${i}`,
+      module_id: `aos-${i}`,
       read_done: i <= 10,
       quiz_passed: false,
       best_score: null,
