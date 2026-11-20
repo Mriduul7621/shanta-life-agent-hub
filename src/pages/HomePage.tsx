@@ -9,30 +9,42 @@
  * never blocks on a feed and never shows an error state for a feed
  * failure. A feed's figures replace the demo figures only when that
  * feed has loaded; a chips row under the greeting shows each feed's
- * Live/Demo state, and the role note switches from the demo note to
- * the live note as soon as ANY feed is live (demo:false).
+ * Live/Demo state.
  *
- * Business (FYCP this month) stays DEMO-labelled: the retail proxy
- * does not yet expose an fycpThisMonth field (Phase 2 extension,
- * out of this slice), so the business card keeps its demo figure with
- * an explicit DEMO marker whenever any feed is live.
+ * Home periods (Mahadi 2026-11-20): the retail and learning feeds
+ * load with THIS_MONTH_SELECTION — business, FYCP, policy sales and
+ * learning are monthly views. The LeadFlow feed loads with
+ * ALL_TIME_SELECTION (follow-ups are day-bucketed, so the period
+ * does not change them). Dues and due rows are period-independent
+ * snapshots: the dues card shows THIS WEEK's dues (Bangladesh
+ * calendar week, Sunday–Saturday, with the week range shown), the
+ * Due widget shows the month-to-date totals + the 3 most recent
+ * dues, and the Learning card shows THIS MONTH (credits earned this
+ * month + courses in progress + courses completed this month).
  *
- * Sales overview (Mahadi 2026-11-20): two all-time retail cards —
+ * Business (FYCP this month) is LIVE when the retail feed is live —
+ * the retail summary's this-month FYCP. The DEMO marker shows only
+ * while the retail feed is demo or absent.
+ *
+ * Sales overview (Mahadi 2026-11-20): two THIS-MONTH retail cards —
  * Total policy sales (distinct New policies, same definition as the
  * Dashboard Policies KPI) and Total FYCP with New / Deferred premium
- * in small sub-text. All-time snapshots like the other Home widgets,
- * scoped to the caller via the retail proxy.
+ * in small sub-text, scoped to the caller via the retail proxy.
  *
  * The retail summary is ONE scoped slice (own for employee, own+team
  * for team_lead, own+subtree for manager, org for admin) — it cannot
  * be split into own vs team, so in live mode the own grid's dues card
- * shows the scoped slice (labelled with scope + month) and the team
- * section drops the dues and business cards (2-card grid: follow-ups
- * + learning) and the team Due widget.
+ * shows the scoped slice (labelled with scope + week range) and the
+ * team section drops the dues and business cards (2-card grid:
+ * follow-ups + learning) and the team Due widget.
+ *
+ * No subtitle under the page title (Mahadi 2026-11-20): the greeting
+ * line + title stand alone, with the feed chips below.
  */
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import type { Lang } from '../i18n/dictionary';
 import { DEMO_DASHBOARDS, formatBdt } from '../data/demoData';
 import type { WidgetData } from '../data/demoData';
 import { loadLeadflowCached, loadLeadflowFresh } from '../data/leadflowData';
@@ -41,7 +53,7 @@ import { loadLearningCached, loadLearningFresh } from '../data/learningData';
 import type { LearningSummary } from '../data/learningData';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailScope, RetailSummary } from '../data/retailData';
-import { ALL_TIME_SELECTION } from '../data/period';
+import { ALL_TIME_SELECTION, THIS_MONTH_SELECTION } from '../data/period';
 import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
@@ -56,6 +68,27 @@ function greetingKey(hour: number) {
 
 const fmtCount = (n: number): string => n.toLocaleString('en-IN');
 
+/**
+ * 'Sun 15 – Sat 21 Nov' when the week stays in one month, 'Sun 29 Nov –
+ * Sat 5 Dec' across months — so the week definition is visible on the
+ * dues card (the retail app has no week convention; the Hub's week is
+ * the Bangladesh calendar week, Sunday–Saturday).
+ */
+function formatWeekRange(start: string, end: string, lang: Lang): string {
+  const locale = lang === 'bn' ? 'bn-BD' : 'en-GB';
+  const s = new Date(`${start}T00:00:00Z`);
+  const e = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return `${start} – ${end}`;
+  const day = (d: Date): string =>
+    d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', timeZone: 'UTC' });
+  const month = (d: Date): string =>
+    d.toLocaleDateString(locale, { month: 'short', timeZone: 'UTC' });
+  if (s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear()) {
+    return `${day(s)} – ${day(e)} ${month(e)}`;
+  }
+  return `${day(s)} ${month(s)} – ${day(e)} ${month(e)}`;
+}
+
 const SCOPE_KEY = {
   own: 'dashboardScopeOwn',
   team: 'dashboardScopeTeam',
@@ -68,17 +101,25 @@ type CardId = 'followups' | 'dues' | 'learning' | 'business';
 function WidgetGrid({
   data,
   duesLiveScope,
+  duesWeek,
+  learningMonthly,
   businessDemo,
   hide,
 }: {
   data: WidgetData;
   /** Set when the dues card shows the live retail slice (month + scope). */
   duesLiveScope?: RetailScope | null;
+  /** The live week figures for the dues card (undefined = older proxy
+   *  response without duesThisWeek → month figures instead). */
+  duesWeek?: { count: number; amount: number; weekStart: string; weekEnd: string } | null;
+  /** The live monthly learning figures for the own grid (undefined =
+   *  demo or team grid → the course/team view instead). */
+  learningMonthly?: { credits: number; inProgress: number; completed: number } | null;
   /** Set when the business card is still demo while other cards are live. */
   businessDemo?: boolean;
   hide?: CardId[];
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const hidden = new Set(hide ?? []);
   const learningActive = data.learningCourse !== null || data.learningMembersCount != null;
   const learningSub =
@@ -86,6 +127,10 @@ function WidgetGrid({
       ? t('teamLearningInProgress', { count: data.learningMembersCount })
       : (data.learningCourse ?? '');
   const duesLive = duesLiveScope != null;
+  const learningMonthActive =
+    learningMonthly !== null &&
+    learningMonthly !== undefined &&
+    (learningMonthly.credits > 0 || learningMonthly.inProgress > 0 || learningMonthly.completed > 0);
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
       {!hidden.has('followups') && (
@@ -100,24 +145,41 @@ function WidgetGrid({
       )}
       {!hidden.has('dues') && (
         <WidgetCard
-          title={t(duesLive ? 'widgetDuesMonth' : 'widgetDues')}
+          title={t(duesLive ? (duesWeek ? 'widgetDues' : 'widgetDuesMonth') : 'widgetDues')}
           value={data.dues > 0 ? String(data.dues) : null}
           sub={
-            duesLive
-              ? `${t(SCOPE_KEY[duesLiveScope])} · ${data.dues} ${t('duesThisMonth')} · ${formatBdt(data.duesAmountBdt)}`
-              : `${data.dues} ${t('duesThisWeek')} · ${formatBdt(data.duesAmountBdt)}`
+            duesLive && duesWeek
+              ? `${t(SCOPE_KEY[duesLiveScope])} · ${formatWeekRange(duesWeek.weekStart, duesWeek.weekEnd, lang)} · ${data.dues} ${t('duesThisWeek')} · ${formatBdt(data.duesAmountBdt)}`
+              : duesLive
+                ? `${t(SCOPE_KEY[duesLiveScope])} · ${data.dues} ${t('duesThisMonth')} · ${formatBdt(data.duesAmountBdt)}`
+                : `${data.dues} ${t('duesThisWeek')} · ${formatBdt(data.duesAmountBdt)}`
           }
-          emptyText={t(duesLive ? 'widgetDuesMonthEmpty' : 'widgetDuesEmpty')}
+          emptyText={t(duesLive ? (duesWeek ? 'widgetDuesEmpty' : 'widgetDuesMonthEmpty') : 'widgetDuesEmpty')}
           accent="olive"
           icon={<IconCoin />}
         />
       )}
       {!hidden.has('learning') && (
         <WidgetCard
-          title={t('widgetLearning')}
-          value={learningActive ? `${data.learningProgressPct}%` : null}
-          sub={learningSub}
-          emptyText={t('widgetLearningEmpty')}
+          title={t(learningMonthly ? 'widgetLearningMonth' : 'widgetLearning')}
+          value={
+            learningMonthly
+              ? learningMonthActive
+                ? String(learningMonthly.credits)
+                : null
+              : learningActive
+                ? `${data.learningProgressPct}%`
+                : null
+          }
+          sub={
+            learningMonthly
+              ? t('learningMonthSub', {
+                  inProgress: learningMonthly.inProgress,
+                  completed: learningMonthly.completed,
+                })
+              : learningSub
+          }
+          emptyText={t(learningMonthly ? 'widgetLearningMonthEmpty' : 'widgetLearningEmpty')}
           accent="charcoal"
           icon={<IconLearning />}
         />
@@ -179,29 +241,31 @@ export function HomePage() {
 
   // Each feed loads independently: cached first, fresh in the
   // background. A failed fetch leaves the demo fallback in place —
-  // the page never shows a feed error state. Home widgets are
-  // all-time snapshots, so every feed loads with ALL_TIME_SELECTION
-  // explicitly (the data pages default to Today; Home never does).
+  // the page never shows a feed error state. Home periods (Mahadi
+  // 2026-11-20): retail + learning load with THIS_MONTH_SELECTION
+  // (business, FYCP, policy sales and learning are monthly views);
+  // LeadFlow loads with ALL_TIME_SELECTION (follow-ups are
+  // day-bucketed, so the period does not change them).
   useEffect(() => {
     if (!token || !employeeId) return;
     let cancelled = false;
     const cachedLeadflow = loadLeadflowCached(employeeId, ALL_TIME_SELECTION);
     if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
-    const cachedLearning = loadLearningCached(employeeId, ALL_TIME_SELECTION);
+    const cachedLearning = loadLearningCached(employeeId, THIS_MONTH_SELECTION);
     if (cachedLearning) setLearning(cachedLearning.summary);
-    const cachedRetail = loadRetailCached(employeeId, ALL_TIME_SELECTION);
+    const cachedRetail = loadRetailCached(employeeId, THIS_MONTH_SELECTION);
     if (cachedRetail) setRetail(cachedRetail.summary);
     void loadLeadflowFresh(token, employeeId, ALL_TIME_SELECTION)
       .then((r) => {
         if (!cancelled) setLeadflow(r.summary);
       })
       .catch(() => {});
-    void loadLearningFresh(token, employeeId, ALL_TIME_SELECTION)
+    void loadLearningFresh(token, employeeId, THIS_MONTH_SELECTION)
       .then((r) => {
         if (!cancelled) setLearning(r.summary);
       })
       .catch(() => {});
-    void loadRetailFresh(token, employeeId, ALL_TIME_SELECTION)
+    void loadRetailFresh(token, employeeId, THIS_MONTH_SELECTION)
       .then((r) => {
         if (!cancelled) setRetail(r.summary);
       })
@@ -223,16 +287,35 @@ export function HomePage() {
   const feedsLoaded = leadflow !== null || learning !== null || retail !== null;
 
   // Own grid: demo figures, overridden per feed as it loads.
+  // Follow-ups are today-only (the LeadFlow summary buckets them by
+  // Dhaka day). Dues are this week's when the proxy sends
+  // duesThisWeek, else the month figures (older proxy). Business is
+  // the live this-month FYCP when the retail feed has loaded.
   const own: WidgetData = { ...dashboard.own };
   if (leadflow) own.followups = leadflow.followups.today;
+  const duesWeek = retail?.duesThisWeek ?? null;
   if (retail) {
-    own.dues = retail.duePolicies;
-    own.duesAmountBdt = retail.duePremium;
+    if (duesWeek) {
+      own.dues = duesWeek.count;
+      own.duesAmountBdt = duesWeek.amount;
+    } else {
+      own.dues = retail.duePolicies;
+      own.duesAmountBdt = retail.duePremium;
+    }
+    own.businessFycpBdt = retail.fycp;
   }
-  if (learning) {
-    own.learningCourse = learning.learning.currentCourse?.title ?? null;
-    own.learningProgressPct = learning.learning.currentCourse?.percent ?? 0;
-  }
+  // Monthly learning (this-month period fields); coursesInProgress
+  // is absent from older proxy responses — read defensively.
+  const learningMonthly = learning
+    ? {
+        credits: learning.learning.creditsInPeriod,
+        inProgress: learning.learning.coursesInProgress ?? 0,
+        completed: learning.learning.completedInPeriod,
+      }
+    : null;
+  // The business card is DEMO-labelled only while the retail feed is
+  // demo or absent; with a live retail feed the FYCP is real.
+  const businessDemo = anyLive && !(retail && !retail.demo);
 
   // Team grid: demo figures, overridden per feed. In live mode the
   // team section is a 2-card grid (follow-ups + learning): dues live
@@ -248,7 +331,7 @@ export function HomePage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      {/* Greeting */}
+      {/* Greeting — no subtitle under the title (Mahadi 2026-11-20). */}
       <section>
         <p className="text-sm font-semibold text-sunset">
           {t(greetingKey(hour))}, {user.name}
@@ -256,9 +339,6 @@ export function HomePage() {
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-charcoal sm:text-3xl">
           {t('navHome')}
         </h1>
-        <p className="mt-1 text-sm text-charcoal/60">
-          {t('homeSubtitle')} {t(anyLive ? 'homeLiveNote' : 'demoRoleNote')}
-        </p>
         <FeedChips leadflow={leadflow} learning={learning} retail={retail} />
       </section>
 
@@ -266,11 +346,14 @@ export function HomePage() {
       <WidgetGrid
         data={own}
         duesLiveScope={retail ? retail.scope : null}
-        businessDemo={anyLive}
+        duesWeek={duesWeek}
+        learningMonthly={learningMonthly}
+        businessDemo={businessDemo}
       />
 
       {/* Due premiums — own dues: live retail summary when the feed has
-          loaded, demo rows otherwise. */}
+          loaded, demo rows otherwise. The live widget shows the 3
+          most recent dues above the month-to-date totals. */}
       {retail ? (
         <DuePremiumsWidget
           live={{
@@ -279,13 +362,14 @@ export function HomePage() {
             dueMonth: retail.dueMonth,
             scope: retail.scope,
             demo: retail.demo,
+            dueRows: retail.dueRows,
           }}
         />
       ) : (
         <DuePremiumsWidget data={dashboard.own} />
       )}
 
-      {/* Sales overview — all-time retail snapshots (Total policy sales
+      {/* Sales overview — this-month retail figures (Total policy sales
           + Total FYCP with New / Deferred sub-text), scoped to the
           caller. Shown once the retail feed has loaded (live or
           fixture); no demo fallback — the figures are retail-only.
@@ -305,7 +389,7 @@ export function HomePage() {
               </span>
             )}
             <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
-              {t(SCOPE_KEY[retail.scope])} · {t('periodAllTime')}
+              {t(SCOPE_KEY[retail.scope])} · {t('periodThisMonth')}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">

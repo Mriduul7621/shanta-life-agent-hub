@@ -52,13 +52,6 @@ import { prefetchModule } from '../performance/prefetch';
 import type { DictKey } from '../i18n/dictionary';
 import type { View } from '../components/Layout';
 
-const INTRO_KEY: Partial<Record<ModuleGroup, DictKey>> = {
-  leads: 'pageLeadsIntro',
-  learning: 'pageLearningIntro',
-  calculators: 'pageCalculatorsIntro',
-  proposals: 'pageProposalsIntro',
-};
-
 const VIEW_TO_GROUP: Partial<Record<View, ModuleGroup>> = {
   leads: 'leads',
   learning: 'learning',
@@ -396,7 +389,6 @@ export function ModulePage({ view }: { view: View }) {
 
   if (!group) return null;
   const tiles = MODULES.filter((m) => m.group === group);
-  const introKey = INTRO_KEY[group];
   const dashboard = user ? DEMO_DASHBOARDS[user.role] : null;
 
   // Leads and Learning are data pages (Mahadi 2026-11-20): a summary
@@ -429,7 +421,6 @@ export function ModulePage({ view }: { view: View }) {
         <h1 className="text-2xl font-bold tracking-tight text-charcoal sm:text-3xl">
           {t(GROUP_TITLE_KEY[group])}
         </h1>
-        {introKey && <p className="mt-1 text-sm text-charcoal/60">{t(introKey)}</p>}
         {group === 'proposals' && (
           <p className="mt-3 rounded-xl bg-olive/10 px-4 py-3 text-sm font-medium text-charcoal">
             {t('pageProposalsNote')}

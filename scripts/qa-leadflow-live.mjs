@@ -53,7 +53,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { dhakaTodayIso } from '../api/_lib/supabase.js';
+import { dhakaDayBounds, dhakaTodayIso } from '../api/_lib/supabase.js';
 import {
   summarizeLeadflow,
   aggregateLeadCounts,
@@ -342,6 +342,30 @@ function summarizeFixture(employeeId, role) {
 
   const unknown = summarizeFixture('9990099', 'employee');
   check('fixture unknown user: empty, no-leadflow-account', unknown.empty === true && unknown.emptyReason === 'no-leadflow-account', `empty=${unknown.empty} reason=${unknown.emptyReason}`);
+
+  // Today-only follow-ups (Home "Today's follow-ups", Mahadi
+  // 2026-11-20): the today bucket counts ONLY open (non-terminal)
+  // leads whose next_follow_up_at falls inside the Dhaka day —
+  // overdue and upcoming are separate buckets, never mixed in.
+  // Recomputed straight from the raw fixture rows.
+  {
+    const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+    const { startMs, endMs } = dhakaDayBounds(FIXTURE_TODAY);
+    const terminal = new Set([...(fixture.terminalStatuses || [])].map((s) => String(s).trim().toLowerCase()));
+    const inToday = fixture.leads.filter((row) => {
+      if (terminal.has(String(row.current_status || '').trim().toLowerCase())) return false;
+      const ms = Date.parse(row.next_follow_up_at);
+      return Number.isFinite(ms) && ms >= startMs && ms < endMs;
+    }).length;
+    const inOverdue = fixture.leads.filter((row) => {
+      if (terminal.has(String(row.current_status || '').trim().toLowerCase())) return false;
+      const ms = Date.parse(row.next_follow_up_at);
+      return Number.isFinite(ms) && ms < startMs;
+    }).length;
+    check('followups today-only: org today == recomputed due-today count', adm.followups.today === inToday, `${adm.followups.today} vs ${inToday}`);
+    check('followups today-only: overdue is a separate bucket (13)', adm.followups.overdue === inOverdue && inOverdue === 13, `${adm.followups.overdue} vs ${inOverdue}`);
+    check('followups today-only: today excludes overdue + upcoming', adm.followups.today + adm.followups.overdue + adm.followups.upcoming === adm.followups.all, `${adm.followups.today}+${adm.followups.overdue}+${adm.followups.upcoming}=${adm.followups.all}`);
+  }
 }
 
 // ---- 2b. Time-frame filter (fixture, pinned date) ----

@@ -120,7 +120,7 @@ export function resolveLearningDownline(employees, caller, rpcIds) {
  * { currentCourse, coursesEnrolled, coursesCompleted, certificates,
  *   creditBalance, enrolledInPeriod, completedInPeriod,
  *   creditsInPeriod, overallPercent, modulesCompleted, modulesTotal,
- *   hasInProgress, lastActivity }.
+ *   hasInProgress, coursesInProgress, lastActivity }.
  */
 function computeEmployeeStates(input) {
   const { moduleProgress, courseModules, courses, enrollments, certificates, creditBalances, creditLedger, periodWindowMs } = input;
@@ -321,6 +321,7 @@ function computeEmployeeStates(input) {
       modulesCompleted,
       modulesTotal,
       hasInProgress: inProgress.length > 0,
+      coursesInProgress: inProgress.length,
       lastActivity: lastMs !== undefined ? new Date(lastMs).toISOString() : null,
     });
   }
@@ -337,6 +338,7 @@ function emptyLearning() {
     enrolledInPeriod: 0,
     completedInPeriod: 0,
     creditsInPeriod: 0,
+    coursesInProgress: 0,
   };
 }
 
@@ -395,6 +397,7 @@ export function summarizeLearning(input, user) {
     let enrolledInPeriod = 0;
     let completedInPeriod = 0;
     let creditsInPeriod = 0;
+    let coursesInProgress = 0;
     for (const s of states.values()) {
       coursesEnrolled += s.coursesEnrolled;
       coursesCompleted += s.coursesCompleted;
@@ -403,8 +406,9 @@ export function summarizeLearning(input, user) {
       enrolledInPeriod += s.enrolledInPeriod;
       completedInPeriod += s.completedInPeriod;
       creditsInPeriod += s.creditsInPeriod;
+      coursesInProgress += s.coursesInProgress;
     }
-    base.learning = { currentCourse: null, coursesEnrolled, coursesCompleted, certificates, creditBalance, enrolledInPeriod, completedInPeriod, creditsInPeriod };
+    base.learning = { currentCourse: null, coursesEnrolled, coursesCompleted, certificates, creditBalance, enrolledInPeriod, completedInPeriod, creditsInPeriod, coursesInProgress };
     base.empty = states.size === 0;
     if (base.empty) base.emptyReason = 'no-rows';
     return base;
@@ -420,6 +424,7 @@ export function summarizeLearning(input, user) {
     enrolledInPeriod: ownState.enrolledInPeriod,
     completedInPeriod: ownState.completedInPeriod,
     creditsInPeriod: ownState.creditsInPeriod,
+    coursesInProgress: ownState.coursesInProgress,
   };
 
   if (role === 'team_lead' || role === 'manager') {

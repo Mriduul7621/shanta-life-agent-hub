@@ -1,13 +1,19 @@
 /**
  * Shared time-frame filter for the three data pages (Dashboard, Leads,
- * Learning). Home keeps its snapshot widgets and never uses a period —
- * it loads every feed with ALL_TIME_SELECTION explicitly.
+ * Learning). Home has no selector: it loads its retail and learning
+ * feeds with THIS_MONTH_SELECTION (business, FYCP, policy sales and
+ * learning are monthly views, Mahadi 2026-11-20) and its LeadFlow
+ * feed with ALL_TIME_SELECTION (follow-ups are day-bucketed, so the
+ * period does not change them). Dues and due rows are period-
+ * independent snapshots.
  *
  * The values are the exact `?period=` query values the three proxies
  * accept (api/_lib/periods.js) — keep the two in sync. 'today' is the
- * default (Mahadi 2026-11-20): the data pages open on today's
- * figures. 'custom' carries a from/to date pair; the selection
- * helpers below build the cache key and the query string for it.
+ * default (Mahadi 2026-11-20): Leads and Learning open on today's
+ * figures. The Dashboard page opens on This Month instead (retail
+ * data lags a day, so Today shows ৳0). 'custom' carries a from/to
+ * date pair; the selection helpers below build the cache key and the
+ * query string for it.
  */
 import type { DictKey } from '../i18n/dictionary';
 
@@ -34,7 +40,17 @@ export interface PeriodSelection {
 
 export const DEFAULT_SELECTION: PeriodSelection = { period: 'today' };
 
-/** All-time, for the feeds that never follow the selector (Home, Leads dues). */
+/** This calendar month — Home's retail and learning feed selection,
+ *  and the Dashboard page's default (DASHBOARD_DEFAULT_SELECTION). */
+export const THIS_MONTH_SELECTION: PeriodSelection = { period: 'this-month' };
+
+/** The Dashboard page opens on This Month, not Today: retail data
+ *  lags a day, so Today shows ৳0 (Mahadi 2026-11-20). Leads and
+ *  Learning keep DEFAULT_SELECTION (Today). This is a per-page
+ *  override — the shared DEFAULT_SELECTION is unchanged. */
+export const DASHBOARD_DEFAULT_SELECTION: PeriodSelection = { period: 'this-month' };
+
+/** All-time, for the feeds that never follow the selector (Home's LeadFlow feed, Leads dues). */
 export const ALL_TIME_SELECTION: PeriodSelection = { period: 'all' };
 
 /** Dictionary key for a period's label (see dictionary.ts). */

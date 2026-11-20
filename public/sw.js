@@ -4,7 +4,7 @@
  * Registered only in production builds (see src/main.tsx). Version the cache
  * name on every release that changes the shell.
  */
-const CACHE_NAME = 'agent-hub-shell-v1';
+const CACHE_NAME = 'agent-hub-shell-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.svg'];
 
 self.addEventListener('install', (event) => {

@@ -42,7 +42,6 @@ export type DictKey =
   | 'greetingMorning'
   | 'greetingAfternoon'
   | 'greetingEvening'
-  | 'homeSubtitle'
   | 'demoDataBadge'
   | 'widgetFollowups'
   | 'widgetFollowupsEmpty'
@@ -50,6 +49,9 @@ export type DictKey =
   | 'widgetDuesEmpty'
   | 'widgetLearning'
   | 'widgetLearningEmpty'
+  | 'widgetLearningMonth'
+  | 'widgetLearningMonthEmpty'
+  | 'learningMonthSub'
   | 'widgetBusiness'
   | 'widgetBusinessEmpty'
   | 'followupsDue'
@@ -94,17 +96,11 @@ export type DictKey =
   | 'groupCalculators'
   | 'groupDashboard'
   | 'groupProposals'
-  | 'pageLeadsIntro'
-  | 'pageLearningIntro'
-  | 'pageCalculatorsIntro'
-  | 'pageDashboardIntro'
-  | 'pageProposalsIntro'
   | 'pageProposalsNote'
   | 'backHome'
   | 'courseProgress'
   | 'teamMembers'
   | 'teamLearningInProgress'
-  | 'demoRoleNote'
   // Retail Dashboard — scoped retail KPIs (replaces the SCC summary)
   | 'dashboardPageTitle'
   | 'dashboardLiveFrom'
@@ -155,6 +151,7 @@ export type DictKey =
   | 'dueWidgetShowing'
   | 'dueWidgetBacklog'
   | 'dueWidgetDueOn'
+  | 'dueWidgetRecentTitle'
   // Phase 2 — live feeds (LeadFlow / Learning Hub / retail dues)
   | 'feedChipsLabel'
   | 'feedChipLive'
@@ -162,7 +159,6 @@ export type DictKey =
   | 'feedNameLeadflow'
   | 'feedNameLearning'
   | 'feedNameRetail'
-  | 'homeLiveNote'
   | 'leadsLiveNote'
   | 'learningLiveNote'
   | 'feedLiveLeadflow'
@@ -196,7 +192,7 @@ export type DictKey =
   | 'snapshotNow'
   | 'kpiSubCumulative'
   | 'dashboardDueThisMonth'
-  // Home sales overview (all-time retail snapshots)
+  // Home sales overview (this-month retail figures)
   | 'homeSalesTitle'
   | 'homeSalesPolicies'
   | 'homeSalesPoliciesSub'
@@ -256,7 +252,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     greetingMorning: 'Good morning',
     greetingAfternoon: 'Good afternoon',
     greetingEvening: 'Good evening',
-    homeSubtitle: 'Here is your day at a glance.',
     demoDataBadge: 'DEMO DATA',
     widgetFollowups: "Today's follow-ups",
     widgetFollowupsEmpty: 'No follow-ups due today',
@@ -264,6 +259,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     widgetDuesEmpty: 'No premiums due this week',
     widgetLearning: 'Learning in progress',
     widgetLearningEmpty: 'No course in progress',
+    widgetLearningMonth: 'Learning this month',
+    widgetLearningMonthEmpty: 'No learning this month',
+    learningMonthSub: 'credits earned · {inProgress} in progress · {completed} completed',
     widgetBusiness: "This month's business",
     widgetBusinessEmpty: 'No business recorded this month',
     followupsDue: 'follow-ups due',
@@ -310,17 +308,11 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     groupCalculators: 'Calculators',
     groupDashboard: 'Dashboard',
     groupProposals: 'Proposals',
-    pageLeadsIntro: 'Your leads, follow-ups and reminders live in LeadFlow.',
-    pageLearningIntro: 'Your courses, quizzes and certificates live in the Learning Hub.',
-    pageCalculatorsIntro: 'Premium, SDPP and income calculators.',
-    pageDashboardIntro: 'Sales business, dues and persistency — scoped to what you can see.',
-    pageProposalsIntro: 'Proposal submission stays with the official agent portal (IT-owned).',
     pageProposalsNote: 'The production portal link is not confirmed yet. Please check with IT.',
     backHome: 'Back to Home',
     courseProgress: 'course progress',
     teamMembers: 'team members',
     teamLearningInProgress: '{count} team members learning in progress',
-    demoRoleNote: 'Demo view for this role — real data arrives in a later milestone.',
     dashboardPageTitle: 'Retail Sales Dashboard',
     dashboardLiveFrom: 'Live from Retail Sales Dashboard',
     dashboardScopeOwn: 'Own data',
@@ -362,7 +354,7 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiSubRatios: 'Deferred {deferred}% · Renewal {renewal}%',
     kpiSubPersistency: '{inf} of {all} inforce',
     kpiSubNoPolicies: 'No policies in scope',
-    kpiSubActiveFas: 'Sold in the last 6 months',
+    kpiSubActiveFas: 'Sold at least once (all-time)',
     leadersPolicies: '{count} policies',
     dueWidgetTitle: 'Due premiums',
     dueWidgetDemoNote:
@@ -372,13 +364,13 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetShowing: 'Showing {shown} of {total} dues',
     dueWidgetBacklog: 'Backlog {amount}',
     dueWidgetDueOn: 'Due {date}',
+    dueWidgetRecentTitle: 'Recent dues',
     feedChipsLabel: 'Data sources',
     feedChipLive: 'Live',
     feedChipDemo: 'Demo',
     feedNameLeadflow: 'LeadFlow',
     feedNameLearning: 'Learning Hub',
     feedNameRetail: 'Retail Dashboard',
-    homeLiveNote: 'Live data from your connected apps.',
     leadsLiveNote: 'Live lead data from LeadFlow.',
     learningLiveNote: 'Live learning data from the Learning Hub.',
     feedLiveLeadflow: 'Live from LeadFlow',
@@ -411,10 +403,10 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'Pick a valid date range (up to 2 years, ending today).',
     snapshotNow: 'Now',
     kpiSubCumulative: 'Cumulative',
-    dashboardDueThisMonth: 'Due Premium is this month',
+    dashboardDueThisMonth: 'Due Premium is month-to-date',
     homeSalesTitle: 'Sales overview',
     homeSalesPolicies: 'Total policy sales',
-    homeSalesPoliciesSub: 'New policies · All time',
+    homeSalesPoliciesSub: 'New policies · This month',
     homeSalesFycp: 'Total FYCP',
     homeSalesFycpSub: 'New {new} · Deferred {deferred}',
     loginPanelEyebrow: 'AGENT HUB',
@@ -469,7 +461,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     greetingMorning: 'শুভ সকাল',
     greetingAfternoon: 'শুভ অপরাহ্ন',
     greetingEvening: 'শুভ সন্ধ্যা',
-    homeSubtitle: 'এক নজরে আপনার দিন।',
     demoDataBadge: 'ডেমো ডেটা',
     widgetFollowups: 'আজকের ফলো-আপ',
     widgetFollowupsEmpty: 'আজ কোনো ফলো-আপ নেই',
@@ -477,6 +468,9 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     widgetDuesEmpty: 'এই সপ্তাহে কোনো প্রিমিয়াম বকেয়া নেই',
     widgetLearning: 'চলমান লার্নিং',
     widgetLearningEmpty: 'কোনো কোর্স চলমান নেই',
+    widgetLearningMonth: 'এই মাসের লার্নিং',
+    widgetLearningMonthEmpty: 'এই মাসে কোনো লার্নিং নেই',
+    learningMonthSub: 'ক্রেডিট অর্জিত · {inProgress}টি চলমান · {completed}টি সম্পন্ন',
     widgetBusiness: 'এই মাসের ব্যবসা',
     widgetBusinessEmpty: 'এই মাসে কোনো ব্যবসা রেকর্ড হয়নি',
     followupsDue: 'টি ফলো-আপ বকেয়া',
@@ -522,17 +516,11 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     groupCalculators: 'ক্যালকুলেটর',
     groupDashboard: 'ড্যাশবোর্ড',
     groupProposals: 'প্রপোজাল',
-    pageLeadsIntro: 'আপনার লিডস, ফলো-আপ ও রিমাইন্ডার লিডফ্লোতে থাকে।',
-    pageLearningIntro: 'আপনার কোর্স, কুইজ ও সার্টিফিকেট লার্নিং হাবে থাকে।',
-    pageCalculatorsIntro: 'প্রিমিয়াম, এসডিপিপি ও ইনকাম ক্যালকুলেটর।',
-    pageDashboardIntro: 'সেলস ব্যবসা, বকেয়া ও পারসিস্টেন্সি — আপনি যা দেখতে পারেন শুধু তা-ই।',
-    pageProposalsIntro: 'প্রপোজাল জমা অফিসিয়াল এজেন্ট পোর্টালেই থাকে (আইটির তত্ত্বাবধানে)।',
     pageProposalsNote: 'প্রোডাকশন পোর্টালের লিংক এখনো নিশ্চিত হয়নি। আইটির সঙ্গে যোগাযোগ করুন।',
     backHome: 'হোমে ফিরুন',
     courseProgress: 'কোর্স অগ্রগতি',
     teamMembers: 'টিম সদস্য',
     teamLearningInProgress: '{count} জন টিম মেম্বার শিখছেন',
-    demoRoleNote: 'এই ভূমিকার ডেমো ভিউ — বাস্তব ডেটা পরের মাইলস্টোনে আসবে।',
     dashboardPageTitle: 'রিটেইল সেলস ড্যাশবোর্ড',
     dashboardLiveFrom: 'রিটেইল সেলস ড্যাশবোর্ড থেকে লাইভ',
     dashboardScopeOwn: 'নিজের ডেটা',
@@ -574,7 +562,7 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiSubRatios: 'ডেফার্ড {deferred}% · রিনিউয়াল {renewal}%',
     kpiSubPersistency: '{all}টির মধ্যে {inf}টি ইনফোর্স',
     kpiSubNoPolicies: 'এই স্কোপে কোনো পলিসি নেই',
-    kpiSubActiveFas: 'গত ৬ মাসে বিক্রি করেছেন',
+    kpiSubActiveFas: 'অন্তত একবার বিক্রি করেছেন',
     leadersPolicies: '{count}টি পলিসি',
     dueWidgetTitle: 'বকেয়া প্রিমিয়াম',
     dueWidgetDemoNote:
@@ -584,13 +572,13 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetShowing: '{total}টি বকেয়ার মধ্যে {shown}টি দেখানো হচ্ছে',
     dueWidgetBacklog: 'বকেয়া {amount}',
     dueWidgetDueOn: '{date}-এ বকেয়া',
+    dueWidgetRecentTitle: 'সাম্প্রতিক বকেয়া',
     feedChipsLabel: 'ডেটা উৎস',
     feedChipLive: 'লাইভ',
     feedChipDemo: 'ডেমো',
     feedNameLeadflow: 'লিডফ্লো',
     feedNameLearning: 'লার্নিং হাব',
     feedNameRetail: 'রিটেইল ড্যাশবোর্ড',
-    homeLiveNote: 'আপনার সংযুক্ত অ্যাপ থেকে লাইভ ডেটা।',
     leadsLiveNote: 'লিডফ্লো থেকে লাইভ লিড ডেটা।',
     learningLiveNote: 'লার্নিং হাব থেকে লাইভ লার্নিং ডেটা।',
     feedLiveLeadflow: 'লিডফ্লো থেকে লাইভ',
@@ -623,10 +611,10 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'সঠিক তারিখের পরিসর দিন (সর্বোচ্চ ২ বছর, আজ পর্যন্ত)।',
     snapshotNow: 'এখন',
     kpiSubCumulative: 'সব মিলিয়ে',
-    dashboardDueThisMonth: 'বকেয়া প্রিমিয়াম এই মাসের',
+    dashboardDueThisMonth: 'বকেয়া প্রিমিয়াম মাসের শুরু থেকে আজ পর্যন্ত',
     homeSalesTitle: 'বিক্রয় সারসংক্ষেপ',
     homeSalesPolicies: 'মোট পলিসি বিক্রয়',
-    homeSalesPoliciesSub: 'নতুন পলিসি · সর্বমোট',
+    homeSalesPoliciesSub: 'নতুন পলিসি · এই মাসে',
     homeSalesFycp: 'মোট এফওয়াইসিপি',
     homeSalesFycpSub: 'নতুন {new} · ডেফার্ড {deferred}',
     loginPanelEyebrow: 'এজেন্ট হাব',

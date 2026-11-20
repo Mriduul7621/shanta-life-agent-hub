@@ -19,8 +19,8 @@
  *
  * The slice goes through the SAME summarizer as live data, so scoping is
  * exercised identically. All dates are relative to `todayIso` so the
- * fixture never goes stale (Due Premium = this month, Active FA = last
- * 6 months). Amounts are round numbers with hand-computed expectations —
+ * fixture never goes stale (Due Premium = month-to-date, Active FA =
+ * ever-sold). Amounts are round numbers with hand-computed expectations —
  * scripts/qa-retail-live.mjs asserts them exactly:
  *
  * Tree (BE 'DMO'): 9990003 (GM) -> 9990002 (UM) -> 9990001, 9990011,
@@ -33,8 +33,14 @@
  * (T9001 12,000 + T9002 9,000) = 38,000 (5 pol). Conventional policies
  * are all sheet-covered (as in the real data — only T-series are
  * sheet-absent), so the fallback is purely T-series. Persistency 8/9 =
- * 88.9% org-wide. Active FAs: 9990012 has only a 300-day-old sale -> 3
- * of 4 org-wide.
+ * 88.9% org-wide. Active FAs: ever-sold — all 4 FAs have a sale
+ * (9990012's is 300 days old and still counts) -> 4 of 4 org-wide.
+ * Dues this week (Sun 15 – Sat 21 Nov 2026): sheet D1011 8,000 +
+ * T-series ledger T9002 9,000 (instalment on the 15th) = 17,000
+ * (2 pol) org-wide; 9990001 has none. Due rows (top 3, nearest due
+ * first): org D1012 (10-10, 3,000), D1001 (11-10, 5,000), D2001
+ * (11-12, 4,000); team lead D1012, D1001, D1011 (11-20, 8,000);
+ * 9990001 has only D1001 and D1002 (12-08, 2,000).
  *
  * Period spread (pinned to 2026-11-20 in the QA): D1002 sits 100 days
  * back (in 6m, out of 3m) so the periods differ visibly — org totals:

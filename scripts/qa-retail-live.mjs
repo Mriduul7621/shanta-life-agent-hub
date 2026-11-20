@@ -46,6 +46,20 @@
  *     cached separately (one payload fetch, two different summaries);
  *     the default period is Today; custom ranges return exactly the
  *     rows inside them and invalid custom ranges -> 400.
+ *  8. Mixed-version tolerance (client): the REAL browser-side client
+ *     module (src/data/retailData.ts, via Node type stripping + the
+ *     resolve hook in scripts/qa-ts-resolve-hooks.mjs) must accept an
+ *     OLD-shape proxy response (no newPremium/deferredPremium) and
+ *     default the two fields to 0, on both the fresh-fetch and the
+ *     cached paths; other required checks still reject bad shapes.
+ *     Also asserts the service-worker cache name is v2.
+ *  9. Retail-app reconciliation (stubbed payload): the Due Premium
+ *     and Active FA definitions reconciled with the retail app
+ *     (2026-11-20, Mahadi) — Due is month-to-date (a due later in
+ *     the month is NOT in the figure; `premium` is summed, NOT
+ *     `duePrem`), Active FAs is ever-sold (a never-sold FA counts
+ *     in the universe but not as active). Proved on a mutated
+ *     fixture copy so the expectations are exact.
  *
  * Read-only: one GET to the public retail endpoint, no writes. The proxy
  * section never touches the network (stubbed fetch). Exits non-zero if
@@ -97,7 +111,23 @@ check(
   admin.persistency ? `${admin.persistency.pct.toFixed(1)}% (${admin.persistency.inf}/${admin.persistency.all})` : 'null',
 );
 if (today.startsWith('2026-11')) {
-  check('admin due Nov 2026 within 20% of spec 16,53,216', withinPct(admin.duePremium, 1653216, 20), `${fmt(admin.duePremium)} (${admin.duePolicies} pol)`);
+  // MTD sheet part (independent of the summarizer): Inforce rows with
+  // nextDue in [monthStart, today], amount = premium (NOT duePrem).
+  // The summary's Due Premium = this sheet part + the ledger
+  // fallback for sheet-absent policies (0 for Nov 2026 — the live
+  // T-series instalments fall in May 2027), so the two agree within
+  // a small tolerance; the full-month figure (249 pol / ৳16,53,216)
+  // is NOT the expectation any more (reconciled 2026-11-20: the
+  // retail app's default view is MTD).
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const sheetMtdRows = payload.duePolicies.filter(
+    (d) => String(d.status || '').trim().toLowerCase() === 'inforce' && d.nextDue >= monthStart && d.nextDue <= today && num(d.premium) > 0,
+  );
+  const sheetMtd = sheetMtdRows.reduce((a, d) => a + num(d.premium), 0);
+  const sheetMtdPolicies = new Set(sheetMtdRows.map((d) => String(d.policy))).size;
+  check('admin due MTD within 5% of the recomputed sheet MTD part', withinPct(admin.duePremium, sheetMtd, 5), `${fmt(admin.duePremium)} (${admin.duePolicies} pol) vs sheet ${fmt(sheetMtd)} (${sheetMtdPolicies} pol)`);
+  check('admin due MTD policies >= sheet MTD policies (fallback only adds)', admin.duePolicies >= sheetMtdPolicies, `${admin.duePolicies} vs ${sheetMtdPolicies}`);
+  check('admin due window is MTD [monthStart, today]', admin.dueWindow?.start === monthStart && admin.dueWindow?.end === today, JSON.stringify(admin.dueWindow));
 } else {
   check('admin due this month positive (spec value is Nov 2026 only)', admin.duePremium > 0 && admin.duePolicies > 0, `${fmt(admin.duePremium)} (${admin.duePolicies} pol, ${admin.dueMonth})`);
 }
@@ -108,8 +138,8 @@ check(
 );
 check('admin unassigned within 5% of spec 23,56,985', withinPct(admin.unassigned?.premium ?? 0, 2356985, 5), fmt(admin.unassigned?.premium ?? 0));
 check(
-  'admin active FAs sane (total ~629, active ~360)',
-  withinPct(admin.activeFas.total, 629, 5) && withinPct(admin.activeFas.active, 360, 15),
+  'admin active FAs sane (total ~629, active ~537 ever-sold)',
+  withinPct(admin.activeFas.total, 629, 5) && withinPct(admin.activeFas.active, 537, 15),
   `${admin.activeFas.active} of ${admin.activeFas.total}`,
 );
 
@@ -130,6 +160,62 @@ check('reconcile: FA + direct + residual buckets == org total', Math.abs(bucketT
 let residualTotal = 0;
 for (const b of index.residualBuckets.values()) residualTotal += b.total;
 check('reconcile: admin unassigned == Σ residual buckets', admin.unassigned !== null && Math.abs(admin.unassigned.premium - residualTotal) < 1, `${fmt(admin.unassigned?.premium ?? 0)} vs ${fmt(residualTotal)}`);
+// Ever-sold Active FAs (the retail app's headline KPI): canonical FAs
+// with ANY PR row, recomputed straight from the records — exact, and
+// equal to the retail app's producers `activity` count (537 live).
+const everSold = new Set(payload.records.map((r) => index.canonicalFA(r.faCode)).filter(Boolean));
+check('recompute: ever-sold FAs == admin activeFas.active', everSold.size === admin.activeFas.active, `${everSold.size} vs ${admin.activeFas.active}`);
+// Dues this week: the week window is the Bangladesh calendar week
+// (Sunday–Saturday) containing today; the sheet part recomputed
+// directly (Inforce, nextDue in the week, premium > 0). The summary
+// figure is the sheet part + the ledger fallback, so it is >= the
+// sheet part and within 5% of it when the fallback is empty.
+const weekStart = admin.duesThisWeek?.weekStart;
+const weekEnd = admin.duesThisWeek?.weekEnd;
+const weekDow = new Date(`${today}T00:00:00Z`).getUTCDay();
+const weekStartExp = (() => {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - weekDow);
+  return d.toISOString().slice(0, 10);
+})();
+const weekEndExp = (() => {
+  const d = new Date(`${weekStartExp}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 6);
+  return d.toISOString().slice(0, 10);
+})();
+check('recompute: duesThisWeek window is Sun–Sat containing today', weekStart === weekStartExp && weekEnd === weekEndExp, `${weekStart}..${weekEnd} vs ${weekStartExp}..${weekEndExp}`);
+const weekSheetRows = payload.duePolicies.filter(
+  (d) => String(d.status || '').trim().toLowerCase() === 'inforce' && d.nextDue >= weekStart && d.nextDue <= weekEnd && num(d.premium) > 0,
+);
+const weekSheet = weekSheetRows.reduce((a, d) => a + num(d.premium), 0);
+const weekSheetPolicies = new Set(weekSheetRows.map((d) => String(d.policy))).size;
+check(
+  'recompute: duesThisWeek >= sheet week part, within 5%',
+  (admin.duesThisWeek?.amount ?? 0) >= weekSheet && withinPct(admin.duesThisWeek?.amount ?? 0, weekSheet, 5) && (admin.duesThisWeek?.count ?? 0) >= weekSheetPolicies,
+  `${fmt(admin.duesThisWeek?.amount ?? 0)} (${admin.duesThisWeek?.count} pol) vs sheet ${fmt(weekSheet)} (${weekSheetPolicies} pol)`,
+);
+// Due rows: exactly 3 (or fewer when the scope has fewer dues),
+// sorted by nextDue ascending, each row owner + nextDue + premium
+// ONLY — no policy number, no mobile field anywhere.
+check('recompute: admin dueRows is 3 rows, sorted by nextDue', Array.isArray(admin.dueRows) && admin.dueRows.length === 3 && admin.dueRows.every((r, i) => i === 0 || admin.dueRows[i - 1].nextDue <= r.nextDue), JSON.stringify(admin.dueRows));
+check(
+  'recompute: dueRows carry only owner/nextDue/premium (no mobile, no policy)',
+  Array.isArray(admin.dueRows) && admin.dueRows.every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium'),
+  JSON.stringify(admin.dueRows?.[0] ?? null),
+);
+check(
+  'recompute: dueRows are the 3 earliest Inforce dues',
+  Array.isArray(admin.dueRows) &&
+    JSON.stringify(admin.dueRows.map((r) => r.nextDue)) ===
+      JSON.stringify(
+        payload.duePolicies
+          .filter((d) => d.policy && d.nextDue && String(d.status || '').trim().toLowerCase() === 'inforce' && num(d.premium) > 0)
+          .map((d) => d.nextDue)
+          .sort()
+          .slice(0, 3),
+      ),
+  JSON.stringify(admin.dueRows?.map((r) => r.nextDue)),
+);
 
 // ---- 4. Scoping (live payload) ----
 const um = summarizeWithIndex(index, { employeeId: '1101020102', role: 'team_lead' });
@@ -172,7 +258,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture admin policies 9', adm.policies === 9, String(adm.policies));
   check('fixture admin due 38000 (5 pol)', adm.duePremium === 38000 && adm.duePolicies === 5, `${adm.duePremium} (${adm.duePolicies})`);
   check('fixture admin persistency 8/9', adm.persistency?.inf === 8 && adm.persistency?.all === 9, JSON.stringify(adm.persistency));
-  check('fixture admin active 3 of 4', adm.activeFas.active === 3 && adm.activeFas.total === 4, JSON.stringify(adm.activeFas));
+  check('fixture admin active 4 of 4 (ever-sold)', adm.activeFas.active === 4 && adm.activeFas.total === 4, JSON.stringify(adm.activeFas));
   check('fixture admin unassigned 7000 (1)', adm.unassigned?.premium === 7000 && adm.unassigned?.policies === 1, JSON.stringify(adm.unassigned));
   check('fixture admin BE DMO 234000 (8)', adm.leaderboard.entries[0]?.premium === 234000 && adm.leaderboard.entries[0]?.policies === 8, JSON.stringify(adm.leaderboard.entries));
   check('fixture admin deferred 6.2%', Math.abs(adm.deferredRatio - (15000 / 241000) * 100) < 0.01, String(adm.deferredRatio));
@@ -184,7 +270,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture mgr policies 8', mgr.policies === 8, String(mgr.policies));
   check('fixture mgr due 38000 (5)', mgr.duePremium === 38000 && mgr.duePolicies === 5, `${mgr.duePremium} (${mgr.duePolicies})`);
   check('fixture mgr persistency 7/8', mgr.persistency?.inf === 7 && mgr.persistency?.all === 8, JSON.stringify(mgr.persistency));
-  check('fixture mgr active 3 of 4', mgr.activeFas.active === 3 && mgr.activeFas.total === 4, JSON.stringify(mgr.activeFas));
+  check('fixture mgr active 4 of 4 (ever-sold)', mgr.activeFas.active === 4 && mgr.activeFas.total === 4, JSON.stringify(mgr.activeFas));
   check('fixture mgr leaders 9990002 then 9990005', mgr.leaderboard.entries[0]?.premium === 164000 && mgr.leaderboard.entries[1]?.premium === 70000, JSON.stringify(mgr.leaderboard.entries));
   check('fixture mgr no unassigned', mgr.unassigned === null, JSON.stringify(mgr.unassigned));
 
@@ -194,7 +280,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture lead policies 7', lead.policies === 7, String(lead.policies));
   check('fixture lead due 34000 (4)', lead.duePremium === 34000 && lead.duePolicies === 4, `${lead.duePremium} (${lead.duePolicies})`);
   check('fixture lead persistency 5/6', lead.persistency?.inf === 5 && lead.persistency?.all === 6, JSON.stringify(lead.persistency));
-  check('fixture lead active 2 of 3', lead.activeFas.active === 2 && lead.activeFas.total === 3, JSON.stringify(lead.activeFas));
+  check('fixture lead active 3 of 3 (ever-sold)', lead.activeFas.active === 3 && lead.activeFas.total === 3, JSON.stringify(lead.activeFas));
   check('fixture lead leaders 67000/57000/15000', lead.leaderboard.entries.map((e) => e.premium).join(',') === '67000,57000,15000', JSON.stringify(lead.leaderboard.entries));
   check('fixture lead deferred 3.0% / renewal 4.9%', Math.abs(lead.deferredRatio - (5000 / 164000) * 100) < 0.01 && Math.abs(lead.renewalRatio - (8000 / 164000) * 100) < 0.01, `${lead.deferredRatio} / ${lead.renewalRatio}`);
 
@@ -222,6 +308,21 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture lead scope team', lead.scope === 'team', lead.scope);
   check('fixture mgr scope subtree', mgr.scope === 'subtree', mgr.scope);
   check('fixture admin scope org', adm.scope === 'org', adm.scope);
+
+  // Dues this week (Sun 15 – Sat 21 Nov 2026): sheet D1011 8,000 +
+  // T-series ledger T9002 9,000 (instalment on the 15th) = 17,000
+  // (2 pol) org-wide; 9990001 has none (T9001's instalment is Nov 4).
+  check('fixture admin duesThisWeek 17000 (2), week 11-15..11-21', adm.duesThisWeek.count === 2 && adm.duesThisWeek.amount === 17000 && adm.duesThisWeek.weekStart === '2026-11-15' && adm.duesThisWeek.weekEnd === '2026-11-21', JSON.stringify(adm.duesThisWeek));
+  check('fixture mgr duesThisWeek 17000 (2)', mgr.duesThisWeek.count === 2 && mgr.duesThisWeek.amount === 17000, JSON.stringify(mgr.duesThisWeek));
+  check('fixture lead duesThisWeek 17000 (2)', lead.duesThisWeek.count === 2 && lead.duesThisWeek.amount === 17000, JSON.stringify(lead.duesThisWeek));
+  check('fixture emp duesThisWeek 0', emp.duesThisWeek.count === 0 && emp.duesThisWeek.amount === 0, JSON.stringify(emp.duesThisWeek));
+  // Due rows (top 3, nearest due date first; owner + nextDue +
+  // premium only). Overdue rows come first (D1012, Oct 10).
+  check('fixture admin dueRows D1012/D1001/D2001', JSON.stringify(adm.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRows));
+  check('fixture lead dueRows D1012/D1001/D1011', JSON.stringify(lead.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-20', 8000]]), JSON.stringify(lead.dueRows));
+  check('fixture emp dueRows D1001/D1002 (only 2)', JSON.stringify(emp.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-10', 5000], ['2026-12-08', 2000]]), JSON.stringify(emp.dueRows));
+  check('fixture dueRows carry only owner/nextDue/premium', [adm, mgr, lead, emp].every((s) => s.dueRows.every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium')), JSON.stringify(adm.dueRows[0]));
+  check('fixture dueWindow is MTD 11-01..11-20', adm.dueWindow?.start === '2026-11-01' && adm.dueWindow?.end === '2026-11-20', JSON.stringify(adm.dueWindow));
 }
 
 // ---- 5b. Time-frame filter (fixture, pinned date) ----
@@ -255,7 +356,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     // Snapshot KPIs never move with the period.
     check(`period ${period}: due stays 38000 (5)`, s.duePremium === 38000 && s.duePolicies === 5, `${s.duePremium} (${s.duePolicies})`);
     check(`period ${period}: persistency stays 8/9`, s.persistency?.inf === 8 && s.persistency?.all === 9, JSON.stringify(s.persistency));
-    check(`period ${period}: active stays 3 of 4`, s.activeFas.active === 3 && s.activeFas.total === 4, JSON.stringify(s.activeFas));
+    check(`period ${period}: active stays 4 of 4`, s.activeFas.active === 4 && s.activeFas.total === 4, JSON.stringify(s.activeFas));
     // The summary echoes the period + window it was computed for.
     const w = periodDateWindow(period, FIXTURE_TODAY);
     check(`period ${period}: echoes period + window`, s.period === period && JSON.stringify(s.periodWindow) === JSON.stringify(w), `${s.period} ${JSON.stringify(s.periodWindow)}`);
@@ -309,7 +410,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     check(`custom ${from}..${to}: org total ${total}`, s.totalPremium === total, String(s.totalPremium));
     check(`custom ${from}..${to}: org policies ${policies}`, s.policies === policies, String(s.policies));
     check(`custom ${from}..${to}: echoes period + window`, s.period === 'custom' && s.periodWindow?.start === from && s.periodWindow?.end === to, `${s.period} ${JSON.stringify(s.periodWindow)}`);
-    check(`custom ${from}..${to}: snapshots intact (due 38000, 8/9, 3 of 4)`, s.duePremium === 38000 && s.persistency?.inf === 8 && s.persistency?.all === 9 && s.activeFas.active === 3, `${s.duePremium} ${JSON.stringify(s.persistency)} ${JSON.stringify(s.activeFas)}`);
+    check(`custom ${from}..${to}: snapshots intact (due 38000, 8/9, 4 of 4)`, s.duePremium === 38000 && s.persistency?.inf === 8 && s.persistency?.all === 9 && s.activeFas.active === 4, `${s.duePremium} ${JSON.stringify(s.persistency)} ${JSON.stringify(s.activeFas)}`);
     const ownRows = rows.filter((r) => String(r.faCode) === '9990001');
     const ownTotal = ownRows.reduce((a, r) => a + num(r.total), 0);
     const ownPolicies = new Set(ownRows.filter(isNewType).map((r) => String(r.policy))).size;
@@ -591,6 +692,140 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   }
   check('proxy: retail fetch cached (1 call)', fetchCalls === 1, `${fetchCalls} calls`);
   globalThis.fetch = realFetch;
+}
+
+// ---- 8. Mixed-version tolerance (client validation + SW cache) ----
+{
+  // 2026-11-20 live bug: after the c48ac65 push, a browser running the
+  // new bundle against the OLD deployment's proxy (Vercel skew pin)
+  // failed client validation — the old proxy response has no
+  // newPremium/deferredPremium — and the whole retail feed fell back
+  // to demo while LeadFlow/Learning stayed Live. The client must
+  // accept the old shape and default the two fields to 0. This tests
+  // the REAL client module with fetch stubbed.
+  const { register } = await import('node:module');
+  register('./qa-ts-resolve-hooks.mjs', import.meta.url);
+
+  // Minimal sessionStorage for the client module (Node has none).
+  const store = new Map();
+  globalThis.sessionStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+    key: (i) => [...store.keys()][i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+
+  const { loadRetailFresh, loadRetailCached } = await import('../src/data/retailData.ts');
+  const { ALL_TIME_SELECTION } = await import('../src/data/period.ts');
+
+  // Old-shape response: the live admin summary with the two c48ac65
+  // fields removed — everything else valid.
+  const oldShape = { ...admin };
+  delete oldShape.newPremium;
+  delete oldShape.deferredPremium;
+
+  const realFetch2 = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => oldShape });
+  const fresh = await loadRetailFresh('test-token', '2025019', ALL_TIME_SELECTION);
+  check('old-shape: fresh load passes validation', fresh.summary.totalPremium === admin.totalPremium && fresh.summary.fycp === admin.fycp, `total=${fresh.summary.totalPremium}`);
+  check('old-shape: newPremium/deferredPremium default to 0', fresh.summary.newPremium === 0 && fresh.summary.deferredPremium === 0, `${fresh.summary.newPremium} / ${fresh.summary.deferredPremium}`);
+  check('old-shape: not demo (live feed stays live)', fresh.summary.demo === false);
+  // The fresh load cached the NORMALIZED summary — the cached path
+  // must serve it back with the 0 defaults too.
+  const cached = loadRetailCached('2025019', ALL_TIME_SELECTION);
+  check('old-shape: cached load returns normalized 0 defaults', cached !== null && cached.fromCache === true && cached.summary.newPremium === 0 && cached.summary.deferredPremium === 0, cached ? `${cached.summary.newPremium} / ${cached.summary.deferredPremium}` : 'null');
+  // A cache entry written by an OLD client (fields absent on disk)
+  // must normalize on read, not be discarded.
+  const cacheKey = [...store.keys()][0];
+  store.clear();
+  globalThis.sessionStorage.setItem(cacheKey, JSON.stringify({ summary: oldShape, employeeId: '2025019', syncedAt: Date.now() }));
+  const cachedOld = loadRetailCached('2025019', ALL_TIME_SELECTION);
+  check('old-shape: old-client cache entry normalizes on read', cachedOld !== null && cachedOld.summary.newPremium === 0 && cachedOld.summary.deferredPremium === 0, cachedOld ? 'normalized' : 'discarded');
+  // Other required checks are unchanged: a shape missing totalPremium
+  // must still throw.
+  const badShape = { ...oldShape };
+  delete badShape.totalPremium;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => badShape });
+  let threw = false;
+  try {
+    await loadRetailFresh('test-token', '2025019', ALL_TIME_SELECTION);
+  } catch {
+    threw = true;
+  }
+  check('old-shape: shape missing totalPremium still throws', threw);
+  // New-shape responses pass through unchanged.
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => admin });
+  const freshNew = await loadRetailFresh('test-token', '2025019', ALL_TIME_SELECTION);
+  check('new-shape: new/deferred values pass through', freshNew.summary.newPremium === admin.newPremium && freshNew.summary.deferredPremium === admin.deferredPremium, `${freshNew.summary.newPremium} / ${freshNew.summary.deferredPremium}`);
+  globalThis.fetch = realFetch2;
+
+  // Service worker cache bump: the shell changed in c48ac65, so the
+  // cache name must be v2 (v1 would keep serving the stale shell).
+  const sw = fs.readFileSync(path.join(ROOT, 'public', 'sw.js'), 'utf8');
+  check('sw.js: cache name is agent-hub-shell-v2', sw.includes("CACHE_NAME = 'agent-hub-shell-v2'"));
+  check('sw.js: no v1 cache name left', !sw.includes('agent-hub-shell-v1'));
+}
+
+// ---- 9. Retail-app reconciliation (stubbed payload) ----
+{
+  // The fixture cannot distinguish the MTD window (all its dues fall
+  // on/before the 20th) or the ever-sold rule (all 4 FAs have sold),
+  // so §9 mutates a fixture COPY: a due AFTER today but inside the
+  // month, a due inside the window with premium != duePrem, and a
+  // never-sold FA in the directory. The retail app is authoritative
+  // for retail figures — these are its definitions (dist/index.html
+  // pdDueRowsForWindow + the MTD default preset; api/sales-data.js
+  // producers `activity`).
+  const fx = buildDemoPayload(FIXTURE_TODAY);
+  const dueStub = ({ policy, faCode, nextDue, premium, duePrem }) => ({
+    policy,
+    owner: 'Demo Customer',
+    nextDue,
+    product: 'Shanta Endowment (With Profit) Plan',
+    term: '10',
+    dueInstl: 0,
+    premium,
+    duePrem,
+    mode: 'Monthly',
+    status: 'Inforce',
+    faCode,
+    beCode: 'DMO',
+    premiumReceived: 0,
+    lapseTiming: 'Regular',
+    commYear: 2025,
+    commMonth: 6,
+    commDate: '2025-06-15',
+  });
+  // A due on Nov 25 — inside the month, AFTER today (Nov 20): the
+  // MTD figure must NOT include it (the old full-month definition
+  // would have: 48,000 / 6 pol).
+  fx.duePolicies.push(dueStub({ policy: 'X9025', faCode: '9990001', nextDue: '2026-11-25', premium: 10000, duePrem: 0 }));
+  // A due inside the MTD window with premium != duePrem: the figure
+  // sums `premium` (7,000), NOT `duePrem` (70,000). Nov 18 is also
+  // inside the week (Sun 15 – Sat 21), so the week figure moves too.
+  fx.duePolicies.push(dueStub({ policy: 'X9018', faCode: '9990001', nextDue: '2026-11-18', premium: 7000, duePrem: 70000 }));
+  // A never-sold FA (directory + producers, no records): in the
+  // universe, not active.
+  fx.producerDirectory.push({ code: '9990099', name: 'Demo FA Never Sold', tier: 'FA', selfCode: '', beCode: 'DMO', be: 'Demo BE', ownerCode: '9990099', ownerName: 'Demo FA Never Sold', ownerTier: 'FA', ownerBeCode: 'DMO', ownerBe: 'Demo BE', parentOwnerCode: '9990002', parentOwnerTier: 'UM' });
+  fx.producers.push({ code: '9990099', aliases: ['9990099'], name: 'Demo FA Never Sold', beCode: 'DMO', be: 'Demo BE', beSource: 'recruit', district: '', designation: 'FA', activity: 'Inactive', reason: '', joined: '2025-01-10', lastPremiumDate: '', lastPremiumMonth: '' });
+
+  const adm = summarizeRetail(fx, { employeeId: '9990004', role: 'admin' }, FIXTURE_TODAY);
+  check('recon MTD: Nov 25 due excluded (due 45000, 6 pol)', adm.duePremium === 45000 && adm.duePolicies === 6, `${adm.duePremium} (${adm.duePolicies})`);
+  check('recon MTD: premium summed, not duePrem (7000 not 70000)', adm.duePremium === 38000 + 7000, String(adm.duePremium));
+  check('recon MTD: overdue Oct due still excluded', adm.duePremium === 45000, String(adm.duePremium));
+  check('recon week: Nov 18 due inside the week (24000, 3 pol)', adm.duesThisWeek.count === 3 && adm.duesThisWeek.amount === 24000, JSON.stringify(adm.duesThisWeek));
+  check('recon week: Nov 25 due outside the week', adm.duesThisWeek.amount === 17000 + 7000, String(adm.duesThisWeek.amount));
+  check('recon ever-sold: never-sold FA in universe, not active (4 of 5)', adm.activeFas.active === 4 && adm.activeFas.total === 5, JSON.stringify(adm.activeFas));
+  check('recon dueRows: top 3 unchanged by the later dues', JSON.stringify(adm.dueRows.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRows));
+
+  const lead = summarizeRetail(fx, { employeeId: '9990002', role: 'team_lead' }, FIXTURE_TODAY);
+  check('recon lead: never-sold FA in team universe (3 of 4)', lead.activeFas.active === 3 && lead.activeFas.total === 4, JSON.stringify(lead.activeFas));
+  const emp = summarizeRetail(fx, { employeeId: '9990001', role: 'employee' }, FIXTURE_TODAY);
+  check('recon emp: due 24000 (3 pol) — Nov 18 in, Nov 25 out', emp.duePremium === 24000 && emp.duePolicies === 3, `${emp.duePremium} (${emp.duePolicies})`);
+  check('recon emp: week 7000 (1 pol) — only the Nov 18 due', emp.duesThisWeek.count === 1 && emp.duesThisWeek.amount === 7000, JSON.stringify(emp.duesThisWeek));
 }
 
 console.log(

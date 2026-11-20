@@ -126,19 +126,20 @@
  * Checks (Phase 2 — live feeds):
  * 21. Home / Leads / Learning live ready states against seeded session
  *     caches (fixture summaries flipped to demo:false): feed chips show
- *     Live per feed, the live note replaces the demo role note, exact
- *     figures per card (follow-ups 4 own / 12 team, dues 4 / ৳34,000
- *     this month with the Own + team scope, learning 80% own / 45%
- *     team), the business card keeps its demo figure with a DEMO
- *     marker, the Due widget switches to summary mode (amount +
- *     policies + month + scope + full-dashboard link, no DEMO- rows),
- *     the team section drops to 2 cards (follow-ups + learning) with
- *     no team Due widget, and the Leads/Learning summary strips show
- *     "Live from …" + Last synced + the live note with the extra live
- *     stats (overdue / open / converted; enrolled / completed /
- *     certificates / credits). Empty live states show the plain empty
- *     text per card. Fixture (demo:true) seeds show the DEMO chips +
- *     demo role note + the preview note on the Leads strip. Overflow
+ *     Live per feed, exact figures per card (follow-ups 4 own / 12 team
+ *     today-only, dues this week 2 / ৳17,000 with the Sun 15 – Sat 21
+ *     Nov week range, learning this month 0 credits / 1 in progress /
+ *     0 completed, business LIVE this-month FYCP ৳35,000 with no DEMO
+ *     marker, sales 1 policy / FYCP ৳35,000 this month), the Due widget
+ *     switches to summary mode (amount + policies + month + scope +
+ *     full-dashboard link, no DEMO- rows) with the 3 recent dues above
+ *     the totals, the team section drops to 2 cards (follow-ups +
+ *     learning) with no team Due widget, and the Leads/Learning summary
+ *     strips show "Live from …" + Last synced + the live note with the
+ *     extra live stats (overdue / open / converted; enrolled /
+ *     completed / certificates / credits). Empty live states show the
+ *     plain empty text per card. Fixture (demo:true) seeds show the
+ *     DEMO chips + the preview note on the Leads strip. Overflow
  *     checks at 375 / 768 / 1440 with screenshots (home-live-*,
  *     leads-live-1440, learning-live-1440).
  *
@@ -155,19 +156,19 @@
  *
  * Checks (Phase 2 — time-frame filter):
  * 23. Dashboard / Leads / Learning at 375 / 768 / 1440: the period
- *     control is a dropdown (default Today) with a Custom range. The
- *     :today and :3m session caches are seeded (live mode); the page
- *     shows the Today figures first (Dashboard total ৳35,000, FYCP
- *     ৳35,000, policies 1; Leads new leads own 2 + team 1; Learning
- *     org enrolled 6, credits 140), then selecting 'Last 3 months'
- *     switches the figures to the 3m values (Dashboard total
- *     ৳1,08,000, FYCP ৳1,00,000, policies 3; Leads new leads own 5 +
- *     team 11; Learning org enrolled 12, credits 290) while the
- *     snapshots stay put (due ৳34,000, persistency 83.3%,
- *     overdue/open/converted, certificates 1); the select's value
- *     tracks the selection, no horizontal overflow, with screenshots
- *     (*-period-3m-*). A custom range (2026-11-01..2026-11-20) returns
- *     exactly the rows inside it (Dashboard total ৳43,000, FYCP
+ *     control is a dropdown (default This Month on the Dashboard,
+ *     Today on Leads/Learning) with a Custom range. The session caches
+ *     are seeded (live mode); the page shows the default figures first
+ *     (Dashboard this-month total ৳43,000, FYCP ৳35,000, policies 1;
+ *     Leads new leads own 2 + team 1; Learning org enrolled 6, credits
+ *     140), then selecting 'Last 3 months' switches the figures to the
+ *     3m values (Dashboard total ৳1,08,000, FYCP ৳1,00,000, policies 3;
+ *     Leads new leads own 5 + team 11; Learning org enrolled 12,
+ *     credits 290) while the snapshots stay put (due ৳34,000,
+ *     persistency 83.3%, overdue/open/converted, certificates 1); the
+ *     select's value tracks the selection, no horizontal overflow, with
+ *     screenshots (*-period-3m-*). A custom range (2026-11-01..2026-11-20)
+ *     returns exactly the rows inside it (Dashboard total ৳43,000, FYCP
  *     ৳35,000, policies 1 — the this-month values), and an invalid
  *     range (to before from) shows the inline error and keeps the
  *     last figures. The exact period math is covered by
@@ -182,6 +183,12 @@
  * 25. Splash screen: present on first load, gone within ~1.5s; the
  *     login photo panel, wave band and animated card render at
  *     1440/375 with the logo fallbacks; screenshots (splash-*).
+ * 26. No subtitle under any page title (Home, Dashboard, Leads,
+ *     Learning, Calculators, Proposals, Profile) at 375 / 1440: the
+ *     titles stay, no <p> follows any h1, and none of the removed
+ *     subtitle strings appears anywhere. Section subtitles (Business
+ *     KPIs, Your tools, Your team) and the Proposals callout note are
+ *     intentionally kept.
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -914,19 +921,20 @@ try {
   // ---- 16b. Dashboard ready state (retail): synthetic cache, exact figures ----
   // Seeded with the demo fixture summary for 9990002 (Team Lead), computed
   // by the Hub's own summarizer — the exact values the proxy returns.
-  // The page defaults to Today: total ৳35,000 · FYCP ৳35,000 · policies 1 ·
-  // due ৳34,000 (4 pol) · persistency 83.3% (5/6) · active 2 of 3 ·
-  // leaders Demo Agent ৳35,000, Eleven ৳0, Twelve ৳0. Switching the
-  // dropdown to All time shows total ৳1,64,000 · FYCP ৳1,56,000 ·
-  // policies 7 · leaders Demo Agent ৳67,000, Demo FA Eleven ৳57,000,
-  // Demo FA Twelve ৳15,000 · DEMO badge · scope "Own + team". The
-  // background refresh fails here (no proxy under file://), so the
-  // cached-while-refreshing banner must also show.
+  // The page defaults to This Month: total ৳43,000 · FYCP ৳35,000 ·
+  // policies 1 · due ৳34,000 (4 pol) · persistency 83.3% (5/6) ·
+  // active 3 of 3 (ever-sold) · leaders Demo Agent ৳35,000, Eleven
+  // ৳0, Twelve ৳0. Switching the dropdown to All time shows total
+  // ৳1,64,000 · FYCP ৳1,56,000 · policies 7 · leaders Demo Agent
+  // ৳67,000, Demo FA Eleven ৳57,000, Demo FA Twelve ৳15,000 · DEMO
+  // badge · scope "Own + team". The background refresh fails here (no
+  // proxy under file://), so the cached-while-refreshing banner must
+  // also show.
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead', 'today') }, 'today');
+    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
@@ -942,12 +950,14 @@ try {
         }
         return out;
       });
-    // Default is Today — assert the today figures first.
-    const kpisToday = await readKpisHere();
-    check('dashboard ready (today default): total ৳35,000 + FYCP ৳35,000 + policies 1', kpisToday['Total premium received'] === '৳35,000' && kpisToday.FYCP === '৳35,000' && kpisToday.Policies === '1', JSON.stringify(kpisToday));
-    check('dashboard ready (today): due ৳34,000 + persistency 83.3% + active 2 of 3', kpisToday['Due premium — this month'] === '৳34,000' && kpisToday.Persistency === '83.3%' && kpisToday['Active field FAs'] === '2 of 3', JSON.stringify(kpisToday));
-    const bodyToday = await page.evaluate(() => document.body.textContent);
-    check('dashboard ready (today): leaders still listed (35,000 / 0 / 0)', bodyToday.includes('Demo Agent') && bodyToday.includes('Demo FA Eleven') && bodyToday.includes('Demo FA Twelve'));
+    // Default is This Month — assert the this-month figures first.
+    check('dashboard ready: dropdown defaults to This Month', (await page.$eval('#period-select', (el) => el.value)) === 'this-month');
+    const kpisThisMonth = await readKpisHere();
+    check('dashboard ready (this-month default): total ৳43,000 + FYCP ৳35,000 + policies 1', kpisThisMonth['Total premium received'] === '৳43,000' && kpisThisMonth.FYCP === '৳35,000' && kpisThisMonth.Policies === '1', JSON.stringify(kpisThisMonth));
+    check('dashboard ready (this-month): due ৳34,000 + persistency 83.3% + active 3 of 3', kpisThisMonth['Due premium — this month'] === '৳34,000' && kpisThisMonth.Persistency === '83.3%' && kpisThisMonth['Active field FAs'] === '3 of 3', JSON.stringify(kpisThisMonth));
+    const bodyThisMonth = await page.evaluate(() => document.body.textContent);
+    check('dashboard ready (this-month): leaders still listed (35,000 / 0 / 0)', bodyThisMonth.includes('Demo Agent') && bodyThisMonth.includes('Demo FA Eleven') && bodyThisMonth.includes('Demo FA Twelve'));
+    check('dashboard ready (this-month): due card shows the MTD window', bodyThisMonth.includes('1 – 20 Nov 2026'));
     // Switch the dropdown to All time and assert the all-time figures.
     await page.select('#period-select', 'all');
     await page.waitForFunction(
@@ -965,7 +975,7 @@ try {
     check('dashboard ready: FYCP ৳1,56,000 + policies 7', kpis.FYCP === '৳1,56,000' && kpis.Policies === '7', JSON.stringify(kpis));
     check('dashboard ready: due premium ৳34,000', kpis['Due premium — this month'] === '৳34,000', JSON.stringify(kpis));
     check('dashboard ready: persistency 83.3%', kpis.Persistency === '83.3%', JSON.stringify(kpis));
-    check('dashboard ready: active FAs 2 of 3', kpis['Active field FAs'] === '2 of 3', JSON.stringify(kpis));
+    check('dashboard ready: active FAs 3 of 3', kpis['Active field FAs'] === '3 of 3', JSON.stringify(kpis));
     check('dashboard ready: due 4 policies + persistency 5 of 6 inforce', body.includes('4 policies') && body.includes('5 of 6 inforce'));
     check('dashboard ready: deferred/renewal subline', body.includes('Deferred 3.0%') && body.includes('Renewal 4.9%'));
     check('dashboard ready: leaders ranked (Demo Agent, Eleven, Twelve)', body.includes('Demo Agent') && body.includes('Demo FA Eleven') && body.includes('Demo FA Twelve'));
@@ -982,14 +992,15 @@ try {
 
   // ---- 16c. Dashboard role views: Employee, Admin, empty scope ----
   // Employee (9990001): own data only — total ৳67,000, persistency 100.0%,
-  // scope "Own data", and NO leaderboard section at all. Both the :today
-  // and :all caches are seeded; the page defaults to Today, so the
-  // all-time assertions need the dropdown switched to All time first.
+  // scope "Own data", and NO leaderboard section at all. Both the
+  // :this-month and :all caches are seeded; the page defaults to This
+  // Month, so the all-time assertions need the dropdown switched to
+  // All time first.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee', 'today') }, 'today');
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
@@ -1011,7 +1022,7 @@ try {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin', 'today') }, 'today');
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
@@ -1028,16 +1039,16 @@ try {
     await ctx.close();
   }
   // Empty scope: the empty state with the no-code note — and no KPI cards.
-  // Only the :today cache is seeded — the page defaults to Today, so the
-  // empty state renders immediately.
+  // Only the :this-month cache is seeded — the page defaults to This
+  // Month, so the empty state renders immediately.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    const emptySummary = demoSummaryFor('9990001', 'employee', 'today');
+    const emptySummary = demoSummaryFor('9990001', 'employee', 'this-month');
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
-    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: emptySummary }, 'today');
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: emptySummary }, 'this-month');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (empty scope): empty state renders', dashPath === 'empty', `path=${dashPath}`);
@@ -1876,25 +1887,32 @@ try {
   }
 
   // ---- 21a. Home live ready state (Team Lead): seeded caches, demo:false ----
-  // Fixture figures, live chrome: chips Live, live note, exact card
-  // figures, business keeps its demo figure with a DEMO marker, Due
-  // widget in summary mode, team section drops to 2 cards, no team Due
-  // widget.
+  // Fixture figures, live chrome: chips Live, exact card figures,
+  // business LIVE (this-month FYCP, no DEMO marker), dues this week
+  // with the week range, monthly learning card, Due widget in summary
+  // mode with the 3 recent dues, team section drops to 2 cards, no
+  // team Due widget. Home loads retail + learning with :this-month
+  // and LeadFlow with :all (follow-ups are day-bucketed).
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
-      learning: learningSummaryFor('9990002', 'team_lead', true),
-      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+      learning: null,
+      retail: null,
     });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: null,
+      learning: learningSummaryFor('9990002', 'team_lead', true, 'this-month'),
+      retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false },
+    }, 'this-month');
     // The Home effect already ran (empty caches) — reload so it re-reads.
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
     const body = await page.evaluate(() => document.body.textContent);
     check('home live: feed chips all Live', body.includes('LeadFlow · Live') && body.includes('Learning Hub · Live') && body.includes('Retail Dashboard · Live'));
-    check('home live: live note, no demo role note', body.includes('Live data from your connected apps.') && !body.includes('Demo view for this role'));
+    check('home live: no page-title subtitle', !body.includes('Here is your day at a glance') && !body.includes('Live data from your connected apps.'));
     const cards = await page.evaluate(() => {
       const out = { own: {}, team: {} };
       for (const section of document.querySelectorAll('section[aria-label]')) {
@@ -1913,44 +1931,45 @@ try {
       }
       return out;
     });
-    check('home live own: follow-ups 4', cards.own["Today's follow-ups"]?.value === '4', JSON.stringify(cards.own));
+    check('home live own: follow-ups 4 (today only)', cards.own["Today's follow-ups"]?.value === '4', JSON.stringify(cards.own));
     check(
-      'home live own: dues this month 4, Own + team, ৳34,000',
-      cards.own['Dues this month']?.value === '4' &&
-        cards.own['Dues this month']?.sub.includes('Own + team') &&
-        cards.own['Dues this month']?.sub.includes('4 premiums due this month') &&
-        cards.own['Dues this month']?.sub.includes('৳34,000'),
-      JSON.stringify(cards.own['Dues this month']),
+      'home live own: dues this week 2, Own + team, Sun 15 – Sat 21 Nov, ৳17,000',
+      cards.own['Dues this week']?.value === '2' &&
+        cards.own['Dues this week']?.sub.includes('Own + team') &&
+        cards.own['Dues this week']?.sub.includes('Sun 15 – Sat 21 Nov') &&
+        cards.own['Dues this week']?.sub.includes('2 premiums due') &&
+        cards.own['Dues this week']?.sub.includes('৳17,000'),
+      JSON.stringify(cards.own['Dues this week']),
     );
     check(
-      'home live own: learning 80% + Art of Selling',
-      cards.own['Learning in progress']?.value === '80%' &&
-        cards.own['Learning in progress']?.sub.includes('The Art of Selling'),
-      JSON.stringify(cards.own['Learning in progress']),
+      'home live own: learning this month 0 credits, 1 in progress, 0 completed',
+      cards.own['Learning this month']?.value === '0' &&
+        cards.own['Learning this month']?.sub.includes('1 in progress') &&
+        cards.own['Learning this month']?.sub.includes('0 completed'),
+      JSON.stringify(cards.own['Learning this month']),
     );
     check(
-      'home live own: business keeps demo figure + DEMO marker',
-      cards.own["This month's business"]?.value === '৳2,40,000' &&
-        cards.own["This month's business"]?.sub.includes('DEMO DATA'),
+      'home live own: business LIVE this-month FYCP ৳35,000, no DEMO marker',
+      cards.own["This month's business"]?.value === '৳35,000' &&
+        !cards.own["This month's business"]?.sub.includes('DEMO DATA'),
       JSON.stringify(cards.own["This month's business"]),
     );
-    // Sales overview (Mahadi 2026-11-20): all-time retail snapshots —
-    // Total policy sales 7 (distinct New policies, same definition as
-    // the Dashboard Policies KPI) and Total FYCP ৳1,56,000 with the
-    // New ৳1,51,000 · Deferred ৳5,000 sub-text, scoped Own + team.
+    // Sales overview (Mahadi 2026-11-20): THIS-MONTH retail figures —
+    // Total policy sales 1 and Total FYCP ৳35,000 with the New
+    // ৳30,000 · Deferred ৳5,000 sub-text, scoped Own + team.
     check(
-      'home live sales: Total policy sales 7, New policies · All time',
-      cards.own['Total policy sales']?.value === '7' &&
-        cards.own['Total policy sales']?.sub === 'New policies · All time',
+      'home live sales: Total policy sales 1, New policies · This month',
+      cards.own['Total policy sales']?.value === '1' &&
+        cards.own['Total policy sales']?.sub === 'New policies · This month',
       JSON.stringify(cards.own['Total policy sales']),
     );
     check(
-      'home live sales: Total FYCP ৳1,56,000, New ৳1,51,000 · Deferred ৳5,000',
-      cards.own['Total FYCP']?.value === '৳1,56,000' &&
-        cards.own['Total FYCP']?.sub === 'New ৳1,51,000 · Deferred ৳5,000',
+      'home live sales: Total FYCP ৳35,000, New ৳30,000 · Deferred ৳5,000',
+      cards.own['Total FYCP']?.value === '৳35,000' &&
+        cards.own['Total FYCP']?.sub === 'New ৳30,000 · Deferred ৳5,000',
       JSON.stringify(cards.own['Total FYCP']),
     );
-    check('home live sales: scope chip Own + team · All time', body.includes('Own + team · All time'));
+    check('home live sales: scope chip Own + team · This month', body.includes('Own + team · This month'));
     check(
       'home live team: 2 cards only (follow-ups 12, learning 45%)',
       Object.keys(cards.team).length === 2 &&
@@ -1967,6 +1986,22 @@ try {
       'home live due widget: summary mode ৳34,000 + 4 policies + November 2026',
       dueWidgets[0]?.includes('৳34,000') && dueWidgets[0]?.includes('4 policies due') && dueWidgets[0]?.includes('Due in November 2026'),
       dueWidgets[0]?.slice(0, 200),
+    );
+    check(
+      'home live due widget: 3 recent dues (10 Oct ৳3,000, 10 Nov ৳5,000, 20 Nov ৳8,000)',
+      dueWidgets[0]?.includes('Recent dues') &&
+        dueWidgets[0]?.includes('10 Oct 2026') &&
+        dueWidgets[0]?.includes('10 Nov 2026') &&
+        dueWidgets[0]?.includes('20 Nov 2026') &&
+        dueWidgets[0]?.includes('৳3,000') &&
+        dueWidgets[0]?.includes('৳5,000') &&
+        dueWidgets[0]?.includes('৳8,000'),
+      dueWidgets[0]?.slice(0, 400),
+    );
+    check(
+      'home live due widget: overdue rows marked Overdue, no mobile anywhere',
+      dueWidgets[0]?.includes('Overdue') && !/mobile|মোবাইল|01[3-9]\d{8}/i.test(dueWidgets[0] ?? ''),
+      dueWidgets[0]?.slice(0, 400),
     );
     check(
       'home live due widget: live chip + scope + full-dashboard link',
@@ -2138,11 +2173,16 @@ try {
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
-      learning: learningSummaryFor('9990002', 'team_lead', true),
-      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+      learning: null,
+      retail: null,
     });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: null,
+      learning: learningSummaryFor('9990002', 'team_lead', true, 'this-month'),
+      retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false },
+    }, 'this-month');
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const ov = await overflowCheck(page);
     check(`home live ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
@@ -2151,7 +2191,8 @@ try {
   }
 
   // ---- 21e. Empty live states (Employee): plain empty text, no demo figures ----
-  // The empty summaries are seeded at BOTH :all (Home) and :today
+  // The empty summaries are seeded at :all (LeadFlow on Home), at
+  // :this-month (Home's retail + learning feeds) and at :today
   // (Leads/Learning pages default to Today now).
   {
     const { ctx, page } = await newPage(browser, 1440);
@@ -2165,7 +2206,7 @@ try {
     const emptyLearning = learningSummaryFor('9990001', 'employee', true);
     emptyLearning.empty = true;
     emptyLearning.emptyReason = 'no-lms-record';
-    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0 };
+    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0, coursesInProgress: 0 };
     const emptyRetail = {
       ...demoSummaryFor('9990001', 'employee'),
       demo: false,
@@ -2173,11 +2214,14 @@ try {
       emptyReason: 'no-rows',
       duePolicies: 0,
       duePremium: 0,
+      duesThisWeek: { count: 0, amount: 0, weekStart: '2026-11-15', weekEnd: '2026-11-21' },
+      dueRows: [],
     };
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail });
+    await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'this-month');
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'today');
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
     const cards = await page.evaluate(() => {
       const out = {};
       for (const section of document.querySelectorAll('section[aria-label]')) {
@@ -2189,8 +2233,8 @@ try {
       return out;
     });
     check('home empty live: follow-ups empty text', cards["Today's follow-ups"] === 'No follow-ups due today', JSON.stringify(cards));
-    check('home empty live: dues this month empty text', cards['Dues this month'] === 'No premiums due this month', JSON.stringify(cards));
-    check('home empty live: learning empty text', cards['Learning in progress'] === 'No course in progress', JSON.stringify(cards));
+    check('home empty live: dues this week empty text', cards['Dues this week'] === 'No premiums due this week', JSON.stringify(cards));
+    check('home empty live: learning this month empty text', cards['Learning this month'] === 'No learning this month', JSON.stringify(cards));
     check('home empty live: no Sales overview cards (empty retail)', cards['Total policy sales'] === undefined && cards['Total FYCP'] === undefined, JSON.stringify(cards));
     const dueText = await page.evaluate(() => {
       const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
@@ -2215,8 +2259,8 @@ try {
   }
 
   // ---- 21f. Fixture mode (demo:true seeds): DEMO chrome, not the unloaded note ----
-  // Seeded at BOTH :all (Home) and :today (the Leads page defaults
-  // to Today now).
+  // Seeded at :all (LeadFlow on Home), :this-month (Home's retail +
+  // learning feeds) and :today (the Leads page defaults to Today now).
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
@@ -2227,15 +2271,20 @@ try {
       retail: demoSummaryFor('9990002', 'team_lead'),
     });
     await seedFeedCaches(page, '9990002', {
+      leadflow: null,
+      learning: learningSummaryFor('9990002', 'team_lead', false, 'this-month'),
+      retail: demoSummaryFor('9990002', 'team_lead', 'this-month'),
+    }, 'this-month');
+    await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', false, 'today'),
       learning: learningSummaryFor('9990002', 'team_lead', false, 'today'),
       retail: demoSummaryFor('9990002', 'team_lead', 'today'),
     }, 'today');
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Demo view for this role'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Demo'), { timeout: 5000 });
     const body = await page.evaluate(() => document.body.textContent);
     check('home fixture: feed chips all Demo', body.includes('LeadFlow · Demo') && body.includes('Learning Hub · Demo') && body.includes('Retail Dashboard · Demo'));
-    check('home fixture: demo role note, no live note', body.includes('Demo view for this role') && !body.includes('Live data from your connected apps.'));
+    check('home fixture: no page-title subtitle', !body.includes('Demo view for this role') && !body.includes('Live data from your connected apps.'));
     const dueText = await page.evaluate(() => {
       const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
       return el ? el.textContent : '';
@@ -2343,19 +2392,20 @@ try {
     await page.screenshot({ path: path.join(QA_DIR, 'login-error-repeat-375.png'), fullPage: true });
     await ctx.close();
   }
-  // ---- 23. Time-frame filter: dropdown + Today default + Custom range ----
-  // Each data page at 375/768/1440: seed the :today and :3m caches
-  // (live mode), open the page, confirm the Today figures (the new
-  // default), select 'Last 3 months' from the dropdown, and confirm
-  // the figures change to the 3m values while the snapshots stay put.
-  // The Dashboard also exercises the Custom range: selecting Custom
-  // reveals the date inputs; filling 2026-11-01..2026-11-20 returns
-  // exactly the rows inside it (the this-month values); an invalid
-  // range (to before from) shows the inline error and keeps the last
-  // figures. The background refresh fails under file:// (no proxy) —
-  // the pages fall back to the seeded cache, which is exactly the path
-  // under test. Expected values are the hand-computed fixture values
-  // (qa-*-live §2b/§5b).
+  // ---- 23. Time-frame filter: dropdown + defaults + Custom range ----
+  // Each data page at 375/768/1440: seed the caches (live mode), open
+  // the page, confirm the default figures — This Month on the
+  // Dashboard (retail data lags a day, so Today shows ৳0), Today on
+  // Leads and Learning — select 'Last 3 months' from the dropdown,
+  // and confirm the figures change to the 3m values while the
+  // snapshots stay put. The Dashboard also exercises the Custom
+  // range: selecting Custom reveals the date inputs; filling
+  // 2026-11-01..2026-11-20 returns exactly the rows inside it (the
+  // this-month values); an invalid range (to before from) shows the
+  // inline error and keeps the last figures. The background refresh
+  // fails under file:// (no proxy) — the pages fall back to the
+  // seeded cache, which is exactly the path under test. Expected
+  // values are the hand-computed fixture values (qa-*-live §2b/§5b).
   const readKpis = (page) =>
     page.evaluate(() => {
       const out = {};
@@ -2393,25 +2443,25 @@ try {
       want,
     );
   for (const width of [375, 768, 1440]) {
-    // Dashboard (Team Lead 9990002): today total ৳35,000, FYCP
-    // ৳35,000, policies 1; 3m total ৳1,08,000, FYCP ৳1,00,000,
-    // policies 3; due ৳34,000 and persistency 83.3% stay put.
-    // Custom 2026-11-01..2026-11-20 = this-month: total ৳43,000,
-    // FYCP ৳35,000, policies 1.
+    // Dashboard (Team Lead 9990002): this-month total ৳43,000, FYCP
+    // ৳35,000, policies 1 (the Dashboard default); 3m total
+    // ৳1,08,000, FYCP ৳1,00,000, policies 3; due ৳34,000 and
+    // persistency 83.3% stay put. Custom 2026-11-01..2026-11-20 =
+    // this-month: total ৳43,000, FYCP ৳35,000, policies 1.
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990002');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'today'), demo: false } }, 'today');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false } }, 'this-month');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', '3m'), demo: false } }, '3m');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'custom', { start: '2026-11-01', end: '2026-11-20' }), demo: false } }, 'custom:2026-11-01:2026-11-20');
       await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
       const dashPath = await waitForDashboardTerminal(page);
       check(`period dashboard ${width}: ready state renders`, dashPath === 'live', `path=${dashPath}`);
       const selectValue = () => page.$eval('#period-select', (el) => el.value);
-      check(`period dashboard ${width}: dropdown defaults to Today`, (await selectValue()) === 'today');
-      const kpisToday = await readKpis(page);
-      check(`period dashboard ${width}: today total ৳35,000 + FYCP ৳35,000 + policies 1`, kpisToday['Total premium received'] === '৳35,000' && kpisToday.FYCP === '৳35,000' && kpisToday.Policies === '1', JSON.stringify(kpisToday));
+      check(`period dashboard ${width}: dropdown defaults to This Month`, (await selectValue()) === 'this-month');
+      const kpisThisMonth = await readKpis(page);
+      check(`period dashboard ${width}: this-month total ৳43,000 + FYCP ৳35,000 + policies 1`, kpisThisMonth['Total premium received'] === '৳43,000' && kpisThisMonth.FYCP === '৳35,000' && kpisThisMonth.Policies === '1', JSON.stringify(kpisThisMonth));
       await page.select('#period-select', '3m');
       await page.waitForFunction(
         () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,08,000'),
@@ -2570,6 +2620,69 @@ try {
     }
     const ov = await overflowCheck(page);
     check(`login visuals ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await ctx.close();
+  }
+
+  // ---- 26. No subtitle under any page title (Mahadi 2026-11-20) ----
+  // The descriptive subtitle line under each page's h1 is gone on
+  // every page — Home, Dashboard, Leads, Learning, Calculators,
+  // Proposals, Profile. The titles themselves stay. Checked
+  // structurally (no <p class="mt-1 ..."> directly after the h1 —
+  // the subtitle's exact shape) and by text (none of the removed
+  // subtitle strings appears anywhere on the page). Section
+  // subtitles (Business KPIs, Your tools, Your team) are NOT page
+  // titles and are intentionally kept. The Proposals callout note
+  // (mt-3, rounded box) is also kept — it is not a subtitle.
+  const REMOVED_SUBTITLES = [
+    'Here is your day at a glance.',
+    'Live data from your connected apps.',
+    'Demo view for this role — real data arrives in a later milestone.',
+    'Sales business, dues and persistency — scoped to what you can see.',
+    'Your leads, follow-ups and reminders live in LeadFlow.',
+    'Your courses, quizzes and certificates live in the Learning Hub.',
+    'Premium, SDPP and income calculators.',
+    'Proposal submission stays with the official agent portal (IT-owned).',
+  ];
+  const checkNoSubtitle = async (page, name, width) => {
+    await page.waitForSelector('h1', { timeout: 5000 });
+    const sub = await page.evaluate((removed) => {
+      const h1 = document.querySelector('h1');
+      const next = h1?.nextElementSibling;
+      const subtitleEl = next?.tagName === 'P' && next.className.includes('mt-1');
+      const body = document.body.textContent;
+      return {
+        h1: h1?.textContent?.trim() ?? null,
+        subtitleEl: !!subtitleEl,
+        found: removed.filter((s) => body.includes(s)),
+      };
+    }, REMOVED_SUBTITLES);
+    check(
+      `no subtitle ${name} ${width}: title present, no h1-adjacent subtitle, no removed text`,
+      sub.h1 !== null && !sub.subtitleEl && sub.found.length === 0,
+      JSON.stringify(sub),
+    );
+  };
+  for (const width of [375, 1440]) {
+    const { ctx, page } = await newPage(browser, width);
+    await login(page, '9990002');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await checkNoSubtitle(page, 'Home', width);
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    await checkNoSubtitle(page, 'Dashboard', width);
+    await clickNav(page, 'লিডস', 'Leads');
+    await checkNoSubtitle(page, 'Leads', width);
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await checkNoSubtitle(page, 'Learning', width);
+    await clickNav(page, 'ক্যালকুলেটর', 'Calculators');
+    await checkNoSubtitle(page, 'Calculators', width);
+    await clickNav(page, 'প্রপোজাল', 'Proposals');
+    await checkNoSubtitle(page, 'Proposals', width);
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
+    });
+    await checkNoSubtitle(page, 'Profile', width);
+    const ov = await overflowCheck(page);
+    check(`no subtitle ${width}: no horizontal overflow on Profile`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await ctx.close();
   }
 } finally {

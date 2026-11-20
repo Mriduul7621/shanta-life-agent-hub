@@ -14,7 +14,24 @@
  * The proxy returns ONLY this summary to the browser — never raw rows. The
  * Dashboard page renders aggregates only, so no policy-owner PII ever
  * leaves the server (stricter than spec §9.1, which allows returning the
- * visible slice).
+ * visible slice). The ONE exception is `dueRows`: the Home Due widget
+ * shows the viewer's 3 most recent dues, scoped server-side, each row
+ * carrying ONLY the owner name, the due date and the premium — no
+ * policy number, no mobile (the payload has no mobile field anywhere).
+ *
+ * Reconciliation with the retail app (2026-11-20, Mahadi: the Hub's
+ * Due Premium and Active FA did not match his Retail Dashboard):
+ * Due Premium is MONTH-TO-DATE — the retail app's Due KPI uses the
+ * selected range and its default preset is MTD (dist/index.html,
+ * `pdDueRowsForWindow` + the MTD default). Full Nov 2026 was 249
+ * pol / ৳16,53,216; MTD (to 2026-11-20) is 84 pol / ৳8,33,491.
+ * Active FAs is EVER-SOLD — the retail app's headline KPI counts
+ * producers whose `activity` is 'Active', which is exactly "has any
+ * PR row" (api/sales-data.js); the Hub rebuilds the same set from
+ * the records (everSet), verified equal on live data (537 of 629).
+ * The old Hub definitions (full calendar month; sold in the last
+ * 6 months = 360 of 629) were dropped, not kept as options: the
+ * retail app is authoritative for retail figures.
  *
  * Time-frame filter: buildRetailIndex takes a period ('today' /
  * 'this-month' / '3m' / '6m' / 'this-year' / 'all' / 'custom',
@@ -24,12 +41,15 @@
  * (FA / direct / residual / BE totals / org) are built from the
  * PR rows whose `date` falls in the window, so Total Premium / FYCP /
  * Policies / the leaderboard / the Unassigned line all follow the
- * period. Due Premium (this calendar month), Persistency (cumulative)
- * and Active FAs (last 6 months) keep their OWN windows — they are
+ * period. Due Premium (month-to-date), Persistency (cumulative)
+ * and Active FAs (ever-sold) keep their OWN windows — they are
  * computed from the unfiltered records / due sheet, so they never move
  * with the period selector. The summary also exposes the raw
  * newPremium / deferredPremium sums (FYCP = new + deferred) for the
- * Home FYCP card's sub-text.
+ * Home FYCP card's sub-text, the `dueWindow` MTD range, `duesThisWeek`
+ * (Inforce dues inside the current Bangladesh calendar week,
+ * Sunday–Saturday, with its week range) and `dueRows` (the 3 most
+ * recent dues, nearest due date first).
  */
 import { periodDateWindow } from './periods.js';
 
@@ -93,6 +113,19 @@ export function monthEndIso(value) {
   const [y, m] = value.split('-').map(Number);
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+}
+
+/**
+ * The Bangladesh calendar week containing `todayIso`: Sunday–Saturday.
+ * The retail app has NO week convention (no week logic anywhere in
+ * dist/index.html), so the Sunday–Saturday week is the Hub's own
+ * definition (Mahadi's "Dues this week", 2026-11-20) — the widget
+ * shows the week date range so the definition is visible.
+ */
+export function weekWindowIso(todayIso) {
+  const d = new Date(`${todayIso}T00:00:00Z`);
+  const start = addDaysIso(todayIso, -d.getUTCDay()); // 0 = Sunday
+  return { start, end: addDaysIso(start, 6) };
 }
 
 function modeMonths(mode) {
@@ -212,8 +245,10 @@ function buildLedgers(records, asOf) {
 export function buildRetailIndex(payload, todayIso, period = 'all', customRange = null) {
   const today = todayIso || dhakaToday();
   const monthStart = `${today.slice(0, 7)}-01`;
-  const monthEnd = monthEndIso(today);
-  const sixStart = addMonthsIso(today, -6);
+  // Due window: MONTH-TO-DATE [monthStart, today] — the retail app's
+  // default view (see the header note). monthEndIso is NOT used for
+  // dues any more.
+  const week = weekWindowIso(today);
   const records = payload.records || [];
   const duePolicies = payload.duePolicies || [];
   const producers = payload.producers || [];
@@ -382,14 +417,15 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     if (!beNames.has(be)) beNames.set(be, be);
   }
 
-  // Active sets (retail pdActiveSets): canonical FAs with a sale on/after
-  // sixStart (rolling 6 months, ending today). String compare on ISO dates.
-  const sixSet = new Set();
+  // Ever-sold set (the retail app's headline Active-FA KPI): canonical
+  // FAs with ANY PR row, regardless of date. The retail app computes
+  // this from its producers' `activity` field ('Active' = any row);
+  // the Hub rebuilds the same set from the records so it does not
+  // depend on the producers list's completeness.
+  const everSet = new Set();
   for (const r of records) {
-    if (r.date >= sixStart) {
-      const c = canonicalFA(r.faCode);
-      if (c) sixSet.add(c);
-    }
+    const c = canonicalFA(r.faCode);
+    if (c) everSet.add(c);
   }
 
   // Due sheet lookups (retail pdDueSheetByPolicy / pdDueRowBE).
@@ -421,8 +457,10 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     directByOwner.get(owner).push(bucket);
   }
 
-  // Ledgers as of monthEnd (for the Due Premium ledger fallback).
-  const ledgers = buildLedgers(records, monthEnd);
+  // Ledgers as of today (for the Due Premium ledger fallback — the
+  // fallback only counts instalments inside the MTD window, so the
+  // schedule never needs to run past today).
+  const ledgers = buildLedgers(records, today);
 
   // Org totals (independent of scoping — the Admin / reconciliation base).
   const orgBucket = emptyBucket();
@@ -433,9 +471,10 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     today,
     period,
     periodWindow,
-    monthStart,
-    monthEnd,
-    sixStart,
+    dueStart: monthStart,
+    dueEnd: today,
+    weekStart: week.start,
+    weekEnd: week.end,
     records,
     duePolicies,
     producers,
@@ -454,7 +493,7 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     beTotals,
     beNames,
     realBESet,
-    sixSet,
+    everSet,
     dueByPolicy,
     dueRowBE,
     ledgers,
@@ -622,17 +661,21 @@ function dueRowVisible(index, scope, d) {
   return false;
 }
 
-// Due Premium for the current calendar month (retail pdDueRowsForWindow):
-// sheet Inforce rows whose nextDue falls in the window (one instalment =
-// Premium), + the ledger fallback for sheet-absent policies (unpaid only).
+// Due Premium, MONTH-TO-DATE (retail pdDueRowsForWindow with the MTD
+// default preset): sheet Inforce rows whose nextDue falls in
+// [dueStart, dueEnd] = [monthStart, today] (one instalment = Premium),
+// + the ledger fallback for sheet-absent policies (unpaid only, same
+// window). Dues later in the month and the overdue backlog are NOT in
+// the figure — that is the retail app's default view, not a Hub
+// omission (reconciled 2026-11-20).
 function scopeDuePremium(index, scope) {
-  const { monthStart, monthEnd } = index;
+  const { dueStart, dueEnd } = index;
   let total = 0;
   const policies = new Set();
   for (const d of index.duePolicies) {
     if (!d.policy || !d.nextDue) continue;
     if (String(d.status || '').trim().toLowerCase() !== 'inforce') continue;
-    if (d.nextDue < monthStart || d.nextDue > monthEnd) continue;
+    if (d.nextDue < dueStart || d.nextDue > dueEnd) continue;
     if (!dueRowVisible(index, scope, d)) continue;
     const amount = num(d.premium);
     if (amount <= 0) continue;
@@ -644,13 +687,67 @@ function scopeDuePremium(index, scope) {
     if (!dueRowVisible(index, scope, { faCode: led.faCode, beCode: led.beCode })) continue;
     let amount = 0;
     for (const s of led.schedule) {
-      if (s.dueDate >= monthStart && s.dueDate <= monthEnd) amount += num(s.unpaid);
+      if (s.dueDate >= dueStart && s.dueDate <= dueEnd) amount += num(s.unpaid);
     }
     if (amount <= 0.005) continue;
     total += amount;
     policies.add(String(led.policy));
   }
   return { total, policies: policies.size };
+}
+
+// Dues this week: the same Inforce dues inside the current Bangladesh
+// calendar week (Sunday–Saturday, index.weekStart/weekEnd) — the
+// Due Premium definition with a week window, ledger fallback
+// included, so the week figure is a true subset of the MTD figure.
+// Count = distinct policies.
+function scopeDuesThisWeek(index, scope) {
+  const { weekStart, weekEnd } = index;
+  let amount = 0;
+  const policies = new Set();
+  for (const d of index.duePolicies) {
+    if (!d.policy || !d.nextDue) continue;
+    if (String(d.status || '').trim().toLowerCase() !== 'inforce') continue;
+    if (d.nextDue < weekStart || d.nextDue > weekEnd) continue;
+    if (!dueRowVisible(index, scope, d)) continue;
+    const premium = num(d.premium);
+    if (premium <= 0) continue;
+    amount += premium;
+    policies.add(String(d.policy));
+  }
+  for (const led of index.ledgers) {
+    if (index.dueByPolicy.has(String(led.policy))) continue;
+    if (!dueRowVisible(index, scope, { faCode: led.faCode, beCode: led.beCode })) continue;
+    let ledgerAmount = 0;
+    for (const s of led.schedule) {
+      if (s.dueDate >= weekStart && s.dueDate <= weekEnd) ledgerAmount += num(s.unpaid);
+    }
+    if (ledgerAmount <= 0.005) continue;
+    amount += ledgerAmount;
+    policies.add(String(led.policy));
+  }
+  return { count: policies.size, amount, weekStart, weekEnd };
+}
+
+// The 3 most recent dues (nearest due date first) for the Home Due
+// widget: Inforce rows, scoped, sorted by nextDue ascending (policy
+// as the tie-break so the order is deterministic). Overdue rows come
+// first — they ARE the most recent dues. Each row carries ONLY the
+// owner name, the due date and the premium: no policy number, no
+// mobile (the payload has no mobile field anywhere — verified on the
+// full payload, 0 occurrences).
+function scopeDueRows(index, scope) {
+  const rows = [];
+  for (const d of index.duePolicies) {
+    if (!d.policy || !d.nextDue) continue;
+    if (String(d.status || '').trim().toLowerCase() !== 'inforce') continue;
+    if (!dueRowVisible(index, scope, d)) continue;
+    const premium = num(d.premium);
+    if (premium <= 0) continue;
+    rows.push({ owner: String(d.owner || ''), nextDue: d.nextDue, premium, policy: String(d.policy) });
+  }
+  rows.sort((a, b) => (a.nextDue < b.nextDue ? -1 : a.nextDue > b.nextDue ? 1 : a.policy < b.policy ? -1 : 1));
+  return rows.slice(0, 3).map(({ owner, nextDue, premium }) => ({ owner, nextDue, premium }));
 }
 
 // Persistency, cumulative through today (retail pdPersistRows, cumulative):
@@ -678,10 +775,14 @@ function scopePersistency(index, scope) {
   return { pct: (inf / all) * 100, inf, all };
 }
 
+// Active FAs (the retail app's headline KPI): FAs in scope who have
+// EVER sold (any PR row), as a share of the FA universe. The retail
+// app's producers `activity` field is 'Active' exactly when the
+// producer has any row; everSet rebuilds that set from the records.
 function scopeActiveFas(index, scope) {
   let active = 0;
   for (const fa of scope.faSet) {
-    if (index.sixSet.has(fa)) active++;
+    if (index.everSet.has(fa)) active++;
   }
   return { active, total: scope.faSet.size };
 }
@@ -796,6 +897,8 @@ export function summarizeWithIndex(index, user) {
   const scope = buildScope(index, resolved, role);
   const business = scopeBusiness(index, scope);
   const due = scopeDuePremium(index, scope);
+  const duesThisWeek = scopeDuesThisWeek(index, scope);
+  const dueRows = scopeDueRows(index, scope);
   const persistency = scopePersistency(index, scope);
   const activeFas = scopeActiveFas(index, scope);
   const leaderboard = scopeLeaderboard(index, scope, resolved, role);
@@ -845,6 +948,13 @@ export function summarizeWithIndex(index, user) {
     duePremium: due.total,
     duePolicies: due.policies,
     dueMonth: index.today.slice(0, 7),
+    // The MTD window Due Premium covers, so the UI can show it.
+    dueWindow: { start: index.dueStart, end: index.dueEnd },
+    // This week's dues (Bangladesh calendar week) + the 3 most
+    // recent dues for the Home widgets. Both are period-independent
+    // snapshots, like Due Premium.
+    duesThisWeek,
+    dueRows,
     persistency,
     activeFas,
     leaderboard,

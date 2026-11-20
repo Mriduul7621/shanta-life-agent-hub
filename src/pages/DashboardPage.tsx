@@ -26,16 +26,20 @@
  *
  * Time-frame filter: Total Premium / FYCP / Policies and the
  * leaderboard follow the selected period (PR row date); Due Premium
- * stays this calendar month, Persistency stays cumulative, Active FAs
- * stay last-6-months — each labelled as such. Default is Today; the
- * selector is a dropdown with a Custom range (start/end dates).
+ * stays month-to-date, Persistency stays cumulative, Active FAs stay
+ * ever-sold — each labelled as such. Default is This Month (retail
+ * data lags a day, so Today shows ৳0 — Mahadi 2026-11-20); Leads
+ * and Learning keep Today. The selector is a dropdown with a Custom
+ * range (start/end dates).
+ *
+ * No subtitle under the page title (Mahadi 2026-11-20).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailLoadResult, RetailScope } from '../data/retailData';
-import { DEFAULT_SELECTION, isCompleteSelection, periodLabelKey, type PeriodSelection } from '../data/period';
+import { DASHBOARD_DEFAULT_SELECTION, isCompleteSelection, periodLabelKey, type PeriodSelection } from '../data/period';
 import PeriodSelector from '../components/PeriodSelector';
 import { formatBdt } from '../data/demoData';
 import { MODULES } from '../data/modules';
@@ -49,7 +53,7 @@ import {
   IconLeads,
   IconProfile,
 } from '../components/icons';
-import type { DictKey } from '../i18n/dictionary';
+import type { DictKey, Lang } from '../i18n/dictionary';
 
 type PageState =
   | { status: 'loading' }
@@ -74,12 +78,28 @@ function fmtSynced(syncedAt: number): string {
   });
 }
 
+/** '1 – 20 Nov 2026' — the month-to-date window the Due Premium KPI covers. */
+function formatDueWindow(start: string, end: string, lang: Lang): string {
+  const locale = lang === 'bn' ? 'bn-BD' : 'en-GB';
+  const s = new Date(`${start}T00:00:00Z`);
+  const e = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return `${start} – ${end}`;
+  const day = (d: Date): string =>
+    d.toLocaleDateString(locale, { day: 'numeric', timeZone: 'UTC' });
+  const monthYear = (d: Date): string =>
+    d.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  if (s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear()) {
+    return `${day(s)} – ${day(e)} ${monthYear(e)}`;
+  }
+  return `${day(s)} ${monthYear(s)} – ${day(e)} ${monthYear(e)}`;
+}
+
 export function DashboardPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user, token } = useAuth();
   const [state, setState] = useState<PageState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
-  const [selection, setSelection] = useState<PeriodSelection>(DEFAULT_SELECTION);
+  const [selection, setSelection] = useState<PeriodSelection>(DASHBOARD_DEFAULT_SELECTION);
   const retailModule = MODULES.find((m) => m.id === 'retail-dashboard');
   const employeeId = user?.employeeId ?? '';
   // The sub-label under the period-filtered KPIs: the named period, or
@@ -145,7 +165,6 @@ export function DashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight text-charcoal sm:text-3xl">
           {t('dashboardPageTitle')}
         </h1>
-        <p className="mt-1 text-sm text-charcoal/60">{t('pageDashboardIntro')}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {summary?.demo ? (
             <span className="rounded-full bg-sunset/15 px-2.5 py-1 text-xs font-bold text-sunset-dark">
@@ -278,7 +297,11 @@ export function DashboardPage() {
               <WidgetCard
                 title={t('kpiDuePremium')}
                 value={formatBdt(summary.duePremium)}
-                sub={t('leadersPolicies', { count: summary.duePolicies })}
+                sub={
+                  summary.dueWindow
+                    ? `${t('leadersPolicies', { count: summary.duePolicies })} · ${formatDueWindow(summary.dueWindow.start, summary.dueWindow.end, lang)}`
+                    : t('leadersPolicies', { count: summary.duePolicies })
+                }
                 emptyText=""
                 accent="orange"
                 icon={<IconCalculator />}

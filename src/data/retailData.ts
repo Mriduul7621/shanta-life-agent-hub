@@ -34,6 +34,13 @@ export interface RetailLeaderboardEntry {
   policies: number;
 }
 
+/** One recent due row (Home Due widget) — owner, due date, premium only. */
+export interface RetailDueRow {
+  owner: string;
+  nextDue: string;
+  premium: number;
+}
+
 export interface RetailSummary {
   /** True when the summary comes from the synthetic demo slice. */
   demo: boolean;
@@ -55,7 +62,9 @@ export interface RetailSummary {
   deferredRatio: number | null;
   renewalRatio: number | null;
   fycp: number;
-  /** Raw New / Deferred premium sums (FYCP = new + deferred) — the Home FYCP card's sub-text. */
+  /** Raw New / Deferred premium sums (FYCP = new + deferred) — the Home FYCP card's sub-text.
+   * Added in c48ac65; an older deployment's proxy response has neither
+   * field — normalizeSummary() defaults them to 0 (see isValidSummary). */
   newPremium: number;
   deferredPremium: number;
   policies: number;
@@ -63,6 +72,21 @@ export interface RetailSummary {
   duePolicies: number;
   /** 'YYYY-MM' — the month the Due Premium figure covers. */
   dueMonth: string;
+  /** The month-to-date window Due Premium covers ({ start, end } ISO
+   *  dates). Absent from older proxy responses — the UI falls back
+   *  to the due month label. */
+  dueWindow?: { start: string; end: string };
+  /** This week's dues (Bangladesh calendar week, Sunday–Saturday):
+   *  distinct-policy count + amount, with the week range. Absent
+   *  from older proxy responses — the Home dues card falls back to
+   *  the month figures. */
+  duesThisWeek?: { count: number; amount: number; weekStart: string; weekEnd: string };
+  /** The 3 most recent dues (nearest due date first) for the Home
+   *  Due widget. Absent from older proxy responses — the widget
+   *  shows only the totals. Each row is owner name + due date +
+   *  premium only (no policy number, no mobile — the payload has
+   *  no mobile field). */
+  dueRows?: RetailDueRow[];
   persistency: { pct: number; inf: number; all: number } | null;
   activeFas: { active: number; total: number };
   leaderboard: { kind: 'reports' | 'bes' | 'none'; entries: RetailLeaderboardEntry[] };
@@ -88,6 +112,19 @@ interface RetailCache {
   syncedAt: number;
 }
 
+/**
+ * Mixed-version tolerance (2026-11-20): the c48ac65 client added the
+ * newPremium/deferredPremium fields, but an older deployment's proxy
+ * response has neither. A browser running the new bundle against the
+ * old proxy (Vercel skew pin from an earlier session) failed this
+ * validation and the whole retail feed fell back to demo — while
+ * LeadFlow/Learning stayed Live, because their shapes did not change.
+ * These two fields are therefore OPTIONAL here: absent (or a
+ * non-number) is accepted and normalizeSummary() defaults them to 0,
+ * so the transient mixed-version state shows New ৳0 · Deferred ৳0 on
+ * the FYCP card instead of losing the entire feed. Every other
+ * required check is unchanged.
+ */
 function isValidSummary(value: unknown): value is RetailSummary {
   if (typeof value !== 'object' || value === null) return false;
   const s = value as Record<string, unknown>;
@@ -96,8 +133,8 @@ function isValidSummary(value: unknown): value is RetailSummary {
     typeof s.scope === 'string' &&
     typeof s.totalPremium === 'number' &&
     typeof s.fycp === 'number' &&
-    typeof s.newPremium === 'number' &&
-    typeof s.deferredPremium === 'number' &&
+    (s.newPremium === undefined || typeof s.newPremium === 'number') &&
+    (s.deferredPremium === undefined || typeof s.deferredPremium === 'number') &&
     typeof s.policies === 'number' &&
     typeof s.duePremium === 'number' &&
     typeof s.empty === 'boolean' &&
@@ -106,6 +143,15 @@ function isValidSummary(value: unknown): value is RetailSummary {
     typeof s.leaderboard === 'object' &&
     s.leaderboard !== null
   );
+}
+
+/** Fill the optional new/deferred premium fields with 0 when absent (old-proxy shape). */
+function normalizeSummary(summary: RetailSummary): RetailSummary {
+  return {
+    ...summary,
+    newPremium: typeof summary.newPremium === 'number' ? summary.newPremium : 0,
+    deferredPremium: typeof summary.deferredPremium === 'number' ? summary.deferredPremium : 0,
+  };
 }
 
 function cacheKey(selection: PeriodSelection): string {
@@ -119,7 +165,9 @@ function readCache(employeeId: string, selection: PeriodSelection): RetailCache 
     const parsed = JSON.parse(raw) as RetailCache;
     if (parsed.employeeId !== employeeId) return null;
     if (typeof parsed.syncedAt !== 'number' || !isValidSummary(parsed.summary)) return null;
-    return parsed;
+    // A cache entry written by an older client may lack the new/deferred
+    // fields — normalize so consumers always see numbers.
+    return { ...parsed, summary: normalizeSummary(parsed.summary) };
   } catch {
     return null;
   }
@@ -174,7 +222,7 @@ export async function loadRetailFresh(token: string, employeeId: string, selecti
   if (!res.ok) throw new Error(`retail-data: HTTP ${res.status}`);
   const summary: unknown = await res.json();
   if (!isValidSummary(summary)) throw new Error('retail-data: unexpected response shape');
-  const cache: RetailCache = { summary, employeeId, syncedAt: Date.now() };
+  const cache: RetailCache = { summary: normalizeSummary(summary), employeeId, syncedAt: Date.now() };
   writeCache(cache, selection);
   return toResult(cache, false);
 }

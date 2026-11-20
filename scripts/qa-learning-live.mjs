@@ -295,6 +295,15 @@ function summarizeFixture(employeeId, role, overrides = {}) {
   check('fixture admin org enrolled 30 completed 1 certs 1 credits 690', adm.learning.coursesEnrolled === 30 && adm.learning.coursesCompleted === 1 && adm.learning.certificates === 1 && adm.learning.creditBalance === 690 && adm.learning.currentCourse === null, JSON.stringify(adm.learning));
   check('fixture admin team null, scope org', adm.team === null && adm.scope === 'org', adm.scope);
 
+  // Courses in progress (count) — the Home monthly learning card
+  // (Mahadi 2026-11-20). Org: all 29 Course-A learners are in
+  // progress (9990004 completed B, 9990003 has no course, C is
+  // unpublished and never counts).
+  check('fixture emp coursesInProgress 1', emp.learning.coursesInProgress === 1, String(emp.learning.coursesInProgress));
+  check('fixture lead coursesInProgress 1', lead.learning.coursesInProgress === 1, String(lead.learning.coursesInProgress));
+  check('fixture mgr coursesInProgress 0', mgr.learning.coursesInProgress === 0, String(mgr.learning.coursesInProgress));
+  check('fixture admin org coursesInProgress 29', adm.learning.coursesInProgress === 29, String(adm.learning.coursesInProgress));
+
   const unknown = summarizeFixture('9990099', 'employee');
   check('fixture unknown user: empty, no-lms-record', unknown.empty === true && unknown.emptyReason === 'no-lms-record', `empty=${unknown.empty} reason=${unknown.emptyReason}`);
 
@@ -370,6 +379,19 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     check(`period ${period}: emp 9990002 enrolledInPeriod ${exp.enrolled}`, s.learning.enrolledInPeriod === exp.enrolled, String(s.learning.enrolledInPeriod));
     check(`period ${period}: emp 9990002 creditsInPeriod ${exp.credits}`, s.learning.creditsInPeriod === exp.credits, String(s.learning.creditsInPeriod));
     check(`period ${period}: emp 9990002 snapshots stay 1/0/120`, s.learning.coursesEnrolled === 1 && s.learning.coursesCompleted === 0 && s.learning.creditBalance === 120, JSON.stringify(s.learning));
+    // coursesInProgress is a snapshot, not a period field — it never
+    // moves with the period.
+    check(`period ${period}: emp 9990002 coursesInProgress stays 1`, s.learning.coursesInProgress === 1, String(s.learning.coursesInProgress));
+  }
+  // Home's monthly learning card for 9990002 (this-month): 0 credits
+  // earned, 1 course in progress, 0 completed this month.
+  {
+    const s = summarizeFixturePeriod('9990002', 'team_lead', 'this-month');
+    check(
+      'home monthly: 9990002 this-month 0 credits / 1 in progress / 0 completed',
+      s.learning.creditsInPeriod === 0 && s.learning.coursesInProgress === 1 && s.learning.completedInPeriod === 0,
+      `${s.learning.creditsInPeriod} / ${s.learning.coursesInProgress} / ${s.learning.completedInPeriod}`,
+    );
   }
 
   // Independent recomputation from the raw fixture rows (org):

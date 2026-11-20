@@ -74,6 +74,9 @@ export interface LearningSummary {
     completedInPeriod: number;
     /** Net credits earned in the period; == creditBalance for 'all'. */
     creditsInPeriod: number;
+    /** Courses currently in progress (count). Absent from older proxy
+     *  responses — Home reads it defensively (?? 0). */
+    coursesInProgress?: number;
   };
   team: {
     /** Subtree (downline) count. */
