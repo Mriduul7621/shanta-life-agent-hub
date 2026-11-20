@@ -206,7 +206,7 @@
  *
  * Checks (Android app download promo — 25):
  * 28. Home popup (Mahadi 2026-11-21): visible on an Android UA at
- *     375 px after the splash, with the rolling-release APK href and
+ *     375 px after the splash, with the Hub download-route href and
  *     target _blank, no horizontal overflow, no console errors;
  *     closing it sets the versioned dismissal flag and it stays gone
  *     after a reload; tapping Download also dismisses it. Hidden on
@@ -3116,14 +3116,14 @@ try {
   // window.androidBridge before load — that is exactly the signal
   // Capacitor's isNativePlatform() reads (getPlatformId checks
   // win.androidBridge), so the app takes the same path it takes in
-  // the real shell. The Download href is the rolling-release APK
-  // URL — the same constant the login link uses.
+  // the real shell. The Download href is the Hub download route
+  // (/api/download-apk — it redirects to the newest release APK) —
+  // the same constant the login link uses.
   const ANDROID_UA =
     'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
   const IOS_UA =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
-  const APK_URL =
-    'https://github.com/Mriduul7621/shanta-life-agent-hub/releases/download/latest/app-release.apk';
+  const APK_URL = 'https://shanta-life-agent-hub.vercel.app/api/download-apk';
   const stubNativeBridge = (page) =>
     page.evaluateOnNewDocument(() => {
       window.androidBridge = { postMessage: () => {} };
@@ -3147,7 +3147,7 @@ try {
       .catch(() => false);
     check('promo android 375: popup appears after splash', seen);
     const href = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('href')).catch(() => null);
-    check('promo android 375: download href is the rolling-release APK URL', href === APK_URL, href ?? 'none');
+    check('promo android 375: download href is the Hub download route', href === APK_URL, href ?? 'none');
     const target = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('target')).catch(() => null);
     check('promo android 375: download opens in a new tab', target === '_blank', target ?? 'none');
     const ov = await overflowCheck(page);
@@ -3262,7 +3262,7 @@ try {
       .catch(() => false);
     check('promo login android 375: popup appears before sign-in', seen);
     const href = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('href')).catch(() => null);
-    check('promo login android 375: download href is the rolling-release APK URL', href === APK_URL, href ?? 'none');
+    check('promo login android 375: download href is the Hub download route', href === APK_URL, href ?? 'none');
     const ov = await overflowCheck(page);
     check('promo login android 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, 'login-promo-375.png') });
@@ -3310,7 +3310,7 @@ try {
       return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
     });
     if (expect) {
-      check(`login link ${label}: present with the rolling-release APK href`, link?.href === APK_URL, link?.href ?? 'none');
+      check(`login link ${label}: present with the Hub download-route href`, link?.href === APK_URL, link?.href ?? 'none');
       check(`login link ${label}: opens in a new tab`, link?.target === '_blank', link?.target ?? 'none');
       await page.screenshot({ path: path.join(QA_DIR, 'login-android-375.png') });
     } else {

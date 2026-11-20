@@ -144,15 +144,29 @@ to download):
   first created it — only the assets move. The download URL serves
   the newest assets regardless.)
 
-The web app links to the rolling release only, from one constant
-(`ANDROID_APK_URL` in `src/data/appDownload.ts`):
+The downloaded file carries the app name + version (Mahadi
+2026-11-21): `Agent Hub V-1.0.0.1.apk` — `Agent Hub
+V-<versionName>.<versionCode>.apk`, set by the workflow's Publish
+step (the `.sha256` file carries the same base name). Because the
+asset name changes with every version, the web app does NOT link to
+GitHub directly: from one constant (`ANDROID_APK_URL` in
+`src/data/appDownload.ts`) it links to the Hub's own download route:
 
-`https://github.com/Mriduul7621/shanta-life-agent-hub/releases/download/latest/app-release.apk`
+`https://shanta-life-agent-hub.vercel.app/api/download-apk`
 
-**Sequencing:** the popup's download link only works AFTER the next
-workflow dispatch publishes the first `latest` release. Until that
-run, the URL 404s — so ship the popup and run the workflow before
-telling users about the download.
+The route (`api/download-apk.js`) asks the GitHub Releases API for
+the `latest` release and redirects to its newest `.apk` asset, which
+GitHub serves under its friendly stored name — so the Hub link never
+changes across versions and never 404s through a version change.
+`latest` holds exactly one APK: the workflow deletes the previous
+version's `.apk`/`.apk.sha256` assets before uploading the new one.
+If GitHub is unreachable or no release exists yet, the route sends
+the user to the releases page instead of failing.
+
+**Sequencing:** the popup's download link only downloads AFTER the
+next workflow dispatch publishes the first `latest` release. Until
+that run, the route lands on the releases page — so ship the popup
+and run the workflow before telling users about the download.
 
 **Popup behaviour (Mahadi 2026-11-21):** on Home, after the splash,
 an Android web visitor who has not dismissed it sees a popup — "Get

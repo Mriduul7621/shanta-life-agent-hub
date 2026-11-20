@@ -3,11 +3,18 @@
  *
  * The APK is published by the Android workflow to GitHub Releases
  * (see .github/workflows/android.yml): a versioned release
- * (v<versionName>) plus a rolling `latest` release. The popup and the
- * login-page link always point at the rolling release, so the URL
- * never changes across versions — and it is public (no GitHub login
- * needed), unlike the workflow artifact. The link only works after
- * the first workflow dispatch that publishes a `latest` release.
+ * (v<versionName>) plus a rolling `latest` release. The file users
+ * download carries the app name + version — "Agent Hub
+ * V-1.0.0.1.apk" (Mahadi 2026-11-21) — so the asset name changes
+ * with every version. The popup and the login-page link therefore do
+ * NOT point at GitHub directly: they point at the Hub's own
+ * /api/download-apk route, which redirects to the newest .apk asset
+ * in `latest` (see api/download-apk.js). The URL never changes
+ * across versions, the download is public (no GitHub login needed),
+ * unlike the workflow artifact — and the link keeps working through
+ * a version change, with no window where it 404s. Until the first
+ * workflow dispatch publishes a `latest` release, the route sends
+ * the user to the releases page instead.
  *
  * Promo rules (Mahadi 2026-11-21): the popup shows only to an
  * Android visitor on the WEB app who has not dismissed it. It never
@@ -20,8 +27,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 
-export const ANDROID_APK_URL =
-  'https://github.com/Mriduul7621/shanta-life-agent-hub/releases/download/latest/app-release.apk';
+export const ANDROID_APK_URL = 'https://shanta-life-agent-hub.vercel.app/api/download-apk';
 
 /** Versioned dismissal flag — bump the suffix to re-show the promo. */
 export const ANDROID_PROMO_DISMISSED_KEY = 'hub-android-promo-dismissed-v1';
