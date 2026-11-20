@@ -44,7 +44,10 @@ export default async function handler(req, res) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   const claims = token ? verifySsoTokenNode(token, publicKeyConfig()) : null;
-  if (!claims) return res.status(401).json({ error: 'unauthorized' });
+  if (!claims) {
+    console.error('[push-subscribe] unauthorized');
+    return res.status(401).json({ error: 'unauthorized' });
+  }
 
   const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
   const fcmToken = body.token;
@@ -54,16 +57,23 @@ export default async function handler(req, res) {
     fcmToken.length > 1024 ||
     /\s/.test(fcmToken)
   ) {
+    console.error('[push-subscribe] invalid token');
     return res.status(400).json({ error: 'invalid_request' });
   }
 
   // The topic is derived from the VERIFIED identity only — never from
   // the request body (see the header note).
   const topic = `user-${claims.sub}`;
-  if (!TOPIC_NAME_RE.test(topic)) return res.status(400).json({ error: 'invalid_request' });
+  if (!TOPIC_NAME_RE.test(topic)) {
+    console.error('[push-subscribe] invalid topic');
+    return res.status(400).json({ error: 'invalid_request' });
+  }
 
   const accessToken = await getFirebaseAccessToken();
-  if (!accessToken) return res.status(503).json({ error: 'push_not_configured' });
+  if (!accessToken) {
+    console.error('[push-subscribe] push_not_configured');
+    return res.status(503).json({ error: 'push_not_configured' });
+  }
 
   try {
     const iid = await fetch(IID_BATCH_ADD_URL, {
@@ -74,14 +84,20 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({ to: `/topics/${topic}`, registration_tokens: [fcmToken] }),
     });
-    if (!iid.ok) return res.status(502).json({ error: 'push_subscribe_failed' });
+    if (!iid.ok) {
+      console.error(`[push-subscribe] iid http ${iid.status}`);
+      return res.status(502).json({ error: 'push_subscribe_failed' });
+    }
     const data = await iid.json().catch(() => ({}));
     const first = Array.isArray(data.results) ? data.results[0] : null;
     if (!first || typeof first !== 'object' || first.error) {
+      console.error(`[push-subscribe] iid error: ${first && first.error ? String(first.error) : 'empty_result'}`);
       return res.status(502).json({ error: 'push_subscribe_failed' });
     }
+    console.log('[push-subscribe] subscribed');
     return res.status(200).json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error(`[push-subscribe] failed: ${err && err.message ? err.message : 'unknown'}`);
     return res.status(502).json({ error: 'push_subscribe_failed' });
   }
 }

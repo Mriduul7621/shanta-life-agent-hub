@@ -67,7 +67,10 @@ export function parseServiceAccount(env = process.env) {
 export async function getFirebaseAccessToken(env = process.env) {
   if (cached.token && Date.now() < cached.expiresAtMs) return cached.token;
   const account = parseServiceAccount(env);
-  if (!account) return null;
+  if (!account) {
+    console.error('[googleOAuth] service account missing or invalid');
+    return null;
+  }
   try {
     const now = Math.floor(Date.now() / 1000);
     const header = { alg: 'RS256', typ: 'JWT' };
@@ -93,15 +96,22 @@ export async function getFirebaseAccessToken(env = process.env) {
         assertion,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[googleOAuth] token exchange failed: http ${res.status}`);
+      return null;
+    }
     const data = await res.json();
-    if (typeof data.access_token !== 'string' || data.access_token === '') return null;
+    if (typeof data.access_token !== 'string' || data.access_token === '') {
+      console.error('[googleOAuth] token exchange failed: no access_token');
+      return null;
+    }
     const ttl = typeof data.expires_in === 'number' && data.expires_in > CLOCK_SKEW_SECONDS
       ? data.expires_in
       : 3600;
     cached = { token: data.access_token, expiresAtMs: Date.now() + (ttl - CLOCK_SKEW_SECONDS) * 1000 };
     return cached.token;
-  } catch {
+  } catch (err) {
+    console.error(`[googleOAuth] token exchange error: ${err && err.message ? err.message : 'unknown'}`);
     return null;
   }
 }

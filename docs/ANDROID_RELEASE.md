@@ -288,13 +288,31 @@ limit, and no billing is needed for it.
   attempted; without the service account, `/api/push-subscribe`
   answers 503 `push_not_configured` and the client stays silent.
 
+### Diagnostics (when a device does not receive)
+
+`/api/push-subscribe` logs its outcome in the Vercel runtime logs
+(`[push-subscribe] ...`, never the token): `subscribed` (ok),
+`unauthorized` (bad/expired Hub JWT), `invalid token` (bad FCM
+token from the client), `push_not_configured` (no usable service
+account — see `googleOAuth` lines below), `iid http <status>` /
+`iid error: <code>` (FCM rejected the subscribe). `googleOAuth`
+logs `service account missing or invalid` (the env value is not a
+usable service-account JSON) and `token exchange failed` (Google
+refused the OAuth grant — wrong key, wrong project, or clock).
+Check the logs first: the client never surfaces these failures.
+
 ### Testing (after the project + secrets + dispatch)
 
 1. Install the push-enabled APK, sign in (accept the permission
    prompt when it appears).
-2. Firebase console → Cloud Messaging → Send test message → Topic
-   `user-{employeeId}`, notification title/body + data
-   `source=leadflow`, `route=/workbench` → Send. The device shows the
+2. Firebase console → Engage → **Messaging** → New campaign →
+   **Firebase Notification messages**. Title/body dao, Target step-e
+   **Topic** select kore `user-{employeeId}` likho, Additional
+   options-e Custom data-te `source=leadflow`,
+   `route=/workbench` jog koro, Review → **Publish**. (Composer-er
+   "Send test message" button-ta FCM token chay — topic-e pathate
+   campaign Publish korte hoy. Topic-e shudhu oi user-er device-i
+   subscribed, tai etai test.) The device shows the
    notification; tapping it opens LeadFlow in-app.
 3. Sign out on the device, send another test message to the same
    topic — nothing must arrive (the token was deleted on sign-out).
