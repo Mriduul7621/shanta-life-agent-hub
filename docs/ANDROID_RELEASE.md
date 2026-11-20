@@ -145,12 +145,15 @@ to download):
   the newest assets regardless.)
 
 The downloaded file carries the app name + version (Mahadi
-2026-11-21): `Agent Hub V-1.0.0.1.apk` — `Agent Hub
+2026-11-21): `Agent-Hub-V-1.0.0.1.apk` — `Agent-Hub-
 V-<versionName>.<versionCode>.apk`, set by the workflow's Publish
-step (the `.sha256` file carries the same base name). Because the
-asset name changes with every version, the web app does NOT link to
-GitHub directly: from one constant (`ANDROID_APK_URL` in
-`src/data/appDownload.ts`) it links to the Hub's own download route:
+step (the `.sha256` file carries the same base name). DASHES, not
+spaces: GitHub turns spaces into dots in release asset names
+(verified live 2026-11-21 — the spaced name was served as
+`Agent.Hub.V-1.0.0.1.apk`). Because the asset name changes with
+every version, the web app does NOT link to GitHub directly: from
+one constant (`ANDROID_APK_URL` in `src/data/appDownload.ts`) it
+links to the Hub's own download route:
 
 `https://shanta-life-agent-hub.vercel.app/api/download-apk`
 

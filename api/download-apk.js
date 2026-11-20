@@ -2,8 +2,9 @@
  * GET /api/download-apk — redirect to the newest Agent Hub Android APK.
  *
  * The APK file users download carries the app name + version
- * (Mahadi 2026-11-21): "Agent Hub V-1.0.0.1.apk" — that's
- * versionName.versionCode (see the workflow's Publish step). Because
+ * (Mahadi 2026-11-21): "Agent-Hub-V-1.0.0.1.apk" — that's
+ * versionName.versionCode, with dashes (GitHub turns spaces into dots
+ * in release asset names — see the workflow's Publish step). Because
  * the asset name changes with every version, the Hub's popup and
  * login link do NOT point at GitHub directly — they point here, and
  * this route asks the GitHub Releases API for the `latest` release,
@@ -13,6 +14,9 @@
  * does, and there is no window where a new version breaks the link:
  * before a dispatch the route serves the current release, after it
  * the new one.
+ *
+ * HEAD is answered like GET (redirect headers, no body) — some
+ * download managers probe with HEAD before fetching.
  *
  * Rate limits: the GitHub API allows 60 unauthenticated
  * requests/hour per IP, and Vercel egress IPs are shared — so the
@@ -53,8 +57,8 @@ async function newestApkUrl() {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
     return res.status(405).end();
   }
   try {

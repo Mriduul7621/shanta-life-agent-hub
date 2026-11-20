@@ -4,8 +4,9 @@
  * The APK is published by the Android workflow to GitHub Releases
  * (see .github/workflows/android.yml): a versioned release
  * (v<versionName>) plus a rolling `latest` release. The file users
- * download carries the app name + version — "Agent Hub
- * V-1.0.0.1.apk" (Mahadi 2026-11-21) — so the asset name changes
+ * download carries the app name + version — "Agent-Hub-
+ * V-1.0.0.1.apk" (Mahadi 2026-11-21; dashes, because GitHub turns
+ * spaces into dots in release asset names) — so the asset name changes
  * with every version. The popup and the login-page link therefore do
  * NOT point at GitHub directly: they point at the Hub's own
  * /api/download-apk route, which redirects to the newest .apk asset
