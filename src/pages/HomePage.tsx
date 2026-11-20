@@ -45,10 +45,12 @@
  * chips. The scope label (Own / Own + team / Org-wide) stays: it
  * tells the user whose data the figures are.
  */
+import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { useAuth } from '../auth/AuthContext';
 import type { Lang } from '../i18n/dictionary';
 import { formatBdt } from '../data/format';
+import { shouldShowAndroidPromo } from '../data/appDownload';
 import { loadLeadflowCached, loadLeadflowFresh } from '../data/leadflowData';
 import type { LeadflowSummary } from '../data/leadflowData';
 import { loadLearningCached, loadLearningFresh } from '../data/learningData';
@@ -60,6 +62,7 @@ import type { FeedStatus } from '../data/useFeed';
 import { ALL_TIME_SELECTION, THIS_MONTH_SELECTION } from '../data/period';
 import { MODULES } from '../data/modules';
 import { FeedErrorCard, WidgetCard, WidgetSkeleton } from '../components/WidgetCard';
+import { AndroidAppPromo } from '../components/AndroidAppPromo';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
 import { QuickActionTile } from '../components/QuickActionTile';
 import { IconCheck, IconCoin, IconLearning, IconPhone } from '../components/icons';
@@ -289,6 +292,17 @@ export function HomePage() {
   const learningFeed = useFeed(loadLearningCached, loadLearningFresh, token, employeeId, THIS_MONTH_SELECTION);
   const retailFeed = useFeed(loadRetailCached, loadRetailFresh, token, employeeId, THIS_MONTH_SELECTION);
 
+  // Android app promo (Mahadi 2026-11-21): Android web visitors only,
+  // never inside the native app, never after a dismissal (gate in
+  // appDownload.ts). The 1.2s delay lets the splash finish first —
+  // the splash is gone by 1s at most (700ms minimum + 300ms fade).
+  const [showPromo, setShowPromo] = useState(false);
+  useEffect(() => {
+    if (!shouldShowAndroidPromo()) return;
+    const t = window.setTimeout(() => setShowPromo(true), 1200);
+    return () => window.clearTimeout(t);
+  }, []);
+
   if (!user) return null;
 
   const leadflow = leadflowFeed.summary;
@@ -442,6 +456,8 @@ export function HomePage() {
           ))}
         </div>
       </section>
+
+      {showPromo && <AndroidAppPromo onDismiss={() => setShowPromo(false)} />}
     </div>
   );
 }

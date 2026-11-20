@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import { ANDROID_APK_URL, isAndroidDevice, isNativeApp } from '../data/appDownload';
 import { LanguagePill } from '../components/LanguagePill';
 import { IconCheck } from '../components/icons';
 import type { AuthError } from '../auth/types';
@@ -74,6 +75,12 @@ export function LoginPage() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<AuthError | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Android app download link (Mahadi 2026-11-21): Android web
+  // visitors only — hidden inside the native app, on iOS and on
+  // desktop. Evaluated once: the UA / native state cannot change
+  // during a page lifetime.
+  const [showAndroidLink] = useState(() => isAndroidDevice() && !isNativeApp());
 
   // One identifier field (LH pattern): an email routes to the staff
   // password track, anything else to the PIN track — the server
@@ -261,7 +268,22 @@ export function LoginPage() {
           </div>
         </div>
 
-        <footer className="pb-5 text-center text-xs text-charcoal/45">{t('appTagline')}</footer>
+        <footer className="pb-5 text-center text-xs text-charcoal/45">
+          {showAndroidLink && (
+            <p className="mb-2">
+              <a
+                href={ANDROID_APK_URL}
+                target="_blank"
+                rel="noopener"
+                data-android-download-link
+                className="text-sm font-semibold text-sunset underline-offset-2 hover:underline"
+              >
+                {t('androidDownloadLink')}
+              </a>
+            </p>
+          )}
+          {t('appTagline')}
+        </footer>
       </div>
     </div>
   );

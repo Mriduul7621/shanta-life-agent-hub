@@ -182,7 +182,14 @@ export type DictKey =
   | 'loginPanelValue1'
   | 'loginPanelValue2'
   | 'loginPanelValue3'
-  | 'splashLoading';
+  | 'splashLoading'
+  // Android app download promo (Mahadi 2026-11-21)
+  | 'androidPromoTitle'
+  | 'androidPromoBody'
+  | 'androidPromoDownload'
+  | 'androidPromoNotNow'
+  | 'androidPromoClose'
+  | 'androidDownloadLink';
 
 export const dict: Record<Lang, Record<DictKey, string>> = {
   en: {
@@ -366,6 +373,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginPanelValue2: 'Learning built for the field — courses, quizzes, certificates',
     loginPanelValue3: 'Your numbers, analysed — sales, dues, performance',
     splashLoading: 'Loading Agent Hub…',
+    androidPromoTitle: 'Get the Android app',
+    androidPromoBody: 'Install the app for one-tap access from your home screen.',
+    androidPromoDownload: 'Download',
+    androidPromoNotNow: 'Not now',
+    androidPromoClose: 'Close',
+    androidDownloadLink: 'Download Android app',
   },
   bn: {
     appName: 'এজেন্ট হাব',
@@ -548,5 +561,11 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginPanelValue2: 'ফিল্ডের জন্য শেখা — কোর্স, কুইজ, সার্টিফিকেট',
     loginPanelValue3: 'তোমার সংখ্যা, বিশ্লেষণসহ — সেল, বকেয়া, পারফরম্যান্স',
     splashLoading: 'এজেন্ট হাব লোড হচ্ছে…',
+    androidPromoTitle: 'অ্যান্ড্রয়েড অ্যাপটি নিন',
+    androidPromoBody: 'হোম স্ক্রিন থেকে এক ট্যাপে খুলতে অ্যাপটি ইনস্টল করুন।',
+    androidPromoDownload: 'ডাউনলোড',
+    androidPromoNotNow: 'এখন নয়',
+    androidPromoClose: 'বন্ধ করুন',
+    androidDownloadLink: 'অ্যান্ড্রয়েড অ্যাপ ডাউনলোড করুন',
   },
 };

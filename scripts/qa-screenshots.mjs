@@ -204,6 +204,20 @@
  *     appears anywhere. Card sub-values and scope labels are kept —
  *     they are data, not title sentences.
  *
+ * Checks (Android app download promo — 18):
+ * 28. Home popup (Mahadi 2026-11-21): visible on an Android UA at
+ *     375 px after the splash, with the rolling-release APK href and
+ *     target _blank, no horizontal overflow, no console errors;
+ *     closing it sets the versioned dismissal flag and it stays gone
+ *     after a reload; tapping Download also dismisses it. Hidden on
+ *     an iOS UA, on desktop, and inside the native app (simulated by
+ *     injecting window.androidBridge before load — the same signal
+ *     Capacitor's isNativePlatform reads). BN strings render with
+ *     hub-lang=bn. Login page: the download link is present on
+ *     Android with the same APK href, absent on iOS / native /
+ *     desktop. Screenshots: android-promo-375.png,
+ *     android-promo-bn-375.png, login-android-375.png.
+ *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
  *     Income) render as <img> with the expected live URL, local icons
@@ -3090,6 +3104,170 @@ try {
     await checkNoSubtitle(page, 'Profile', width);
     const ov = await overflowCheck(page);
     check(`no subtitle ${width}: no horizontal overflow on Profile`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await ctx.close();
+  }
+
+  // ---- 28. Android app download promo (Mahadi 2026-11-21) ----
+  // Gate (src/data/appDownload.ts): Android UA + web (not the native
+  // app) + not dismissed. The native case is simulated by injecting
+  // window.androidBridge before load — that is exactly the signal
+  // Capacitor's isNativePlatform() reads (getPlatformId checks
+  // win.androidBridge), so the app takes the same path it takes in
+  // the real shell. The Download href is the rolling-release APK
+  // URL — the same constant the login link uses.
+  const ANDROID_UA =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+  const IOS_UA =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+  const APK_URL =
+    'https://github.com/Mriduul7621/shanta-life-agent-hub/releases/download/latest/app-release.apk';
+  const stubNativeBridge = (page) =>
+    page.evaluateOnNewDocument(() => {
+      window.androidBridge = { postMessage: () => {} };
+    });
+  // The popup appears 1.2s after Home mounts; the splash is gone by
+  // ~1s — so 2s past the splash is safely past the trigger.
+  const waitPastPromoTrigger = async (page) => {
+    await waitForSplashGone(page);
+    await new Promise((r) => setTimeout(r, 2000));
+  };
+
+  // Android, signed in: popup appears, links right, no overflow.
+  {
+    const { ctx, page, errors } = await newPage(browser, 375);
+    await page.setUserAgent(ANDROID_UA);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    const seen = await page
+      .waitForSelector('[data-android-promo]', { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    check('promo android 375: popup appears after splash', seen);
+    const href = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('href')).catch(() => null);
+    check('promo android 375: download href is the rolling-release APK URL', href === APK_URL, href ?? 'none');
+    const target = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('target')).catch(() => null);
+    check('promo android 375: download opens in a new tab', target === '_blank', target ?? 'none');
+    const ov = await overflowCheck(page);
+    check('promo android 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'android-promo-375.png') });
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('promo android 375: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    // Close dismisses and persists across a reload.
+    await page.click('[data-android-promo-close]');
+    await page.waitForFunction(() => !document.querySelector('[data-android-promo]'), { timeout: 3000 });
+    const flag = await page.evaluate(() => localStorage.getItem('hub-android-promo-dismissed-v1'));
+    check('promo android: close dismisses and sets the dismissal flag', flag === '1', flag);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitPastPromoTrigger(page);
+    const backAfterReload = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo android: stays dismissed after reload', !backAfterReload);
+    await ctx.close();
+  }
+
+  // Tapping Download also dismisses (fresh context — flag not set).
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.setUserAgent(ANDROID_UA);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForSelector('[data-android-promo]', { timeout: 5000 });
+    await page.click('[data-android-promo-download]');
+    await page.waitForFunction(() => !document.querySelector('[data-android-promo]'), { timeout: 3000 });
+    const flag = await page.evaluate(() => localStorage.getItem('hub-android-promo-dismissed-v1'));
+    check('promo android: Download tap dismisses and sets the dismissal flag', flag === '1', flag);
+    // The tap opens the APK URL in a new tab (no network here — it
+    // just sits there); close it so the context is clean.
+    for (const p of await ctx.pages()) {
+      if (p !== page) await p.close().catch(() => {});
+    }
+    await ctx.close();
+  }
+
+  // Hidden: iOS, native shell, desktop.
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.setUserAgent(IOS_UA);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await waitPastPromoTrigger(page);
+    const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo ios 375: hidden on iOS', !shown);
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errors } = await newPage(browser, 375);
+    await page.setUserAgent(ANDROID_UA);
+    await stubNativeBridge(page);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await waitPastPromoTrigger(page);
+    const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo native 375: hidden inside the native app', !shown);
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('promo native 375: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await waitPastPromoTrigger(page);
+    const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo desktop 375: hidden on desktop', !shown);
+    await ctx.close();
+  }
+
+  // BN strings with hub-lang=bn. The language is seeded via
+  // evaluateOnNewDocument (before any app script runs, on every
+  // navigation): setting it with a plain evaluate after goto is
+  // racy — the app's i18n effect writes its mounted language back
+  // to localStorage and can clobber the seed before the login
+  // navigation (this failed intermittently as 346/347).
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.setUserAgent(ANDROID_UA);
+    await page.evaluateOnNewDocument(() => localStorage.setItem('hub-lang', 'bn'));
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    const seen = await page
+      .waitForSelector('[data-android-promo]', { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    const bnText = await page.evaluate(() => document.querySelector('[data-android-promo]')?.textContent ?? '');
+    const htmlLang = await page.evaluate(() => document.documentElement.lang);
+    check(
+      'promo bn 375: Bangla title and body render',
+      seen && bnText.includes('অ্যান্ড্রয়েড অ্যাপটি নিন') && bnText.includes('হোম স্ক্রিন থেকে এক ট্যাপে'),
+      `lang=${htmlLang} ${bnText.slice(0, 120)}`,
+    );
+    await page.screenshot({ path: path.join(QA_DIR, 'android-promo-bn-375.png') });
+    await ctx.close();
+  }
+
+  // Login page link: Android only, same APK href.
+  for (const [label, ua, native, expect] of [
+    ['android', ANDROID_UA, false, true],
+    ['ios', IOS_UA, false, false],
+    ['native', ANDROID_UA, true, false],
+    ['desktop', null, false, false],
+  ]) {
+    const { ctx, page } = await newPage(browser, 375);
+    if (ua) await page.setUserAgent(ua);
+    if (native) await stubNativeBridge(page);
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    await waitForSplashGone(page);
+    await page.waitForSelector('#employee-id', { timeout: 5000 });
+    const link = await page.evaluate(() => {
+      const a = document.querySelector('[data-android-download-link]');
+      return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
+    });
+    if (expect) {
+      check(`login link ${label}: present with the rolling-release APK href`, link?.href === APK_URL, link?.href ?? 'none');
+      check(`login link ${label}: opens in a new tab`, link?.target === '_blank', link?.target ?? 'none');
+      await page.screenshot({ path: path.join(QA_DIR, 'login-android-375.png') });
+    } else {
+      check(`login link ${label}: absent`, link === null, link?.href ?? '');
+    }
     await ctx.close();
   }
 } finally {

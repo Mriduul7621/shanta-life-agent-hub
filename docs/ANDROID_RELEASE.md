@@ -93,12 +93,17 @@ Do not retry a connector push of a workflow file — it cannot succeed.
    the keystore from secrets, builds the signed release APK, then
    verifies it — signature valid, signer fingerprint matches the
    keystore (never a debug key), version matches `version.properties` —
-   and uploads the APK + its `.sha256` as an artifact (90-day
-   retention). The run summary prints the version and SHA-256.
-4. Download the artifact, archive the APK outside Actions (Cloudinary
-   raw file — the decided artifact home; Supabase Storage cannot carry
-   release files), and distribute to the pilot group through the
-   decided channel with the install instructions.
+   then publishes the APK + its `.sha256` to **GitHub Releases** (a
+   versioned `v<versionName>` release plus the rolling `latest`
+   release — see §6) and uploads the same two files as a workflow
+   artifact (90-day retention, backup only). The run summary prints
+   the version, SHA-256 and the release links.
+4. Distribute to the pilot group through the decided channel with the
+   install instructions — the public download link is the rolling
+   release (see §6), so there is nothing to re-send per version. The
+   artifact is the backup; the APK can also be archived outside
+   Actions (Cloudinary raw file — the decided artifact home; Supabase
+   Storage cannot carry release files).
 
 ## 4. Local builds (developers)
 
@@ -126,3 +131,38 @@ Do not retry a connector push of a workflow file — it cannot succeed.
   2, build, install over the pilot build — it must update in place
   with data intact. If it does not, stop: the signing identity or the
   version is wrong.
+
+## 6. GitHub Releases + the web download popup
+
+Every dispatch publishes two public releases (no GitHub login needed
+to download):
+
+- `v<versionName>` — the permanent record for that version.
+- `latest` — the rolling release. Each dispatch re-uploads the APK +
+  `.sha256` with `--clobber`, so the files are always the newest
+  build. (The `latest` tag itself keeps pointing at the commit that
+  first created it — only the assets move. The download URL serves
+  the newest assets regardless.)
+
+The web app links to the rolling release only, from one constant
+(`ANDROID_APK_URL` in `src/data/appDownload.ts`):
+
+`https://github.com/Mriduul7621/shanta-life-agent-hub/releases/download/latest/app-release.apk`
+
+**Sequencing:** the popup's download link only works AFTER the next
+workflow dispatch publishes the first `latest` release. Until that
+run, the URL 404s — so ship the popup and run the workflow before
+telling users about the download.
+
+**Popup behaviour (Mahadi 2026-11-21):** on Home, after the splash,
+an Android web visitor who has not dismissed it sees a popup — "Get
+the Android app", one line, a Download button (plain link to the
+`latest` APK; Android Chrome downloads it directly) and a close
+control. Tapping Download also dismisses the popup. It never shows
+inside the native app itself (Capacitor native-platform detection —
+the same check the back button uses), never on iOS, never on
+desktop. Dismissal is stored in localStorage under the versioned
+key `hub-android-promo-dismissed-v1` — bump the suffix to re-show
+the promo for a future major release. The login page carries the
+same link (small, Android-only, hidden in the native app) for users
+who dismissed the popup or never saw it.
