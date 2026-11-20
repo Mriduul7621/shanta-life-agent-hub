@@ -23,7 +23,8 @@
 #   production Hub, so the APK contains no copy of the web app.
 # - No VITE_* / HUB_* variables: the Android build holds no JWT material
 #   (the production private key stays in Vercel). The only secrets are
-#   the four AGENTHUB_KEYSTORE_* signing secrets.
+#   the four AGENTHUB_KEYSTORE_* signing secrets + the Firebase config
+#   secret below.
 # - No Gradle wrapper: gradle-wrapper.jar is a binary and is not
 #   committed, so Gradle is installed by gradle/actions/setup-gradle
 #   and invoked as `gradle` (not ./gradlew).
@@ -31,7 +32,15 @@
 # Required repository secrets (names only — values live in GitHub
 # Secrets, never in this file): AGENTHUB_KEYSTORE_B64,
 # AGENTHUB_KEYSTORE_PASSWORD, AGENTHUB_KEY_ALIAS, AGENTHUB_KEY_PASSWORD.
-# See docs/ANDROID_RELEASE.md for how Mahadi creates them.
+# Push notifications add one more (optional until the Firebase project
+# exists — a build without it ships WITHOUT push, it does not fail):
+# AGENTHUB_GOOGLE_SERVICES_JSON_B64 — base64 of google-services.json
+# for the "Shanta Life Apps" Firebase project (app
+# com.shantalife.agenthub). The file is restored into
+# android/app/google-services.json before the build; the
+# google-services Gradle plugin only applies when the file exists
+# (see android/app/build.gradle). See docs/ANDROID_RELEASE.md for how
+# Mahadi creates them (§1 keystore, §7 Firebase).
 
 name: Android release APK
 
@@ -108,6 +117,34 @@ jobs:
             -storepass "$AGENTHUB_KEYSTORE_PASSWORD" \
             -alias "$AGENTHUB_KEY_ALIAS" > /dev/null
 
+      - name: Restore google-services.json from secrets
+        env:
+          GOOGLE_SERVICES_B64: ${{ secrets.AGENTHUB_GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          # LENIENT by design: if the Firebase project ("Shanta Life
+          # Apps") secret is not set yet, a build without it must
+          # still succeed, it just ships WITHOUT push
+          # notifications (the app degrades silently: registration
+          # fails, subscribe never happens, nothing else changes).
+          # Once the secret is set, the next dispatch produces a
+          # push-enabled build. The run summary (SHA-256 step)
+          # records which kind of build this was.
+          if [ -z "$GOOGLE_SERVICES_B64" ]; then
+            echo "::warning::AGENTHUB_GOOGLE_SERVICES_JSON_B64 secret is not set — this build ships WITHOUT push notifications (see docs/ANDROID_RELEASE.md §7)"
+            exit 0
+          fi
+          printf '%s' "$GOOGLE_SERVICES_B64" | base64 --decode > android/app/google-services.json
+          # The file must be valid JSON for OUR app id — a
+          # google-services.json from another Firebase app would
+          # silently break FCM at runtime (wrong sender id).
+          python3 -c "
+          import json
+          data = json.load(open('android/app/google-services.json'))
+          pkgs = {c['client_info']['android_client_info']['package_name'] for c in data.get('client', [])}
+          assert 'com.shantalife.agenthub' in pkgs, 'google-services.json is for %s, not com.shantalife.agenthub' % sorted(pkgs)
+          print('google-services.json OK for com.shantalife.agenthub')
+          "
+
       - name: Build signed release APK
         env:
           AGENTHUB_KEYSTORE_PATH: ${{ runner.temp }}/agenthub-release.keystore
@@ -159,6 +196,11 @@ jobs:
             echo "- APK: Agent-Hub-V-${{ steps.version.outputs.name }}.${{ steps.version.outputs.code }}.apk"
             echo "- SHA-256: \`$(cat "$APK.sha256")\`"
             echo "- Signer: release keystore (verified — fingerprint matches AGENTHUB_KEYSTORE_B64)"
+            if [ -f android/app/google-services.json ]; then
+              echo "- Push notifications: enabled (google-services.json present)"
+            else
+              echo "- Push notifications: NOT included (AGENTHUB_GOOGLE_SERVICES_JSON_B64 not set)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish to GitHub Releases
