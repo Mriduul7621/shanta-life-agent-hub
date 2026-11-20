@@ -27,6 +27,12 @@
  *     its due expectations depend on instalment dates relative to the
  *     reference day, so pinning keeps them deterministic. The live
  *     sections above use the real current date.
+ *  5b. Time-frame filter (fixture, pinned date): each period window
+ *     returns exactly the rows inside it (hand-computed values +
+ *     independent recomputation from the raw rows); snapshot KPIs
+ *     (due / persistency / active FAs) never move with the period;
+ *     boundary dates included/excluded correctly; scoping still
+ *     correct inside a period.
  *  6. Key match: the DEV public key PEM + kid bundled in the proxy
  *     (api/_lib/verifyJwt.js) must equal the browser's copy
  *     (src/auth/keys.ts) — the two copies must never drift apart.
@@ -34,7 +40,9 @@
  *     the live payload and test JWTs signed with an ephemeral keypair —
  *     401 without/a bad token, 200 + correct summary for admin/UM,
  *     demo fixture gating (flag on/off, production env), no raw rows
- *     in any response, payload caching.
+ *     in any response, payload caching. Period handling: invalid
+ *     period -> 400, demo + live paths honour ?period=, two periods
+ *     cached separately (one payload fetch, two different summaries).
  *
  * Read-only: one GET to the public retail endpoint, no writes. The proxy
  * section never touches the network (stubbed fetch). Exits non-zero if
@@ -45,6 +53,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { summarizeRetail, summarizeWithIndex, buildRetailIndex, dhakaToday } from '../api/_lib/retailSummary.js';
 import { buildDemoPayload } from '../api/_lib/demoFixture.js';
+import { periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const RETAIL_URL = 'https://retail-dashboard-zeta.vercel.app/api/sales-data';
@@ -199,6 +208,107 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture admin scope org', adm.scope === 'org', adm.scope);
 }
 
+// ---- 5b. Time-frame filter (fixture, pinned date) ----
+{
+  const fx = buildDemoPayload(FIXTURE_TODAY);
+  const adminUser = { employeeId: '9990004', role: 'admin' };
+  const empUser = { employeeId: '9990001', role: 'employee' };
+
+  // Hand-computed org values per period (see api/_lib/demoFixture.js).
+  const orgExpected = {
+    'this-month': { total: 83000, fycp: 75000, policies: 1, unassigned: null, be: 83000 },
+    '3m': { total: 185000, fycp: 177000, policies: 5, unassigned: 7000, be: 178000 },
+    '6m': { total: 205000, fycp: 197000, policies: 6, unassigned: 7000, be: 198000 },
+    'this-year': { total: 241000, fycp: 233000, policies: 9, unassigned: 7000, be: 234000 },
+    'all': { total: 241000, fycp: 233000, policies: 9, unassigned: 7000, be: 234000 },
+  };
+  for (const [period, exp] of Object.entries(orgExpected)) {
+    const s = summarizeRetail(fx, adminUser, FIXTURE_TODAY, period);
+    check(`period ${period}: org total ${exp.total}`, s.totalPremium === exp.total, String(s.totalPremium));
+    check(`period ${period}: org FYCP ${exp.fycp}`, s.fycp === exp.fycp, String(s.fycp));
+    check(`period ${period}: org policies ${exp.policies}`, s.policies === exp.policies, String(s.policies));
+    check(
+      `period ${period}: org unassigned ${exp.unassigned ?? 'null'}`,
+      (s.unassigned?.premium ?? null) === exp.unassigned,
+      JSON.stringify(s.unassigned),
+    );
+    check(`period ${period}: org top BE ${exp.be}`, s.leaderboard.entries[0]?.premium === exp.be, JSON.stringify(s.leaderboard.entries));
+    // Snapshot KPIs never move with the period.
+    check(`period ${period}: due stays 38000 (5)`, s.duePremium === 38000 && s.duePolicies === 5, `${s.duePremium} (${s.duePolicies})`);
+    check(`period ${period}: persistency stays 8/9`, s.persistency?.inf === 8 && s.persistency?.all === 9, JSON.stringify(s.persistency));
+    check(`period ${period}: active stays 3 of 4`, s.activeFas.active === 3 && s.activeFas.total === 4, JSON.stringify(s.activeFas));
+    // The summary echoes the period + window it was computed for.
+    const w = periodDateWindow(period, FIXTURE_TODAY);
+    check(`period ${period}: echoes period + window`, s.period === period && JSON.stringify(s.periodWindow) === JSON.stringify(w), `${s.period} ${JSON.stringify(s.periodWindow)}`);
+  }
+
+  // Employee scope inside a period (own rows only).
+  const empExpected = {
+    'this-month': { total: 5000, policies: 0 },
+    '3m': { total: 35000, policies: 1 },
+    '6m': { total: 55000, policies: 2 },
+    'this-year': { total: 67000, policies: 3 },
+    'all': { total: 67000, policies: 3 },
+  };
+  for (const [period, exp] of Object.entries(empExpected)) {
+    const s = summarizeRetail(fx, empUser, FIXTURE_TODAY, period);
+    check(`period ${period}: emp total ${exp.total}`, s.totalPremium === exp.total, String(s.totalPremium));
+    check(`period ${period}: emp policies ${exp.policies}`, s.policies === exp.policies, String(s.policies));
+    check(`period ${period}: emp due stays 17000 (2)`, s.duePremium === 17000 && s.duePolicies === 2, `${s.duePremium} (${s.duePolicies})`);
+  }
+
+  // Independent recomputation: org total + policies from the raw rows,
+  // filtered by the same window, must match the summarizer exactly.
+  for (const period of ['this-month', '3m', '6m', 'this-year', 'all']) {
+    const w = periodDateWindow(period, FIXTURE_TODAY);
+    const rows = w ? fx.records.filter((r) => r.date >= w.start && r.date <= w.end) : fx.records;
+    const total = rows.reduce((a, r) => a + num(r.total), 0);
+    const policies = new Set(rows.filter(isNewType).map((r) => String(r.policy))).size;
+    const s = summarizeRetail(fx, adminUser, FIXTURE_TODAY, period);
+    check(`period ${period}: recomputed org total matches`, s.totalPremium === total, `${s.totalPremium} vs ${total}`);
+    check(`period ${period}: recomputed org policies match`, s.policies === policies, `${s.policies} vs ${policies}`);
+    // Employee recomputation: own rows only (faCode 9990001).
+    const ownRows = rows.filter((r) => String(r.faCode) === '9990001');
+    const ownTotal = ownRows.reduce((a, r) => a + num(r.total), 0);
+    const ownPolicies = new Set(ownRows.filter(isNewType).map((r) => String(r.policy))).size;
+    const e = summarizeRetail(fx, empUser, FIXTURE_TODAY, period);
+    check(`period ${period}: recomputed emp total matches`, e.totalPremium === ownTotal, `${e.totalPremium} vs ${ownTotal}`);
+    check(`period ${period}: recomputed emp policies match`, e.policies === ownPolicies, `${e.policies} vs ${ownPolicies}`);
+  }
+
+  // Boundary dates: a record ON the 3m start date is in; one day
+  // before is out; a record ON today is in; a future-dated record is
+  // out of every windowed period (but 'all' has no date filter).
+  {
+    const fxB = buildDemoPayload(FIXTURE_TODAY);
+    const boundary = [
+      { policy: 'B-START', faCode: '9990001', date: '2026-08-20', type: 'New', amount: 1000 },
+      { policy: 'B-BEFORE', faCode: '9990001', date: '2026-08-19', type: 'New', amount: 2000 },
+      { policy: 'B-TODAY', faCode: '9990001', date: '2026-11-20', type: 'New', amount: 4000 },
+      { policy: 'B-FUTURE', faCode: '9990001', date: '2026-11-21', type: 'New', amount: 8000 },
+    ];
+    for (const b of boundary) {
+      fxB.records.push({
+        policy: b.policy,
+        faCode: b.faCode,
+        date: b.date,
+        type: b.type,
+        total: b.amount,
+        new: b.amount,
+        fycp: b.amount,
+        deferred: 0,
+        renewal: 0,
+      });
+    }
+    const s3m = summarizeRetail(fxB, empUser, FIXTURE_TODAY, '3m');
+    check('boundary 3m: start-date + today in, before + future out (40000, 3 pol)', s3m.totalPremium === 40000 && s3m.policies === 3, `${s3m.totalPremium} (${s3m.policies})`);
+    const sAll = summarizeRetail(fxB, empUser, FIXTURE_TODAY, 'all');
+    check('boundary all: no date filter (82000, 7 pol)', sAll.totalPremium === 82000 && sAll.policies === 7, `${sAll.totalPremium} (${sAll.policies})`);
+    const sTm = summarizeRetail(fxB, empUser, FIXTURE_TODAY, 'this-month');
+    check('boundary this-month: only today in (9000, 1 pol)', sTm.totalPremium === 9000 && sTm.policies === 1, `${sTm.totalPremium} (${sTm.policies})`);
+  }
+}
+
 // ---- 6. DEV key match (proxy copy vs browser copy) ----
 {
   const verifyJwtSrc = fs.readFileSync(path.join(ROOT, 'api/_lib/verifyJwt.js'), 'utf8');
@@ -250,8 +360,9 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   };
 
   const { default: handler } = await import('../api/retail-data.js');
-  const mockReq = ({ method = 'GET', token = null } = {}) => ({
+  const mockReq = ({ method = 'GET', token = null, url = '/api/retail-data' } = {}) => ({
     method,
+    url,
     headers: token ? { authorization: `Bearer ${token}` } : {},
   });
   const mockRes = () => {
@@ -346,6 +457,34 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     const { res, json } = await call(mockReq({ token: t }));
     check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
     process.env.VERCEL_ENV = 'preview';
+  }
+  {
+    // Period handling: an invalid value is a 400, never a silent
+    // fallback to 'all' (the caller would read the wrong window).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res } = await call(mockReq({ token: t, url: '/api/retail-data?period=bogus' }));
+    check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
+  }
+  {
+    // Demo path honours ?period= — the fixture is relative-dated, so
+    // its 3m values are the same on any day (see §5b).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res, json } = await call(mockReq({ token: t, url: '/api/retail-data?period=3m' }));
+    const w = periodDateWindow('3m', dhakaToday());
+    check('proxy: demo ?period=3m -> 200, fixture 3m total 185000', res.statusCode === 200 && json?.demo === true && json?.totalPremium === 185000, `status=${res.statusCode} total=${json?.totalPremium}`);
+    check('proxy: demo ?period=3m echoes period + window', json?.period === '3m' && JSON.stringify(json?.periodWindow) === JSON.stringify(w), `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
+  }
+  {
+    // Two periods cached separately: the live payload is fetched once
+    // (shared cache), but each period gets its own index — the 3m and
+    // this-month summaries must differ (live data spans years).
+    const t = signToken({ sub: '2025019', name: 'Staff', role: 'admin' });
+    const before = fetchCalls;
+    const { res: res3m, json: json3m } = await call(mockReq({ token: t, url: '/api/retail-data?period=3m' }));
+    const { res: resTm, json: jsonTm } = await call(mockReq({ token: t, url: '/api/retail-data?period=this-month' }));
+    check('proxy: live 3m vs this-month -> different totals', res3m.statusCode === 200 && resTm.statusCode === 200 && json3m?.totalPremium !== jsonTm?.totalPremium, `3m=${json3m?.totalPremium} this-month=${jsonTm?.totalPremium}`);
+    check('proxy: live 3m vs this-month -> no extra payload fetch', fetchCalls === before, `${fetchCalls - before} extra fetches`);
+    check('proxy: live ?period=3m echoes period', json3m?.period === '3m', String(json3m?.period));
   }
   check('proxy: retail fetch cached (1 call)', fetchCalls === 1, `${fetchCalls} calls`);
   globalThis.fetch = realFetch;

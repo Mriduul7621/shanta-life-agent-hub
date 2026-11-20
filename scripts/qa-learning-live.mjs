@@ -25,6 +25,12 @@
  *  2. Demo fixture: the synthetic slice's hand-computed values, exact.
  *     Pinned to 2026-11-20 (FIXTURE_TODAY) so the expectations are
  *     deterministic.
+ *  2b. Time-frame filter (fixture, pinned date): enrolled/completed/
+ *     credits in period per window (hand-computed org + employee
+ *     values, independent recomputation from the raw rows);
+ *     snapshots (certificates, balances, current course) never move;
+ *     boundary dates via hand-built inputs (window start inclusive,
+ *     end exclusive; a completion at exactly endMs is out).
  *  3. Key match: the DEV public key PEM + kid bundled in the proxy
  *     (api/_lib/verifyJwt.js) must equal the browser's copy
  *     (src/auth/keys.ts).
@@ -33,6 +39,8 @@
  *     JWTs — 401s, 405, demo fixture gating (flag on/off, production
  *     env), live-path scoping, no-PII canaries in the stub rows, the
  *     RPC-failure BFS fallback, and the inactive-employee empty state.
+ *     Period handling: invalid period -> 400, demo + live paths
+ *     honour ?period= (the stub serves credit_ledger rows too).
  *
  * Read-only: SELECTs only against Learning Hub Supabase, no writes.
  * The proxy section never touches the network (stubbed fetch). Exits
@@ -44,6 +52,7 @@ import path from 'node:path';
 import { dhakaTodayIso } from '../api/_lib/supabase.js';
 import { summarizeLearning } from '../api/_lib/learningSummary.js';
 import { buildLearningFixture, COURSE_A_ID, COURSE_B_ID } from '../api/_lib/demoFixtureLearning.js';
+import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const FIXTURE_TODAY = '2026-11-20';
@@ -96,8 +105,9 @@ function signToken(claims, { kid = testKid, alg = 'RS256', expired = false } = {
   return `${input}.${b64url(sig)}`;
 }
 
-const mockReq = ({ method = 'GET', token = null } = {}) => ({
+const mockReq = ({ method = 'GET', token = null, url = '/api/learning-data' } = {}) => ({
   method,
+  url,
   headers: token ? { authorization: `Bearer ${token}` } : {},
 });
 function mockRes() {
@@ -151,9 +161,11 @@ if (!hasLive) {
     module_progress: ['employee_id', 'course_id', 'read_done', 'quiz_passed', 'best_score', 'attempts', 'updated_at'],
     course_modules: ['course_id', 'module_key', 'title', 'sort_order'],
     courses: ['id', 'title', 'title_bn', 'is_published'],
-    enrollments: ['employee_id', 'course_id', 'status', 'completed_at'],
+    enrollments: ['employee_id', 'course_id', 'status', 'enrolled_at', 'completed_at'],
     certificates: ['employee_id', 'course_id', 'certificate_no', 'final_score', 'issued_at'],
     credit_balances: ['employee_id', 'balance'],
+    // Period credits read the ledger (read-only, summary-only).
+    credit_ledger: ['employee_id', 'points', 'created_at'],
   };
   for (const [table, cols] of Object.entries(required)) {
     const p = await probe(table);
@@ -298,6 +310,130 @@ function summarizeFixture(employeeId, role, overrides = {}) {
   check('fixture course B id is distinct from A', COURSE_A_ID !== COURSE_B_ID, '');
 }
 
+// ---- 2b. Time-frame filter (fixture, pinned date) ----
+function summarizeFixturePeriod(employeeId, role, period) {
+  const fixture = buildLearningFixture(FIXTURE_TODAY);
+  return summarizeLearning(
+    {
+      ...fixture,
+      creditLedger: fixture.creditLedger,
+      downlineIds: null,
+      truncated: false,
+      period,
+      periodWindow: periodDateWindow(period, FIXTURE_TODAY),
+      periodWindowMs: periodMsWindow(period, FIXTURE_TODAY),
+    },
+    { employeeId, role },
+  );
+}
+{
+  // Hand-computed org values (see api/_lib/demoFixtureLearning.js):
+  // enrolments cycle ages [today, 40, 100, 200, 300] days + the course
+  // B enrolment at 110 days; the single completion is 100 days back;
+  // ledger rows mirror the balances at cycled ages.
+  const orgExpected = {
+    'this-month': { enrolled: 6, completed: 0, credits: 140 },
+    '3m': { enrolled: 12, completed: 0, credits: 290 },
+    '6m': { enrolled: 19, completed: 1, credits: 535 },
+    'this-year': { enrolled: 30, completed: 1, credits: 690 },
+    'all': { enrolled: 30, completed: 1, credits: 690 },
+  };
+  for (const [period, exp] of Object.entries(orgExpected)) {
+    const s = summarizeFixturePeriod('9990004', 'admin', period);
+    check(`period ${period}: org enrolledInPeriod ${exp.enrolled}`, s.learning.enrolledInPeriod === exp.enrolled, String(s.learning.enrolledInPeriod));
+    check(`period ${period}: org completedInPeriod ${exp.completed}`, s.learning.completedInPeriod === exp.completed, String(s.learning.completedInPeriod));
+    check(`period ${period}: org creditsInPeriod ${exp.credits}`, s.learning.creditsInPeriod === exp.credits, String(s.learning.creditsInPeriod));
+    check(`period ${period}: org snapshots stay 30/1/1/690`, s.learning.coursesEnrolled === 30 && s.learning.coursesCompleted === 1 && s.learning.certificates === 1 && s.learning.creditBalance === 690, JSON.stringify(s.learning));
+    const w = periodDateWindow(period, FIXTURE_TODAY);
+    check(`period ${period}: echoes period + window`, s.period === period && JSON.stringify(s.periodWindow) === JSON.stringify(w), `${s.period} ${JSON.stringify(s.periodWindow)}`);
+  }
+
+  // Employee 9990002 (team_lead, own learning): enrolled 40 days back
+  // with its 120 ledger credits the same day — both move at 3m.
+  // (Note: Object.entries on the numeric-like employee keys iterates
+  // in NUMERIC order, so the cycle assigns 9990002 age 40, 9990005
+  // age 100, 9990011 age 200 — verified above, not assumed.)
+  const empExpected = {
+    'this-month': { enrolled: 0, credits: 0 },
+    '3m': { enrolled: 1, credits: 120 },
+    '6m': { enrolled: 1, credits: 120 },
+    'this-year': { enrolled: 1, credits: 120 },
+    'all': { enrolled: 1, credits: 120 },
+  };
+  for (const [period, exp] of Object.entries(empExpected)) {
+    const s = summarizeFixturePeriod('9990002', 'team_lead', period);
+    check(`period ${period}: emp 9990002 enrolledInPeriod ${exp.enrolled}`, s.learning.enrolledInPeriod === exp.enrolled, String(s.learning.enrolledInPeriod));
+    check(`period ${period}: emp 9990002 creditsInPeriod ${exp.credits}`, s.learning.creditsInPeriod === exp.credits, String(s.learning.creditsInPeriod));
+    check(`period ${period}: emp 9990002 snapshots stay 1/0/120`, s.learning.coursesEnrolled === 1 && s.learning.coursesCompleted === 0 && s.learning.creditBalance === 120, JSON.stringify(s.learning));
+  }
+
+  // Independent recomputation from the raw fixture rows (org):
+  // enrolments by enrolled_at, credits by ledger created_at.
+  const fixture = buildLearningFixture(FIXTURE_TODAY);
+  const publishedIds = new Set(fixture.courses.filter((c) => c.is_published).map((c) => String(c.id)));
+  for (const period of ['this-month', '3m', '6m', 'this-year', 'all']) {
+    const w = periodMsWindow(period, FIXTURE_TODAY);
+    const inWindow = (iso) => {
+      if (w === null) return true;
+      const ms = Date.parse(iso);
+      return ms >= w.startMs && ms < w.endMs;
+    };
+    const enrolledExp = fixture.enrollments.filter((e) => publishedIds.has(String(e.course_id)) && inWindow(e.enrolled_at)).length;
+    const creditsExp = fixture.creditLedger.filter((r) => inWindow(r.created_at)).reduce((a, r) => a + Number(r.points), 0);
+    const s = summarizeFixturePeriod('9990004', 'admin', period);
+    check(`period ${period}: recomputed org enrolled matches`, s.learning.enrolledInPeriod === enrolledExp, `${s.learning.enrolledInPeriod} vs ${enrolledExp}`);
+    check(`period ${period}: recomputed org credits match`, s.learning.creditsInPeriod === creditsExp, `${s.learning.creditsInPeriod} vs ${creditsExp}`);
+  }
+
+  // Boundary dates via hand-built inputs. 3m window pinned 2026-11-20:
+  // [2026-08-19T18:00Z, 2026-11-20T18:00Z). Course A: enrolled exactly
+  // at the start (in), 100% done via progress updated today (completion
+  // in). Course B: enrolled 1ms before the start (out), completed_at
+  // exactly at the end (out — half-open). Ledger: +50 at the start (in),
+  // +30 1ms before (out), −10 today (in) → net 40 in-window, balance 70.
+  {
+    const emp = { employee_id: '2025001', full_name: 'Boundary Agent', designation: 'Field Associate', supervisor_id: null, is_active: true };
+    const input = {
+      employees: [emp],
+      moduleProgress: [
+        { employee_id: '2025001', course_id: COURSE_A_ID, read_done: true, quiz_passed: false, updated_at: '2026-11-20T03:00:00Z' },
+        { employee_id: '2025001', course_id: COURSE_B_ID, read_done: true, quiz_passed: false, updated_at: '2026-11-20T03:00:00Z' },
+      ],
+      courseModules: [
+        { course_id: COURSE_A_ID, module_key: 'a-1', title: 'Module 1', sort_order: 1 },
+        { course_id: COURSE_B_ID, module_key: 'b-1', title: 'Module 1', sort_order: 1 },
+      ],
+      courses: [
+        { id: COURSE_A_ID, title: 'Course A', title_bn: null, is_published: true },
+        { id: COURSE_B_ID, title: 'Course B', title_bn: null, is_published: true },
+      ],
+      enrollments: [
+        { employee_id: '2025001', course_id: COURSE_A_ID, status: 'enrolled', enrolled_at: '2026-08-19T18:00:00.000Z', completed_at: null },
+        { employee_id: '2025001', course_id: COURSE_B_ID, status: 'completed', enrolled_at: '2026-08-19T17:59:59.999Z', completed_at: '2026-11-20T18:00:00.000Z' },
+      ],
+      certificates: [],
+      creditBalances: [{ employee_id: '2025001', balance: 70 }],
+      creditLedger: [
+        { employee_id: '2025001', points: 50, created_at: '2026-08-19T18:00:00.000Z' },
+        { employee_id: '2025001', points: 30, created_at: '2026-08-19T17:59:59.999Z' },
+        { employee_id: '2025001', points: -10, created_at: '2026-11-20T03:00:00Z' },
+      ],
+      downlineIds: null,
+      truncated: false,
+      period: '3m',
+      periodWindow: periodDateWindow('3m', FIXTURE_TODAY),
+      periodWindowMs: periodMsWindow('3m', FIXTURE_TODAY),
+    };
+    const s = summarizeLearning(input, { employeeId: '2025001', role: 'employee' });
+    check('boundary 3m: enrolledInPeriod 1 (start in, before out)', s.learning.enrolledInPeriod === 1, String(s.learning.enrolledInPeriod));
+    check('boundary 3m: completedInPeriod 1 (progress in, completed_at at end out)', s.learning.completedInPeriod === 1, String(s.learning.completedInPeriod));
+    check('boundary 3m: creditsInPeriod 40 net (50 − 10)', s.learning.creditsInPeriod === 40, String(s.learning.creditsInPeriod));
+    check('boundary 3m: snapshots stay 2/2/70', s.learning.coursesEnrolled === 2 && s.learning.coursesCompleted === 2 && s.learning.creditBalance === 70, JSON.stringify(s.learning));
+    const sAll = summarizeLearning({ ...input, period: 'all', periodWindow: null, periodWindowMs: null }, { employeeId: '2025001', role: 'employee' });
+    check('boundary all: period fields == snapshots (2/2/70)', sAll.learning.enrolledInPeriod === 2 && sAll.learning.completedInPeriod === 2 && sAll.learning.creditsInPeriod === 70, JSON.stringify(sAll.learning));
+  }
+}
+
 // ---- 3. DEV key match (proxy copy vs browser copy) ----
 {
   const verifyJwtSrc = fs.readFileSync(path.join(ROOT, 'api/_lib/verifyJwt.js'), 'utf8');
@@ -344,12 +480,19 @@ function summarizeFixture(employeeId, role, overrides = {}) {
   }
   const stubEnrollments = [
     ...stubFixture.enrollments,
-    { employee_id: '2025001', course_id: COURSE_A_ID, status: 'enrolled', completed_at: null },
+    { employee_id: '2025001', course_id: COURSE_A_ID, status: 'enrolled', enrolled_at: at09(STUB_TODAY), completed_at: null },
   ];
   const stubCertificates = [...stubFixture.certificates];
   const stubCredits = [
     ...stubFixture.creditBalances,
     { employee_id: '2025001', balance: 50 },
+  ];
+  // The proxy fetches credit_ledger only for non-'all' periods; the
+  // stub serves the fixture ledger plus the stub user's 50 credits
+  // earned today (always inside any window).
+  const stubLedger = [
+    ...stubFixture.creditLedger,
+    { employee_id: '2025001', course_id: COURSE_A_ID, module_id: null, reason: 'module_complete', points: 50, created_at: at09(STUB_TODAY) },
   ];
   const stubModules = [...stubFixture.courseModules];
   const stubCourses = [...stubFixture.courses];
@@ -433,8 +576,8 @@ function summarizeFixture(employeeId, role, overrides = {}) {
         if (params.get('is_published') === 'eq.true') rows = rows.filter((c) => c.is_published === true);
         return jsonRes(pageOf(rows));
       }
-      if (table === 'module_progress' || table === 'enrollments' || table === 'certificates' || table === 'credit_balances') {
-        const source = table === 'module_progress' ? stubProgress : table === 'enrollments' ? stubEnrollments : table === 'certificates' ? stubCertificates : stubCredits;
+      if (table === 'module_progress' || table === 'enrollments' || table === 'certificates' || table === 'credit_balances' || table === 'credit_ledger') {
+        const source = table === 'module_progress' ? stubProgress : table === 'enrollments' ? stubEnrollments : table === 'certificates' ? stubCertificates : table === 'credit_balances' ? stubCredits : stubLedger;
         const filtered = inFilter(source);
         if (!isCount && params.get('employee_id')) sawScopedFetch = true;
         if (isCount) return countRes(filtered);
@@ -533,6 +676,29 @@ function summarizeFixture(employeeId, role, overrides = {}) {
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
     check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
     process.env.VERCEL_ENV = 'preview';
+  }
+  {
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=bogus' }));
+    check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
+  }
+  {
+    // Demo path honours ?period= — the fixture is relative-dated, so
+    // its 3m org values (12 enrolled, 0 completed, 290 credits) hold
+    // on any day (§2b).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=3m' }));
+    check('proxy: demo ?period=3m -> 12/0/290', res.statusCode === 200 && json?.demo === true && json?.learning?.enrolledInPeriod === 12 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 290, JSON.stringify(json?.learning));
+    check('proxy: demo ?period=3m echoes period', json?.period === '3m', String(json?.period));
+  }
+  {
+    // Live path through the stub: 2025001 enrolled today with 50
+    // ledger credits today — inside 6m, so the period fields equal
+    // the snapshots (and the ledger fetch ran without error).
+    const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=6m' }));
+    check('proxy: stub user ?period=6m -> 1/0/50', res.statusCode === 200 && json?.demo === false && json?.learning?.enrolledInPeriod === 1 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 50, JSON.stringify(json?.learning));
+    check('proxy: stub user ?period=6m echoes period + window', json?.period === '6m' && json?.periodWindow?.start != null, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
   }
   check('proxy: employees fetched once (5-min cache)', normalStub.employeeFetchCount() === 1, `${normalStub.employeeFetchCount()} calls`);
   check('proxy: scoped fetches carry the employee filter', normalStub.sawScopedFetch() === true, '');

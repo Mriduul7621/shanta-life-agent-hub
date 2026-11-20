@@ -11,7 +11,7 @@
  *   ownCounts / teamCounts: exact headline counts from PostgREST
  *     count queries (or computed from rows by the fixture path):
  *     { followups: { overdue, today, upcoming }, total, open,
- *       converted, todayCollection }.
+ *       converted, todayCollection, createdInPeriod }.
  *   rows: fetched leads for the visible set (bounded — see
  *     LEADFLOW_FETCH_CAP), used ONLY for statusCounts + the member
  *     breakdown: [{ id, current_status, next_follow_up_at,
@@ -21,6 +21,15 @@
  *   terminalStatuses: Set of terminal status names (from the
  *     Metadata Engine options table; defaults Converted + Not
  *     Interested).
+ *   period / periodWindow: the time-frame filter ('all' default).
+ *     Only `createdInPeriod` (leads created in the window, by
+ *     created_at) follows the period. Follow-ups, open and converted
+ *     are CURRENT-state snapshots — they cannot be period-filtered
+ *     honestly: there is no conversion timestamp (leads.converted_at
+ *     exists in the schema but NO LeadFlow code ever writes it —
+ *     verified 2026-11-20 — so it is null for every live lead), and
+ *     a follow-up bucket is a state "now", not an event in a window.
+ *     For 'all', createdInPeriod == total by definition.
  *
  * Output: LeadFlowSummary (spec §7.2, WITHOUT todayItems — the Hub
  * shows counts only in this slice; the agent opens LeadFlow itself
@@ -57,6 +66,7 @@ function emptyCounts() {
     open: 0,
     converted: 0,
     todayCollection: 0,
+    createdInPeriod: 0,
   };
 }
 
@@ -69,9 +79,10 @@ function withAll(buckets) {
  * the proxy's fallback when count queries are unavailable). `scopeIds`
  * is the set of user UUIDs (upper-cased Employee IDs in the fallback
  * arm) whose leads count. Returns the same shape the count queries
- * produce.
+ * produce. `periodWindowMs` is { startMs, endMs } (half-open) or null
+ * for 'all' — with a null window, createdInPeriod == total.
  */
-export function aggregateLeadCounts(rows, usersByUuid, usersByEmp, scopeUuids, scopeEmpIds, terminal, todayIso) {
+export function aggregateLeadCounts(rows, usersByUuid, usersByEmp, scopeUuids, scopeEmpIds, terminal, todayIso, periodWindowMs = null) {
   const { startMs, endMs } = dhakaDayBounds(todayIso);
   const counts = emptyCounts();
   const seen = new Set();
@@ -115,6 +126,14 @@ export function aggregateLeadCounts(rows, usersByUuid, usersByEmp, scopeUuids, s
     const createdMs = parseTsMs(row.created_at);
     if (createdMs !== null && createdMs >= startMs && createdMs < endMs) {
       counts.todayCollection += 1;
+    }
+    // 'all' (null window) counts every in-scope row — createdInPeriod
+    // == total by definition, even if a row's created_at is unparseable.
+    if (
+      periodWindowMs === null ||
+      (createdMs !== null && createdMs >= periodWindowMs.startMs && createdMs < periodWindowMs.endMs)
+    ) {
+      counts.createdInPeriod += 1;
     }
   }
   counts.followups = withAll(counts.followups);
@@ -249,12 +268,14 @@ export function summarizeLeadflow(input, user, todayIso) {
     demo: false,
     scope,
     role,
+    period: input.period || 'all',
+    periodWindow: input.periodWindow || null,
     userEmployeeId: user.employeeId,
     userName: caller ? String(caller.full_name || '') : null,
     empty: false,
     emptyReason: null,
     followups: emptyBuckets(),
-    leads: { total: 0, open: 0, converted: 0, todayCollection: 0, statusCounts: {} },
+    leads: { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} },
     team: null,
     terminalFallback: input.terminalFallback === true,
     truncated: truncated === true,
@@ -283,6 +304,7 @@ export function summarizeLeadflow(input, user, todayIso) {
     open: own.open,
     converted: own.converted,
     todayCollection: own.todayCollection,
+    createdInPeriod: own.createdInPeriod ?? own.total,
     statusCounts: statusCountsFor(
       rows,
       byUuid,
@@ -320,7 +342,12 @@ export function summarizeLeadflow(input, user, todayIso) {
     base.team = {
       teamSize: downline.length,
       followups: withAll({ ...teamCounts.followups }),
-      leads: { total: teamCounts.total, open: teamCounts.open, converted: teamCounts.converted },
+      leads: {
+        total: teamCounts.total,
+        open: teamCounts.open,
+        converted: teamCounts.converted,
+        createdInPeriod: teamCounts.createdInPeriod ?? teamCounts.total,
+      },
       members,
     };
   }

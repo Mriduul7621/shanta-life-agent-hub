@@ -29,6 +29,15 @@
  * (live bug 2026-11-20). The real production lock is the
  * vite.config build guard: a HUB_BUILD_TARGET=production build FAILS
  * with the flag set.
+ *
+ * Time-frame filter: `?period=this-month|3m|6m|this-year|all`
+ * (default 'all'). Enrolments (enrolled_at), completions
+ * (completed_at / module_progress.updated_at) and credits
+ * (credit_ledger.created_at) follow the period; certificates and
+ * current progress are current-state snapshots. The credit_ledger
+ * is fetched read-only, summary-only, and ONLY for non-'all'
+ * periods — for 'all' the period credit value is the balance, so
+ * no extra fetch is needed. An invalid period is a 400.
  */
 
 import { verifySsoTokenNode, publicKeyConfig } from './_lib/verifyJwt.js';
@@ -39,6 +48,7 @@ import {
   supaRpc,
   dhakaTodayIso,
 } from './_lib/supabase.js';
+import { parsePeriodParam, periodDateWindow, periodMsWindow } from './_lib/periods.js';
 import {
   summarizeLearning,
   resolveLearningDownline,
@@ -192,13 +202,19 @@ export default async function handler(req, res) {
   // The verifier guarantees sub (non-empty) + role (one of the four).
   const user = { employeeId: claims.sub, role: claims.role, name: claims.name };
 
+  const period = parsePeriodParam(new URL(req.url || '/', 'http://localhost').searchParams.get('period'));
+  if (period === null) {
+    return send(res, 400, { error: 'invalid period' });
+  }
   const todayIso = dhakaTodayIso();
+  const periodWindow = periodDateWindow(period, todayIso);
+  const periodMs = periodMsWindow(period, todayIso);
 
   // Demo fixture: synthetic slice through the SAME summarizer.
   if (demoFixtureEnabled() && isDemoUser(user.employeeId)) {
     const fixture = buildLearningFixture(todayIso);
     const summary = summarizeLearning(
-      { ...fixture, downlineIds: null, truncated: false },
+      { ...fixture, creditLedger: fixture.creditLedger || [], downlineIds: null, truncated: false, period, periodWindow, periodWindowMs: periodMs },
       user,
     );
     summary.demo = true;
@@ -220,11 +236,13 @@ export default async function handler(req, res) {
         demo: false,
         scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
         role: user.role,
+        period,
+        periodWindow,
         userEmployeeId: user.employeeId,
         userName: caller ? String(caller.full_name || '') : null,
         empty: true,
         emptyReason: 'no-lms-record',
-        learning: { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0 },
+        learning: { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0 },
         team: null,
         truncated: false,
         syncedAt: Date.now(),
@@ -240,7 +258,7 @@ export default async function handler(req, res) {
       visibleIds = [String(caller.employee_id), ...downline.map((e) => String(e.employee_id))];
     }
 
-    const [courseModules, courses, progress, enrollments, certificates, creditBalances] = await Promise.all([
+    const [courseModules, courses, progress, enrollments, certificates, creditBalances, creditLedger] = await Promise.all([
       getCourseModules(cfg),
       getCourses(cfg),
       // NOTE: module_progress has NO module_key column live — it keys
@@ -248,9 +266,15 @@ export default async function handler(req, res) {
       // summarizer groups by (employee, course) and never reads the
       // module key, so it is simply not selected.
       fetchScopedRows(cfg, 'module_progress', 'employee_id,course_id,read_done,quiz_passed,best_score,attempts,updated_at', visibleIds, 'updated_at.desc'),
-      fetchScopedRows(cfg, 'enrollments', 'employee_id,course_id,status,completed_at', visibleIds, 'employee_id'),
+      fetchScopedRows(cfg, 'enrollments', 'employee_id,course_id,status,enrolled_at,completed_at', visibleIds, 'employee_id'),
       fetchScopedRows(cfg, 'certificates', 'employee_id,course_id,certificate_no,final_score,issued_at', visibleIds, 'employee_id'),
       fetchScopedRows(cfg, 'credit_balances', 'employee_id,balance', visibleIds, 'employee_id'),
+      // The ledger is fetched ONLY for non-'all' periods (period
+      // credits need it; for 'all' the balance is the value). Read
+      // only, summary only: employee_id + points + created_at.
+      period === 'all'
+        ? Promise.resolve({ rows: [], truncated: false })
+        : fetchScopedRows(cfg, 'credit_ledger', 'employee_id,points,created_at', visibleIds, 'created_at.desc'),
     ]);
 
     const summary = summarizeLearning(
@@ -262,8 +286,12 @@ export default async function handler(req, res) {
         enrollments: enrollments.rows,
         certificates: certificates.rows,
         creditBalances: creditBalances.rows,
+        creditLedger: creditLedger.rows,
         downlineIds,
-        truncated: progress.truncated || enrollments.truncated || certificates.truncated || creditBalances.truncated,
+        truncated: progress.truncated || enrollments.truncated || certificates.truncated || creditBalances.truncated || creditLedger.truncated,
+        period,
+        periodWindow,
+        periodWindowMs: periodMs,
       },
       user,
     );

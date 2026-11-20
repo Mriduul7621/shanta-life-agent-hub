@@ -15,8 +15,11 @@
  * NOTHING is persisted across sessions. The cache is bound to the
  * signed-in Employee ID: a cached summary for another user is
  * ignored, and sign-out clears it (see AuthContext) — scoped data
- * must never leak across users on a shared device.
+ * must never leak across users on a shared device. The cache key
+ * also includes the time-frame period.
  */
+import { DEFAULT_PERIOD, PERIODS, type Period } from './period';
+
 export type LearningScope = 'own' | 'team' | 'subtree' | 'org';
 
 export interface LearningCurrentCourse {
@@ -43,6 +46,10 @@ export interface LearningSummary {
   demo: boolean;
   scope: LearningScope;
   role: string;
+  /** The period this summary was computed for ('all' = no filtering). */
+  period: Period;
+  /** { start, end } ISO dates of the period window, null for 'all'. */
+  periodWindow: { start: string; end: string } | null;
   userEmployeeId: string;
   userName: string | null;
   /** True when the visible scope holds no data at all. */
@@ -55,6 +62,12 @@ export interface LearningSummary {
     coursesCompleted: number;
     certificates: number;
     creditBalance: number;
+    /** Enrolments in the period (enrolled_at); == coursesEnrolled for 'all'. */
+    enrolledInPeriod: number;
+    /** Completions in the period; == coursesCompleted for 'all'. */
+    completedInPeriod: number;
+    /** Net credits earned in the period; == creditBalance for 'all'. */
+    creditsInPeriod: number;
   };
   team: {
     /** Subtree (downline) count. */
@@ -103,9 +116,13 @@ function isValidSummary(value: unknown): value is LearningSummary {
   );
 }
 
-function readCache(employeeId: string): LearningCache | null {
+function cacheKey(period: Period): string {
+  return `${CACHE_KEY}:${period}`;
+}
+
+function readCache(employeeId: string, period: Period): LearningCache | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = sessionStorage.getItem(cacheKey(period));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LearningCache;
     if (parsed.employeeId !== employeeId) return null;
@@ -116,18 +133,19 @@ function readCache(employeeId: string): LearningCache | null {
   }
 }
 
-function writeCache(cache: LearningCache): void {
+function writeCache(cache: LearningCache, period: Period): void {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    sessionStorage.setItem(cacheKey(period), JSON.stringify(cache));
   } catch {
     // Storage full or unavailable — the page still works, just without a cache.
   }
 }
 
-/** Clear the cached Learning summary (sign-out, user switch). Never throws. */
+/** Clear the cached Learning summaries for ALL periods (sign-out, user switch). Never throws. */
 export function clearLearningCache(): void {
   try {
-    sessionStorage.removeItem(CACHE_KEY);
+    for (const period of PERIODS) sessionStorage.removeItem(cacheKey(period));
+    sessionStorage.removeItem(CACHE_KEY); // pre-filter cache key, if any
   } catch {
     /* ignore */
   }
@@ -138,8 +156,8 @@ function toResult(cache: LearningCache, fromCache: boolean): LearningLoadResult 
 }
 
 /** Cached data for instant display (null on first visit). Never throws. */
-export function loadLearningCached(employeeId: string): LearningLoadResult | null {
-  const cache = readCache(employeeId);
+export function loadLearningCached(employeeId: string, period: Period = DEFAULT_PERIOD): LearningLoadResult | null {
+  const cache = readCache(employeeId, period);
   return cache ? toResult(cache, true) : null;
 }
 
@@ -148,8 +166,8 @@ export function loadLearningCached(employeeId: string): LearningLoadResult | nul
  * the caller's token is missing or expired; AuthContext's expiry checker
  * signs the session out separately).
  */
-export async function loadLearningFresh(token: string, employeeId: string): Promise<LearningLoadResult> {
-  const res = await fetch('/api/learning-data', {
+export async function loadLearningFresh(token: string, employeeId: string, period: Period = DEFAULT_PERIOD): Promise<LearningLoadResult> {
+  const res = await fetch(`/api/learning-data?period=${period}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -157,6 +175,6 @@ export async function loadLearningFresh(token: string, employeeId: string): Prom
   const summary: unknown = await res.json();
   if (!isValidSummary(summary)) throw new Error('learning-data: unexpected response shape');
   const cache: LearningCache = { summary, employeeId, syncedAt: Date.now() };
-  writeCache(cache);
+  writeCache(cache, period);
   return toResult(cache, false);
 }

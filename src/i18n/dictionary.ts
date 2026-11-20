@@ -131,7 +131,6 @@ export type DictKey =
   | 'dashboardRefresh'
   | 'dashboardRefreshing'
   | 'dashboardBusinessTitle'
-  | 'dashboardBusinessSubtitle'
   | 'dashboardLeadersReportsTitle'
   | 'dashboardLeadersReportsSubtitle'
   | 'dashboardLeadersBeTitle'
@@ -156,7 +155,6 @@ export type DictKey =
   | 'kpiActiveFas'
   | 'kpiActiveFasValue'
   | 'kpiSubNewPolicies'
-  | 'kpiSubAllTime'
   | 'kpiSubRatios'
   | 'kpiSubPersistency'
   | 'kpiSubNoPolicies'
@@ -191,10 +189,21 @@ export type DictKey =
   | 'leadsOverdue'
   | 'leadsOpen'
   | 'leadsConverted'
+  | 'leadsNewLeads'
   | 'learningCompleted'
   | 'learningCertificates'
   | 'learningCredits'
-  | 'learningEnrolled';
+  | 'learningEnrolled'
+  // Time-frame filter
+  | 'periodLabel'
+  | 'periodThisMonth'
+  | 'periodLast3Months'
+  | 'periodLast6Months'
+  | 'periodThisYear'
+  | 'periodAllTime'
+  | 'snapshotNow'
+  | 'kpiSubCumulative'
+  | 'dashboardDueThisMonth';
 
 export const dict: Record<Lang, Record<DictKey, string>> = {
   en: {
@@ -333,7 +342,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dashboardRefresh: 'Refresh',
     dashboardRefreshing: 'Refreshing…',
     dashboardBusinessTitle: 'Business overview',
-    dashboardBusinessSubtitle: 'All time · Due Premium is this month',
     dashboardLeadersReportsTitle: 'Top team members',
     dashboardLeadersReportsSubtitle: 'By total premium · your direct reports',
     dashboardLeadersBeTitle: 'Top Business Executives',
@@ -360,7 +368,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiActiveFas: 'Active field FAs',
     kpiActiveFasValue: '{active} of {total}',
     kpiSubNewPolicies: 'New policies',
-    kpiSubAllTime: 'All time',
     kpiSubRatios: 'Deferred {deferred}% · Renewal {renewal}%',
     kpiSubPersistency: '{inf} of {all} inforce',
     kpiSubNoPolicies: 'No policies in scope',
@@ -395,10 +402,20 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     leadsOverdue: 'Overdue follow-ups',
     leadsOpen: 'Open leads',
     leadsConverted: 'Converted',
+    leadsNewLeads: 'New leads',
     learningCompleted: 'Courses completed',
     learningCertificates: 'Certificates',
     learningCredits: 'Knowledge Credit',
     learningEnrolled: 'Courses enrolled',
+    periodLabel: 'Time frame',
+    periodThisMonth: 'This month',
+    periodLast3Months: 'Last 3 months',
+    periodLast6Months: 'Last 6 months',
+    periodThisYear: 'This year',
+    periodAllTime: 'All time',
+    snapshotNow: 'Now',
+    kpiSubCumulative: 'Cumulative',
+    dashboardDueThisMonth: 'Due Premium is this month',
   },
   bn: {
     appName: 'এজেন্ট হাব',
@@ -535,7 +552,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dashboardRefresh: 'রিফ্রেশ',
     dashboardRefreshing: 'রিফ্রেশ হচ্ছে…',
     dashboardBusinessTitle: 'ব্যবসার সারসংক্ষেপ',
-    dashboardBusinessSubtitle: 'সর্বমোট · বকেয়া প্রিমিয়াম এই মাসের',
     dashboardLeadersReportsTitle: 'শীর্ষ টিম মেম্বার',
     dashboardLeadersReportsSubtitle: 'মোট প্রিমিয়াম অনুযায়ী · আপনার সরাসরি রিপোর্টরা',
     dashboardLeadersBeTitle: 'শীর্ষ বিজনেস এক্সিকিউটিভ',
@@ -562,7 +578,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiActiveFas: 'সক্রিয় ফিল্ড এফএ',
     kpiActiveFasValue: '{total} জনের মধ্যে {active} জন',
     kpiSubNewPolicies: 'নতুন পলিসি',
-    kpiSubAllTime: 'সর্বমোট',
     kpiSubRatios: 'ডেফার্ড {deferred}% · রিনিউয়াল {renewal}%',
     kpiSubPersistency: '{all}টির মধ্যে {inf}টি ইনফোর্স',
     kpiSubNoPolicies: 'এই স্কোপে কোনো পলিসি নেই',
@@ -597,9 +612,19 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     leadsOverdue: 'মেয়াদোত্তীর্ণ ফলো-আপ',
     leadsOpen: 'খোলা লিড',
     leadsConverted: 'কনভার্টেড',
+    leadsNewLeads: 'নতুন লিড',
     learningCompleted: 'সম্পন্ন কোর্স',
     learningCertificates: 'সার্টিফিকেট',
     learningCredits: 'নলেজ ক্রেডিট',
     learningEnrolled: 'ভর্তি কোর্স',
+    periodLabel: 'সময়সীমা',
+    periodThisMonth: 'এই মাস',
+    periodLast3Months: 'গত ৩ মাস',
+    periodLast6Months: 'গত ৬ মাস',
+    periodThisYear: 'এই বছর',
+    periodAllTime: 'সর্বমোট',
+    snapshotNow: 'এখন',
+    kpiSubCumulative: 'সব মিলিয়ে',
+    dashboardDueThisMonth: 'বকেয়া প্রিমিয়াম এই মাসের',
   },
 };

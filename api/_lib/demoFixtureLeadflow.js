@@ -35,6 +35,12 @@
  * Upcoming: 16 org. Converted: 4. Not Interested: 1. Total leads: 83.
  * todayCollection: 4 org. Hand-computed expectations are asserted
  * exactly in scripts/qa-leadflow-live.mjs.
+ *
+ * Period spread: non-today leads cycle through created ages of 5, 40,
+ * 100, 200 and 300 days (round-robin in creation order), so the
+ * createdInPeriod counts differ per period. Follow-up buckets and
+ * todayCollection are unaffected (they key on next_follow_up_at /
+ * created-today, not on the spread ages).
  */
 
 function addDaysIso(value, days) {
@@ -64,7 +70,6 @@ export function buildLeadflowFixture(todayIso) {
   const today = todayIso;
   const yesterday = addDaysIso(today, -1);
   const tomorrow = addDaysIso(today, 1);
-  const fiveDaysAgo = addDaysIso(today, -5);
 
   const users = [
     user('9990003', 'Demo Manager', null, ['9990002', '9990005', '9990001', '9990011', '9990012', '9990013']),
@@ -79,6 +84,10 @@ export function buildLeadflowFixture(todayIso) {
 
   const leads = [];
   let n = 0;
+  // Non-today leads cycle through these created ages (days) so the
+  // period counts differ per window (see the header comment).
+  const CREATED_AGES = [5, 40, 100, 200, 300];
+  let ageIdx = 0;
   // Per user: { today, overdue, upcoming, converted, notInterested, createdToday }
   const plan = {
     '9990001': { today: 3, overdue: 1, upcoming: 2, converted: 1, notInterested: 0, createdToday: 1 },
@@ -112,7 +121,9 @@ export function buildLeadflowFixture(todayIso) {
         createdTodayLeft -= 1;
         return at08Dhaka(today);
       }
-      return at08Dhaka(fiveDaysAgo);
+      const age = CREATED_AGES[ageIdx % CREATED_AGES.length];
+      ageIdx += 1;
+      return at08Dhaka(addDaysIso(today, -age));
     };
     for (let i = 0; i < p.today; i++) addLead(empId, 'Follow-up Set', at10Dhaka(today), createdAtFor());
     for (let i = 0; i < p.overdue; i++) addLead(empId, 'Contacted', at10Dhaka(yesterday), createdAtFor());

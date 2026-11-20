@@ -26,6 +26,12 @@
  *  2. Demo fixture: the synthetic slice's hand-computed values, exact.
  *     Pinned to 2026-11-20 (FIXTURE_TODAY) so the bucket expectations
  *     are deterministic.
+ *  2b. Time-frame filter (fixture, pinned date): createdInPeriod per
+ *     period (hand-computed org + employee values, independent
+ *     recomputation from the raw rows for the team-lead scopes);
+ *     snapshots (converted / follow-up buckets / todayCollection)
+ *     never move; boundary dates via hand-built rows (window start
+ *     inclusive, end exclusive).
  *  3. Key match: the DEV public key PEM + kid bundled in the proxy
  *     (api/_lib/verifyJwt.js) must equal the browser's copy
  *     (src/auth/keys.ts).
@@ -34,7 +40,8 @@
  *     JWTs — 401s, 405, demo fixture gating (flag on/off, production
  *     env), live-path scoping, no-PII canaries in the stub rows, the
  *     terminal-status fallback, the subordinates-missing retry (BFS),
- *     and the custom_fields-missing retry.
+ *     and the custom_fields-missing retry. Period handling: invalid
+ *     period -> 400, demo + live (count-query) paths honour ?period=.
  *
  * Read-only: SELECTs only against LeadFlow Supabase, no writes. The
  * proxy section never touches the network (stubbed fetch). Exits
@@ -50,6 +57,7 @@ import {
   scopeSetsFor,
 } from '../api/_lib/leadflowSummary.js';
 import { buildLeadflowFixture } from '../api/_lib/demoFixtureLeadflow.js';
+import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const FIXTURE_TODAY = '2026-11-20';
@@ -102,8 +110,9 @@ function signToken(claims, { kid = testKid, alg = 'RS256', expired = false } = {
   return `${input}.${b64url(sig)}`;
 }
 
-const mockReq = ({ method = 'GET', token = null } = {}) => ({
+const mockReq = ({ method = 'GET', token = null, url = '/api/leadflow-data' } = {}) => ({
   method,
+  url,
   headers: token ? { authorization: `Bearer ${token}` } : {},
 });
 function mockRes() {
@@ -330,6 +339,100 @@ function summarizeFixture(employeeId, role) {
 
   const unknown = summarizeFixture('9990099', 'employee');
   check('fixture unknown user: empty, no-leadflow-account', unknown.empty === true && unknown.emptyReason === 'no-leadflow-account', `empty=${unknown.empty} reason=${unknown.emptyReason}`);
+}
+
+// ---- 2b. Time-frame filter (fixture, pinned date) ----
+function summarizeFixturePeriod(employeeId, role, period) {
+  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const scopes = scopeSetsFor(fixture.users, employeeId, role);
+  const periodMs = periodMsWindow(period, FIXTURE_TODAY);
+  const periodWindow = periodDateWindow(period, FIXTURE_TODAY);
+  const byUuid = new Map(fixture.users.map((u) => [String(u.id), u]));
+  const byEmp = new Map(fixture.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
+  const ownCounts = aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.ownUuids, scopes.ownEmpIds, fixture.terminalStatuses, FIXTURE_TODAY, periodMs);
+  const teamCounts = aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.teamUuids, scopes.teamEmpIds, fixture.terminalStatuses, FIXTURE_TODAY, periodMs);
+  return summarizeLeadflow(
+    { users: fixture.users, ownCounts, teamCounts, rows: fixture.leads, terminalStatuses: fixture.terminalStatuses, period, periodWindow },
+    { employeeId, role },
+    FIXTURE_TODAY,
+  );
+}
+{
+  // Hand-computed org values: 83 leads, 4 created today, the other 79
+  // cycling created ages [5, 40, 100, 200, 300] days — this-month 4+16,
+  // 3m +16, 6m +16, this-year all 83 (300 days back is still in-year).
+  const orgExpected = { 'this-month': 20, '3m': 36, '6m': 52, 'this-year': 83, 'all': 83 };
+  for (const [period, exp] of Object.entries(orgExpected)) {
+    const s = summarizeFixturePeriod('9990004', 'admin', period);
+    check(`period ${period}: org createdInPeriod ${exp}`, s.leads.createdInPeriod === exp, String(s.leads.createdInPeriod));
+    check(`period ${period}: org total stays 83`, s.leads.total === 83, String(s.leads.total));
+    check(`period ${period}: org converted stays 4 (snapshot)`, s.leads.converted === 4, String(s.leads.converted));
+    check(`period ${period}: org todayCollection stays 4 (snapshot)`, s.leads.todayCollection === 4, String(s.leads.todayCollection));
+    check(`period ${period}: org buckets stay 13/49/16 (snapshot)`, s.followups.overdue === 13 && s.followups.today === 49 && s.followups.upcoming === 16, JSON.stringify(s.followups));
+    const w = periodDateWindow(period, FIXTURE_TODAY);
+    check(`period ${period}: echoes period + window`, s.period === period && JSON.stringify(s.periodWindow) === JSON.stringify(w), `${s.period} ${JSON.stringify(s.periodWindow)}`);
+  }
+
+  // Employee 9990001: 7 leads — 1 created today, the other 6 the first
+  // six cycle ages [5, 40, 100, 200, 300, 5].
+  const empExpected = { 'this-month': 3, '3m': 4, '6m': 5, 'this-year': 7, 'all': 7 };
+  for (const [period, exp] of Object.entries(empExpected)) {
+    const s = summarizeFixturePeriod('9990001', 'employee', period);
+    check(`period ${period}: emp createdInPeriod ${exp}`, s.leads.createdInPeriod === exp, String(s.leads.createdInPeriod));
+    check(`period ${period}: emp total stays 7`, s.leads.total === 7, String(s.leads.total));
+  }
+
+  // Independent recomputation from the raw fixture rows for the
+  // team-lead scopes (own + team): count rows whose assignee is in
+  // scope and whose created_at falls in the window.
+  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const uuidToEmp = new Map(fixture.users.map((u) => [String(u.id), String(u.employee_id)]));
+  const leadScopes = scopeSetsFor(fixture.users, '9990002', 'team_lead');
+  const ownEmps = new Set([...leadScopes.ownUuids].map((id) => uuidToEmp.get(id)));
+  const teamEmps = new Set([...leadScopes.teamUuids].map((id) => uuidToEmp.get(id)));
+  for (const period of ['this-month', '3m', '6m', 'this-year', 'all']) {
+    const w = periodMsWindow(period, FIXTURE_TODAY);
+    const inWindow = (iso) => {
+      if (w === null) return true;
+      const ms = Date.parse(iso);
+      return ms >= w.startMs && ms < w.endMs;
+    };
+    const ownExp = fixture.leads.filter((r) => ownEmps.has(uuidToEmp.get(String(r.assigned_to))) && inWindow(r.created_at)).length;
+    const teamExp = fixture.leads.filter((r) => teamEmps.has(uuidToEmp.get(String(r.assigned_to))) && inWindow(r.created_at)).length;
+    const s = summarizeFixturePeriod('9990002', 'team_lead', period);
+    check(`period ${period}: recomputed lead own createdInPeriod matches`, s.leads.createdInPeriod === ownExp, `${s.leads.createdInPeriod} vs ${ownExp}`);
+    check(`period ${period}: recomputed lead team createdInPeriod matches`, s.team.leads.createdInPeriod === teamExp, `${s.team.leads.createdInPeriod} vs ${teamExp}`);
+  }
+
+  // Boundary dates: window start inclusive, window end exclusive.
+  // 3m window pinned 2026-11-20: [2026-08-20T00:00 Dhaka,
+  // 2026-11-21T00:00 Dhaka) = [2026-08-19T18:00Z, 2026-11-20T18:00Z).
+  {
+    const fx = buildLeadflowFixture(FIXTURE_TODAY);
+    const byUuid = new Map(fx.users.map((u) => [String(u.id), u]));
+    const byEmp = new Map(fx.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
+    const ownUuid = new Set([String(fx.users.find((u) => u.employee_id === '9990001').id)]);
+    const ownEmp = new Set(['9990001']);
+    const mk = (id, createdAt) => ({
+      id,
+      current_status: 'Follow-up Set',
+      next_follow_up_at: null,
+      assigned_to: [...ownUuid][0],
+      custom_fields: {},
+      created_at: createdAt,
+      is_deleted: false,
+    });
+    const rows = [
+      mk('00000000-0000-0000-0003-000000000001', '2026-08-19T18:00:00.000Z'), // exactly start -> in
+      mk('00000000-0000-0000-0003-000000000002', '2026-08-19T17:59:59.999Z'), // 1ms before -> out
+      mk('00000000-0000-0000-0003-000000000003', '2026-11-20T18:00:00.000Z'), // exactly end -> out
+      mk('00000000-0000-0000-0003-000000000004', '2026-11-20T02:00:00.000Z'), // today 08:00 Dhaka -> in
+    ];
+    const counts = aggregateLeadCounts(rows, byUuid, byEmp, ownUuid, ownEmp, fx.terminalStatuses, FIXTURE_TODAY, periodMsWindow('3m', FIXTURE_TODAY));
+    check('boundary 3m: start + today in, before + end out (2 of 4)', counts.createdInPeriod === 2 && counts.total === 4, `createdInPeriod=${counts.createdInPeriod} total=${counts.total}`);
+    const countsAll = aggregateLeadCounts(rows, byUuid, byEmp, ownUuid, ownEmp, fx.terminalStatuses, FIXTURE_TODAY, null);
+    check('boundary all: createdInPeriod == total (4)', countsAll.createdInPeriod === 4, String(countsAll.createdInPeriod));
+  }
 }
 
 // ---- 3. DEV key match (proxy copy vs browser copy) ----
@@ -625,6 +728,37 @@ function summarizeFixture(employeeId, role) {
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
     check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
     process.env.VERCEL_ENV = 'preview';
+  }
+  {
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=bogus' }));
+    check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
+  }
+  {
+    // Demo path honours ?period= — the fixture is relative-dated, so
+    // its 3m createdInPeriod (36 of 83) holds on any day (§2b).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=3m' }));
+    check('proxy: demo ?period=3m -> createdInPeriod 36 of 83', res.statusCode === 200 && json?.demo === true && json?.leads?.createdInPeriod === 36 && json?.leads?.total === 83, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
+    check('proxy: demo ?period=3m echoes period', json?.period === '3m', String(json?.period));
+  }
+  {
+    // Live path (PostgREST count queries) honours ?period=: the stub
+    // org is 83 fixture leads + 3 stub leads (created today / 5 days
+    // ago — always inside 3m), so 3m createdInPeriod is 36 + 3 = 39.
+    const t = signToken({ sub: '2025999', name: 'Nobody', role: 'admin' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=3m' }));
+    check('proxy: live org ?period=3m -> createdInPeriod 39 of 86', res.statusCode === 200 && json?.demo === false && json?.leads?.createdInPeriod === 39 && json?.leads?.total === 86, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
+    check('proxy: live ?period=3m echoes period + window', json?.period === '3m' && json?.periodWindow?.start != null, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
+  }
+  {
+    // Stub user's 3 leads (today + 5 days ago) are all inside 6m —
+    // the count-query path must return createdInPeriod == total.
+    // (this-month is NOT used here: it is non-deterministic near a
+    // month boundary, when "5 days ago" falls in the prior month.)
+    const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=6m' }));
+    check('proxy: stub user ?period=6m -> createdInPeriod 3 == total', res.statusCode === 200 && json?.leads?.createdInPeriod === 3 && json?.leads?.total === 3, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
   }
   check('proxy: users fetched once (5-min cache)', normalStub.userFetchCount() === 1, `${normalStub.userFetchCount()} calls`);
   check('proxy: row fetch carries the scope filter', normalStub.sawScopedRowFetch() === true, '');

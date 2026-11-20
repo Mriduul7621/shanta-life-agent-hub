@@ -20,6 +20,13 @@
  * (labelled with scope + month) and the team block shows follow-ups
  * only. Calculators and Proposals stay tiles-only — they are tools,
  * not data pages.
+ *
+ * Time-frame filter: the LeadFlow and Learning Hub feeds follow the
+ * selected period (new leads by created_at; enrolments, completions
+ * and credits by their timestamps); follow-ups, open/converted
+ * counts, certificates and current progress are snapshots, labelled
+ * as such. The retail dues on the Leads page stay 'all' — dues are
+ * this-calendar-month by definition. Default is All time.
  */
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -33,6 +40,8 @@ import { loadLearningCached, loadLearningFresh } from '../data/learningData';
 import type { LearningSummary } from '../data/learningData';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailSummary } from '../data/retailData';
+import { DEFAULT_PERIOD, periodLabelKey, type Period } from '../data/period';
+import PeriodSelector from '../components/PeriodSelector';
 import { GROUP_TITLE_KEY, MODULES } from '../data/modules';
 import type { HubModule, ModuleGroup } from '../data/modules';
 import { ModuleTile } from '../components/ModuleTile';
@@ -143,10 +152,12 @@ function LeadsSummary({
   dashboard,
   leadflow,
   retail,
+  periodLabel,
 }: {
   dashboard: RoleDashboard;
   leadflow: LeadflowSummary | null;
   retail: RetailSummary | null;
+  periodLabel: string;
 }) {
   const { t } = useI18n();
   const live = leadflow !== null;
@@ -169,23 +180,41 @@ function LeadsSummary({
         />
       </div>
       {live && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
-          <StatBlock label={t('leadsOverdue')} value={String(leadflow.followups.overdue)} />
-          <StatBlock label={t('leadsOpen')} value={String(leadflow.leads.open)} />
-          <StatBlock label={t('leadsConverted')} value={String(leadflow.leads.converted)} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          <StatBlock
+            label={t('leadsNewLeads')}
+            value={String(leadflow.leads.createdInPeriod)}
+            sub={periodLabel}
+          />
+          <StatBlock label={t('leadsOverdue')} value={String(leadflow.followups.overdue)} sub={t('snapshotNow')} />
+          <StatBlock label={t('leadsOpen')} value={String(leadflow.leads.open)} sub={t('snapshotNow')} />
+          <StatBlock
+            label={t('leadsConverted')}
+            value={String(leadflow.leads.converted)}
+            sub={t('periodAllTime')}
+          />
         </div>
       )}
       {team && (
         <div>
           <h3 className="mb-2 text-sm font-bold text-charcoal">{t('teamSectionTitle')}</h3>
           {live && leadflow.team ? (
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
               <StatBlock
                 label={t('widgetFollowups')}
                 value={String(leadflow.team.followups.today)}
                 sub={t('followupsDue')}
               />
-              <StatBlock label={t('leadsOpen')} value={String(leadflow.team.leads.open)} />
+              <StatBlock
+                label={t('leadsNewLeads')}
+                value={String(leadflow.team.leads.createdInPeriod)}
+                sub={periodLabel}
+              />
+              <StatBlock
+                label={t('leadsOpen')}
+                value={String(leadflow.team.leads.open)}
+                sub={t('snapshotNow')}
+              />
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
@@ -207,9 +236,11 @@ function LeadsSummary({
 function LearningSummary({
   dashboard,
   learning,
+  periodLabel,
 }: {
   dashboard: RoleDashboard;
   learning: LearningSummary | null;
+  periodLabel: string;
 }) {
   const { t } = useI18n();
   const own = dashboard.own;
@@ -232,10 +263,26 @@ function LearningSummary({
       )}
       {live && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-          <StatBlock label={t('learningEnrolled')} value={String(learning.learning.coursesEnrolled)} />
-          <StatBlock label={t('learningCompleted')} value={String(learning.learning.coursesCompleted)} />
-          <StatBlock label={t('learningCertificates')} value={String(learning.learning.certificates)} />
-          <StatBlock label={t('learningCredits')} value={String(learning.learning.creditBalance)} />
+          <StatBlock
+            label={t('learningEnrolled')}
+            value={String(learning.learning.enrolledInPeriod)}
+            sub={periodLabel}
+          />
+          <StatBlock
+            label={t('learningCompleted')}
+            value={String(learning.learning.completedInPeriod)}
+            sub={periodLabel}
+          />
+          <StatBlock
+            label={t('learningCertificates')}
+            value={String(learning.learning.certificates)}
+            sub={t('periodAllTime')}
+          />
+          <StatBlock
+            label={t('learningCredits')}
+            value={String(learning.learning.creditsInPeriod)}
+            sub={periodLabel}
+          />
         </div>
       )}
       {team && (
@@ -283,44 +330,61 @@ export function ModulePage({ view }: { view: View }) {
   const [leadflow, setLeadflow] = useState<LeadflowSummary | null>(null);
   const [learning, setLearning] = useState<LearningSummary | null>(null);
   const [retail, setRetail] = useState<RetailSummary | null>(null);
+  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
   const employeeId = user?.employeeId ?? '';
   const group = VIEW_TO_GROUP[view];
+  const periodLabel = t(periodLabelKey(period));
 
   // Leads loads the LeadFlow + retail feeds; Learning loads the
   // Learning Hub feed. Each loads independently (cached first, fresh
   // in the background); a failed fetch leaves the demo fallback.
+  // The LeadFlow + Learning feeds follow the period; the retail dues
+  // feed stays 'all' (dues are this-calendar-month by definition),
+  // so it lives in its own effect and never re-runs on period change.
   useEffect(() => {
-    if (!token || !employeeId || !group) return;
+    if (!token || !employeeId || group !== 'leads') return;
     let cancelled = false;
-    if (group === 'leads') {
-      const cachedLeadflow = loadLeadflowCached(employeeId);
-      if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
-      const cachedRetail = loadRetailCached(employeeId);
-      if (cachedRetail) setRetail(cachedRetail.summary);
-      void loadLeadflowFresh(token, employeeId)
-        .then((r) => {
-          if (!cancelled) setLeadflow(r.summary);
-        })
-        .catch(() => {});
-      void loadRetailFresh(token, employeeId)
-        .then((r) => {
-          if (!cancelled) setRetail(r.summary);
-        })
-        .catch(() => {});
-    }
-    if (group === 'learning') {
-      const cachedLearning = loadLearningCached(employeeId);
-      if (cachedLearning) setLearning(cachedLearning.summary);
-      void loadLearningFresh(token, employeeId)
-        .then((r) => {
-          if (!cancelled) setLearning(r.summary);
-        })
-        .catch(() => {});
-    }
+    const cachedLeadflow = loadLeadflowCached(employeeId, period);
+    if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
+    void loadLeadflowFresh(token, employeeId, period)
+      .then((r) => {
+        if (!cancelled) setLeadflow(r.summary);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token, employeeId, group, period]);
+
+  useEffect(() => {
+    if (!token || !employeeId || group !== 'leads') return;
+    let cancelled = false;
+    const cachedRetail = loadRetailCached(employeeId);
+    if (cachedRetail) setRetail(cachedRetail.summary);
+    void loadRetailFresh(token, employeeId)
+      .then((r) => {
+        if (!cancelled) setRetail(r.summary);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [token, employeeId, group]);
+
+  useEffect(() => {
+    if (!token || !employeeId || group !== 'learning') return;
+    let cancelled = false;
+    const cachedLearning = loadLearningCached(employeeId, period);
+    if (cachedLearning) setLearning(cachedLearning.summary);
+    void loadLearningFresh(token, employeeId, period)
+      .then((r) => {
+        if (!cancelled) setLearning(r.summary);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token, employeeId, group, period]);
 
   if (!group) return null;
   const tiles = MODULES.filter((m) => m.group === group);
@@ -366,6 +430,7 @@ export function ModulePage({ view }: { view: View }) {
       </section>
       {dataGroup && dashboard ? (
         <>
+          <PeriodSelector value={period} onChange={setPeriod} />
           <SummaryCard
             mode={mode}
             noteKey={noteKey}
@@ -373,9 +438,14 @@ export function ModulePage({ view }: { view: View }) {
             syncedAt={summary?.syncedAt}
           >
             {group === 'leads' ? (
-              <LeadsSummary dashboard={dashboard} leadflow={leadflow} retail={retail} />
+              <LeadsSummary
+                dashboard={dashboard}
+                leadflow={leadflow}
+                retail={retail}
+                periodLabel={periodLabel}
+              />
             ) : (
-              <LearningSummary dashboard={dashboard} learning={learning} />
+              <LearningSummary dashboard={dashboard} learning={learning} periodLabel={periodLabel} />
             )}
           </SummaryCard>
           {goModule && (

@@ -29,8 +29,10 @@
  * feeds (§21): the LeadFlow / Learning Hub / retail proxies do not exist
  * under file://, so the live ready states are verified against seeded
  * session caches (hub-leadflow-cache-v1, hub-learning-cache-v1,
- * hub-retail-cache-v1) computed by the Hub's own summarizers, with the
- * fixture summaries flipped to demo:false to exercise the live chrome.
+ * hub-retail-cache-v1, each suffixed with the period — `:all` by
+ * default, `:3m` for the time-frame filter in §23) computed by the
+ * Hub's own summarizers, with the fixture summaries flipped to
+ * demo:false to exercise the live chrome.
  * The live paths are verified by `npm run qa:leadflow-live` and
  * `npm run qa:learning-live`.
  *
@@ -139,6 +141,20 @@
  *     (login-real-*, login-error-375, login-locked-375). The server
  *     side of real auth is covered by `npm run qa:auth-live`.
  *
+ * Checks (Phase 2 — time-frame filter):
+ * 23. Dashboard / Leads / Learning at 375 / 768 / 1440: both the :all
+ *     and :3m session caches seeded (live mode), the page shows the
+ *     'all' figures, clicking the 'Last 3 months' pill switches the
+ *     figures to the 3m values (Dashboard total ৳1,64,000 ->
+ *     ৳1,08,000, FYCP -> ৳1,00,000, policies 7 -> 3; Leads new leads
+ *     own 9 -> 5, team 24 -> 11; Learning org enrolled 30 -> 12,
+ *     credits 690 -> 290) while the snapshots stay put (due ৳34,000,
+ *     persistency 83.3%, overdue/open/converted, certificates 1);
+ *     the pill shows aria-pressed, no horizontal overflow, with
+ *     screenshots (*-period-3m-*). The exact period math is covered by
+ *     `npm run qa:retail-live` (§5b), `qa:leadflow-live` (§2b) and
+ *     `qa:learning-live` (§2b).
+ *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
  *     Income) render as <img> with the expected live URL, local icons
@@ -171,6 +187,7 @@ import { summarizeLeadflow, aggregateLeadCounts, scopeSetsFor } from '../api/_li
 import { buildLeadflowFixture } from '../api/_lib/demoFixtureLeadflow.js';
 import { summarizeLearning } from '../api/_lib/learningSummary.js';
 import { buildLearningFixture } from '../api/_lib/demoFixtureLearning.js';
+import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const LOCAL_QA = !process.env.HUB_QA_URL;
@@ -437,8 +454,8 @@ async function waitForDashboardTerminal(page) {
  * keeps the seeded values deterministic whatever day the suite runs.
  */
 const FIXTURE_TODAY = '2026-11-20';
-function demoSummaryFor(employeeId, role) {
-  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY);
+function demoSummaryFor(employeeId, role, period = 'all') {
+  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY, period);
   summary.demo = true; // the proxy marks fixture summaries demo: true
   return summary;
 }
@@ -450,7 +467,7 @@ function demoSummaryFor(employeeId, role) {
  * exercises the live chrome (chips, live notes, summary-mode Due
  * widget, extra stats) without a proxy.
  */
-function leadflowSummaryFor(employeeId, role, live = false) {
+function leadflowSummaryFor(employeeId, role, live = false, period = 'all') {
   const fixture = buildLeadflowFixture(FIXTURE_TODAY);
   const scopes = scopeSetsFor(fixture.users, employeeId, role);
   const byUuid = new Map(fixture.users.map((u) => [String(u.id), u]));
@@ -461,32 +478,44 @@ function leadflowSummaryFor(employeeId, role, live = false) {
     open: 0,
     converted: 0,
     todayCollection: 0,
+    createdInPeriod: 0,
   };
+  const periodMs = periodMsWindow(period, FIXTURE_TODAY);
   const ownCounts = scopes
-    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.ownUuids, scopes.ownEmpIds, fixture.terminalStatuses, FIXTURE_TODAY)
+    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.ownUuids, scopes.ownEmpIds, fixture.terminalStatuses, FIXTURE_TODAY, periodMs)
     : emptyCounts;
   const teamCounts = scopes
-    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.teamUuids, scopes.teamEmpIds, fixture.terminalStatuses, FIXTURE_TODAY)
+    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.teamUuids, scopes.teamEmpIds, fixture.terminalStatuses, FIXTURE_TODAY, periodMs)
     : emptyCounts;
   const summary = summarizeLeadflow(
-    { users: fixture.users, ownCounts, teamCounts, rows: fixture.leads, terminalStatuses: fixture.terminalStatuses },
+    { users: fixture.users, ownCounts, teamCounts, rows: fixture.leads, terminalStatuses: fixture.terminalStatuses, period, periodWindow: periodDateWindow(period, FIXTURE_TODAY) },
     { employeeId, role },
     FIXTURE_TODAY,
   );
   summary.demo = !live;
   return summary;
 }
-function learningSummaryFor(employeeId, role, live = false) {
+function learningSummaryFor(employeeId, role, live = false, period = 'all') {
+  const fixture = buildLearningFixture(FIXTURE_TODAY);
   const summary = summarizeLearning(
-    { ...buildLearningFixture(FIXTURE_TODAY), downlineIds: null, truncated: false },
+    {
+      ...fixture,
+      creditLedger: fixture.creditLedger,
+      downlineIds: null,
+      truncated: false,
+      period,
+      periodWindow: periodDateWindow(period, FIXTURE_TODAY),
+      periodWindowMs: periodMsWindow(period, FIXTURE_TODAY),
+    },
     { employeeId, role },
   );
   summary.demo = !live;
   return summary;
 }
 
-/** Seed any of the three feed caches (null = leave unseeded). */
-async function seedFeedCaches(page, employeeId, { leadflow, learning, retail }) {
+/** Seed any of the three feed caches (null = leave unseeded).
+ * Seeds the `:<period>` key — the pages default to All time. */
+async function seedFeedCaches(page, employeeId, { leadflow, learning, retail }, period = 'all') {
   await page.evaluate(
     (caches) => {
       for (const [key, cache] of Object.entries(caches)) {
@@ -494,9 +523,9 @@ async function seedFeedCaches(page, employeeId, { leadflow, learning, retail }) 
       }
     },
     {
-      'hub-leadflow-cache-v1': leadflow ? { summary: leadflow, employeeId, syncedAt: Date.now() } : null,
-      'hub-learning-cache-v1': learning ? { summary: learning, employeeId, syncedAt: Date.now() } : null,
-      'hub-retail-cache-v1': retail ? { summary: retail, employeeId, syncedAt: Date.now() } : null,
+      [`hub-leadflow-cache-v1:${period}`]: leadflow ? { summary: leadflow, employeeId, syncedAt: Date.now() } : null,
+      [`hub-learning-cache-v1:${period}`]: learning ? { summary: learning, employeeId, syncedAt: Date.now() } : null,
+      [`hub-retail-cache-v1:${period}`]: retail ? { summary: retail, employeeId, syncedAt: Date.now() } : null,
     },
   );
 }
@@ -811,7 +840,7 @@ try {
     await login(page, '9990002', '123456');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
       { summary: demoSummaryFor('9990002', 'team_lead'), employeeId: '9990002', syncedAt: Date.now() },
     );
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -864,7 +893,7 @@ try {
     await page.click('button[type="submit"]');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
     await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
       { summary: demoSummaryFor('9990001', 'employee'), employeeId: '9990001', syncedAt: Date.now() },
     );
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -883,7 +912,7 @@ try {
     await login(page, '9990004', '123456');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
     await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
       { summary: demoSummaryFor('9990004', 'admin'), employeeId: '9990004', syncedAt: Date.now() },
     );
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -908,7 +937,7 @@ try {
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
     await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1', JSON.stringify(cache)),
+      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
       { summary: emptySummary, employeeId: '9990001', syncedAt: Date.now() },
     );
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -1242,7 +1271,7 @@ try {
           failHandoff(`handoff threw: ${String(e).slice(0, 200)}`);
         }
       }
-    } finally {
+} finally {
       await ctx.close();
     }
   }
@@ -1981,11 +2010,11 @@ try {
     emptyLeadflow.empty = true;
     emptyLeadflow.emptyReason = 'no-leadflow-account';
     emptyLeadflow.followups = { overdue: 0, today: 0, upcoming: 0, all: 0 };
-    emptyLeadflow.leads = { total: 0, open: 0, converted: 0, todayCollection: 0, statusCounts: {} };
+    emptyLeadflow.leads = { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} };
     const emptyLearning = learningSummaryFor('9990001', 'employee', true);
     emptyLearning.empty = true;
     emptyLearning.emptyReason = 'no-lms-record';
-    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0 };
+    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0 };
     const emptyRetail = {
       ...demoSummaryFor('9990001', 'employee'),
       demo: false,
@@ -2148,6 +2177,143 @@ try {
     check('login lockout state 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, 'login-locked-375.png'), fullPage: true });
     await ctx.close();
+  }
+  // ---- 23. Time-frame filter: selector states (Dashboard + Leads + Learning) ----
+  // Each data page at 375/768/1440: seed BOTH the :all and :3m caches
+  // (live mode), open the page, confirm the 'all' figures, click the
+  // 'Last 3 months' pill, and confirm the figures change to the 3m
+  // values while the snapshots stay put. The background refresh fails
+  // under file:// (no proxy) — the pages fall back to the seeded
+  // cache, which is exactly the path under test. Expected 3m values
+  // are the hand-computed fixture values (qa-*-live §2b/§5b).
+  const readKpis = (page) =>
+    page.evaluate(() => {
+      const out = {};
+      for (const section of document.querySelectorAll('section[aria-label]')) {
+        const value = section.querySelector('p.text-3xl');
+        if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
+      }
+      return out;
+    });
+  const readSummaryStats = (page, label) =>
+    page.evaluate((lbl) => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      if (!section) return null;
+      const out = [];
+      for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+        const labelEl = valueEl.previousElementSibling;
+        if (labelEl && labelEl.textContent.trim() === lbl) out.push(valueEl.textContent.trim());
+      }
+      return out;
+    }, label);
+  for (const width of [375, 768, 1440]) {
+    // Dashboard (Team Lead 9990002): total ৳1,64,000 -> ৳1,08,000,
+    // FYCP ৳1,56,000 -> ৳1,00,000, policies 7 -> 3; due ৳34,000 and
+    // persistency 83.3% stay put.
+    {
+      const { ctx, page } = await newPage(browser, width);
+      await login(page, '9990002', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', '3m'), demo: false } }, '3m');
+      await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+      const dashPath = await waitForDashboardTerminal(page);
+      check(`period dashboard ${width}: ready state renders`, dashPath === 'live', `path=${dashPath}`);
+      const kpisAll = await readKpis(page);
+      check(`period dashboard ${width}: all-time total ৳1,64,000`, kpisAll['Total premium received'] === '৳1,64,000', JSON.stringify(kpisAll));
+      await page.click('button[data-period="3m"]');
+      await page.waitForFunction(
+        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,08,000'),
+        { timeout: 5000 },
+      );
+      const kpis3m = await readKpis(page);
+      check(`period dashboard ${width}: 3m total ৳1,08,000 + FYCP ৳1,00,000 + policies 3`, kpis3m['Total premium received'] === '৳1,08,000' && kpis3m.FYCP === '৳1,00,000' && kpis3m.Policies === '3', JSON.stringify(kpis3m));
+      check(`period dashboard ${width}: due ৳34,000 + persistency 83.3% unchanged`, kpis3m['Due premium — this month'] === '৳34,000' && kpis3m.Persistency === '83.3%', JSON.stringify(kpis3m));
+      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
+      check(`period dashboard ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      const ov = await overflowCheck(page);
+      check(`period dashboard ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await page.screenshot({ path: path.join(QA_DIR, `dashboard-period-3m-${width}.png`), fullPage: true });
+      await ctx.close();
+    }
+    // Leads (Team Lead 9990002): new leads own 9 -> 5, team 24 -> 11;
+    // overdue 1, open 8/20, converted 1 stay put.
+    {
+      const { ctx, page } = await newPage(browser, width);
+      await login(page, '9990002', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true), learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, '3m'), learning: null, retail: null }, '3m');
+      await clickNav(page, 'লিডস', 'Leads');
+      await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+      check(`period leads ${width}: all-time new leads 9 own + 24 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['9', '24']));
+      await page.click('button[data-period="3m"]');
+      await page.waitForFunction(
+        () => {
+          const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+          if (!section) return false;
+          const vals = [];
+          for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+            const labelEl = valueEl.previousElementSibling;
+            if (labelEl && labelEl.textContent.trim() === 'New leads') vals.push(valueEl.textContent.trim());
+          }
+          return JSON.stringify(vals) === JSON.stringify(['5', '11']);
+        },
+        { timeout: 5000 },
+      );
+      check(`period leads ${width}: 3m new leads 5 own + 11 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['5', '11']));
+      check(
+        `period leads ${width}: overdue 1, open 8/20, converted 1 unchanged`,
+        JSON.stringify(await readSummaryStats(page, 'Overdue follow-ups')) === JSON.stringify(['1']) &&
+          JSON.stringify(await readSummaryStats(page, 'Open leads')) === JSON.stringify(['8', '20']) &&
+          JSON.stringify(await readSummaryStats(page, 'Converted')) === JSON.stringify(['1']),
+      );
+      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
+      check(`period leads ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      const ov = await overflowCheck(page);
+      check(`period leads ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await page.screenshot({ path: path.join(QA_DIR, `leads-period-3m-${width}.png`), fullPage: true });
+      await ctx.close();
+    }
+    // Learning (Admin 9990004, org-wide): enrolled 30 -> 12, completed
+    // 1 -> 0, credits 690 -> 290; certificates 1 stays put.
+    {
+      const { ctx, page } = await newPage(browser, width);
+      await login(page, '9990004', '123456');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true), retail: null }, 'all');
+      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true, '3m'), retail: null }, '3m');
+      await clickNav(page, 'লার্নিং', 'Learning');
+      await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+      check(`period learning ${width}: all-time enrolled 30, credits 690`, JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['30']) && JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['690']));
+      await page.click('button[data-period="3m"]');
+      await page.waitForFunction(
+        () => {
+          const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+          if (!section) return false;
+          const vals = [];
+          for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+            const labelEl = valueEl.previousElementSibling;
+            if (labelEl && labelEl.textContent.trim() === 'Courses enrolled') vals.push(valueEl.textContent.trim());
+          }
+          return JSON.stringify(vals) === JSON.stringify(['12']);
+        },
+        { timeout: 5000 },
+      );
+      check(
+        `period learning ${width}: 3m enrolled 12, completed 0, credits 290, certs 1`,
+        JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['12']) &&
+          JSON.stringify(await readSummaryStats(page, 'Courses completed')) === JSON.stringify(['0']) &&
+          JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['290']) &&
+          JSON.stringify(await readSummaryStats(page, 'Certificates')) === JSON.stringify(['1']),
+      );
+      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
+      check(`period learning ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      const ov = await overflowCheck(page);
+      check(`period learning ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await page.screenshot({ path: path.join(QA_DIR, `learning-period-3m-${width}.png`), fullPage: true });
+      await ctx.close();
+    }
   }
 } finally {
   await browser.close();

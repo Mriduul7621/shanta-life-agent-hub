@@ -23,12 +23,19 @@
  * signed-in Employee ID) shows immediately while a fresh fetch runs in
  * the background; a failed refresh keeps the cached data and says so.
  * Demo accounts (999xxxx) see the synthetic demo slice, labelled DEMO.
+ *
+ * Time-frame filter: Total Premium / FYCP / Policies and the
+ * leaderboard follow the selected period (PR row date); Due Premium
+ * stays this calendar month, Persistency stays cumulative, Active FAs
+ * stay last-6-months — each labelled as such. Default is All time.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailLoadResult, RetailScope } from '../data/retailData';
+import { DEFAULT_PERIOD, periodLabelKey, type Period } from '../data/period';
+import PeriodSelector from '../components/PeriodSelector';
 import { formatBdt } from '../data/demoData';
 import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
@@ -71,15 +78,17 @@ export function DashboardPage() {
   const { user, token } = useAuth();
   const [state, setState] = useState<PageState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
+  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
   const retailModule = MODULES.find((m) => m.id === 'retail-dashboard');
   const employeeId = user?.employeeId ?? '';
+  const periodLabel = t(periodLabelKey(period));
 
   const refresh = useCallback(async () => {
     if (!token || !employeeId) return;
     if (state.status === 'error') setState({ status: 'loading' });
     setRefreshing(true);
     try {
-      const result = await loadRetailFresh(token, employeeId);
+      const result = await loadRetailFresh(token, employeeId, period);
       setState({ status: 'ready', result, refreshFailed: false });
     } catch {
       setState((prev) =>
@@ -88,15 +97,19 @@ export function DashboardPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [state.status, token, employeeId]);
+  }, [state.status, token, employeeId, period]);
 
   useEffect(() => {
     if (!token || !employeeId) return;
     let cancelled = false;
-    const cached = loadRetailCached(employeeId);
-    if (cached) setState({ status: 'ready', result: cached, refreshFailed: false });
+    const cached = loadRetailCached(employeeId, period);
+    if (cached) {
+      setState({ status: 'ready', result: cached, refreshFailed: false });
+    } else {
+      setState({ status: 'loading' });
+    }
     setRefreshing(true);
-    loadRetailFresh(token, employeeId)
+    loadRetailFresh(token, employeeId, period)
       .then((result) => {
         if (!cancelled) setState({ status: 'ready', result, refreshFailed: false });
       })
@@ -114,7 +127,7 @@ export function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, employeeId]);
+  }, [token, employeeId, period]);
 
   const ready = state.status === 'ready' ? state.result : null;
   const summary = ready?.summary ?? null;
@@ -154,6 +167,9 @@ export function DashboardPage() {
           >
             {refreshing ? t('dashboardRefreshing') : t('dashboardRefresh')}
           </button>
+        </div>
+        <div className="mt-3">
+          <PeriodSelector value={period} onChange={setPeriod} />
         </div>
         {summary?.demo && (
           <p className="mt-3 rounded-xl bg-sunset/10 px-4 py-3 text-sm font-medium text-charcoal">
@@ -217,7 +233,9 @@ export function DashboardPage() {
           {/* Business KPIs — retail formulas, scoped to the caller */}
           <section aria-label={t('dashboardBusinessTitle')}>
             <h2 className="text-lg font-bold text-charcoal">{t('dashboardBusinessTitle')}</h2>
-            <p className="mt-1 text-sm text-charcoal/60">{t('dashboardBusinessSubtitle')}</p>
+            <p className="mt-1 text-sm text-charcoal/60">
+              {periodLabel} · {t('dashboardDueThisMonth')}
+            </p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
               <WidgetCard
                 title={t('kpiTotalPremium')}
@@ -228,7 +246,7 @@ export function DashboardPage() {
                         deferred: summary.deferredRatio.toFixed(1),
                         renewal: summary.renewalRatio.toFixed(1),
                       })
-                    : t('kpiSubAllTime')
+                    : periodLabel
                 }
                 emptyText=""
                 accent="orange"
@@ -237,7 +255,7 @@ export function DashboardPage() {
               <WidgetCard
                 title={t('kpiFycp')}
                 value={formatBdt(summary.fycp)}
-                sub={t('kpiSubAllTime')}
+                sub={periodLabel}
                 emptyText=""
                 accent="olive"
                 icon={<IconDashboard />}
@@ -245,7 +263,7 @@ export function DashboardPage() {
               <WidgetCard
                 title={t('kpiPolicyQty')}
                 value={fmtCount(summary.policies)}
-                sub={t('kpiSubNewPolicies')}
+                sub={`${periodLabel} · ${t('kpiSubNewPolicies')}`}
                 emptyText=""
                 accent="charcoal"
                 icon={<IconCheck />}
@@ -263,7 +281,7 @@ export function DashboardPage() {
                 value={summary.persistency ? `${summary.persistency.pct.toFixed(1)}%` : '—'}
                 sub={
                   summary.persistency
-                    ? t('kpiSubPersistency', { inf: summary.persistency.inf, all: summary.persistency.all })
+                    ? `${t('kpiSubCumulative')} · ${t('kpiSubPersistency', { inf: summary.persistency.inf, all: summary.persistency.all })}`
                     : t('kpiSubNoPolicies')
                 }
                 emptyText=""
@@ -302,6 +320,8 @@ export function DashboardPage() {
                 {summary.leaderboard.kind === 'bes'
                   ? t('dashboardLeadersBeSubtitle')
                   : t('dashboardLeadersReportsSubtitle')}
+                {' · '}
+                {periodLabel}
               </p>
               <div className="mt-3 rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5">
                 {summary.leaderboard.entries.length === 0 ? (

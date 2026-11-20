@@ -15,7 +15,11 @@
  * The cache is bound to the signed-in Employee ID: a cached summary for
  * another user is ignored, and sign-out clears it (see AuthContext) —
  * scoped data must never leak across users on a shared device.
+ * The cache key also includes the time-frame period: one period's
+ * summary must never be shown for another period.
  */
+import { DEFAULT_PERIOD, PERIODS, type Period } from './period';
+
 export type RetailScope = 'own' | 'team' | 'subtree' | 'org';
 
 export interface RetailLeaderboardEntry {
@@ -29,6 +33,10 @@ export interface RetailSummary {
   demo: boolean;
   scope: RetailScope;
   role: string;
+  /** The period this summary was computed for ('all' = no filtering). */
+  period: Period;
+  /** { start, end } ISO dates of the period window, null for 'all'. */
+  periodWindow: { start: string; end: string } | null;
   userCode: string | null;
   userName: string | null;
   userTier: string | null;
@@ -89,9 +97,13 @@ function isValidSummary(value: unknown): value is RetailSummary {
   );
 }
 
-function readCache(employeeId: string): RetailCache | null {
+function cacheKey(period: Period): string {
+  return `${CACHE_KEY}:${period}`;
+}
+
+function readCache(employeeId: string, period: Period): RetailCache | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = sessionStorage.getItem(cacheKey(period));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as RetailCache;
     if (parsed.employeeId !== employeeId) return null;
@@ -102,18 +114,19 @@ function readCache(employeeId: string): RetailCache | null {
   }
 }
 
-function writeCache(cache: RetailCache): void {
+function writeCache(cache: RetailCache, period: Period): void {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    sessionStorage.setItem(cacheKey(period), JSON.stringify(cache));
   } catch {
     // Storage full or unavailable — the page still works, just without a cache.
   }
 }
 
-/** Clear the cached Dashboard summary (sign-out, user switch). Never throws. */
+/** Clear the cached Dashboard summaries for ALL periods (sign-out, user switch). Never throws. */
 export function clearRetailCache(): void {
   try {
-    sessionStorage.removeItem(CACHE_KEY);
+    for (const period of PERIODS) sessionStorage.removeItem(cacheKey(period));
+    sessionStorage.removeItem(CACHE_KEY); // pre-filter cache key, if any
   } catch {
     /* ignore */
   }
@@ -124,8 +137,8 @@ function toResult(cache: RetailCache, fromCache: boolean): RetailLoadResult {
 }
 
 /** Cached data for instant display (null on first visit). Never throws. */
-export function loadRetailCached(employeeId: string): RetailLoadResult | null {
-  const cache = readCache(employeeId);
+export function loadRetailCached(employeeId: string, period: Period = DEFAULT_PERIOD): RetailLoadResult | null {
+  const cache = readCache(employeeId, period);
   return cache ? toResult(cache, true) : null;
 }
 
@@ -134,8 +147,8 @@ export function loadRetailCached(employeeId: string): RetailLoadResult | null {
  * the caller's token is missing or expired; AuthContext's expiry checker
  * signs the session out separately).
  */
-export async function loadRetailFresh(token: string, employeeId: string): Promise<RetailLoadResult> {
-  const res = await fetch('/api/retail-data', {
+export async function loadRetailFresh(token: string, employeeId: string, period: Period = DEFAULT_PERIOD): Promise<RetailLoadResult> {
+  const res = await fetch(`/api/retail-data?period=${period}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -143,6 +156,6 @@ export async function loadRetailFresh(token: string, employeeId: string): Promis
   const summary: unknown = await res.json();
   if (!isValidSummary(summary)) throw new Error('retail-data: unexpected response shape');
   const cache: RetailCache = { summary, employeeId, syncedAt: Date.now() };
-  writeCache(cache);
+  writeCache(cache, period);
   return toResult(cache, false);
 }

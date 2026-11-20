@@ -35,6 +35,12 @@
  * sheet-absent), so the fallback is purely T-series. Persistency 8/9 =
  * 88.9% org-wide. Active FAs: 9990012 has only a 300-day-old sale -> 3
  * of 4 org-wide.
+ *
+ * Period spread (pinned to 2026-11-20 in the QA): D1002 sits 100 days
+ * back (in 6m, out of 3m) so the periods differ visibly — org totals:
+ * this-month 83,000 (1 pol) · 3m 185,000 (5 pol) · 6m 205,000 (6 pol) ·
+ * this-year 241,000 (9 pol, = all time). Due / persistency / active
+ * FAs are window-fixed and never move with the period.
  */
 import { addMonthsIso } from './retailSummary.js';
 
@@ -166,7 +172,10 @@ export function buildDemoPayload(todayIso) {
     // 9990001: 30,000 + 5,000 + 20,000 + T9001 12,000 = 67,000 (3 pol)
     record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 30), type: 'New', amount: 30000 }),
     record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 10), type: 'Deferred', amount: 5000 }),
-    record({ policy: 'D1002', faCode: '9990001', date: daysAgo(today, 200), type: 'New', amount: 20000 }),
+    // D1002 sits 100 days back: inside the 6m window, outside 3m, so
+    // the two periods differ (see the header comment). It is
+    // sheet-covered, so moving it cannot touch the ledger fallback.
+    record({ policy: 'D1002', faCode: '9990001', date: daysAgo(today, 100), type: 'New', amount: 20000 }),
     record({ policy: 'T9001', faCode: '9990001', date: daysAgo(today, 200), type: 'New', term: '1', mode: 'Half-Yearly', product: 'Shanta Assurance Plan', amount: 12000 }),
     // 9990011: 40,000 + 8,000 + T9002 9,000 = 57,000 (2 pol)
     record({ policy: 'D1011', faCode: '9990011', date: daysAgo(today, 20), type: 'New', amount: 40000 }),

@@ -53,6 +53,17 @@
  * pairs: 30. Org completions: 1. Org certificates: 1.
  * Hand-computed expectations are asserted exactly in
  * scripts/qa-learning-live.mjs.
+ *
+ * Period spread (pinned to 2026-11-20 in the QA): enrolments cycle
+ * through enrolled ages of today, 40, 100, 200 and 300 days; the
+ * course B enrolment is 110 days back (before its completion). The
+ * single course B completion sits 100 days back (in 6m, out of 3m).
+ * credit_ledger rows mirror the balances one-for-one at cycled ages
+ * (so 'all' period credits = 690 = the total balance). Org period
+ * values: enrolled this-month 6 · 3m 12 · 6m 19 · this-year 30;
+ * completed this-month 0 · 3m 0 · 6m 1 · this-year 1; credits
+ * this-month 140 · 3m 290 · 6m 535 · this-year 690. Certificates,
+ * current course and team averages are snapshots and never move.
  */
 
 function addDaysIso(value, days) {
@@ -80,7 +91,12 @@ function employee(employeeId, fullName, designation, supervisorId) {
 
 export function buildLearningFixture(todayIso) {
   const today = todayIso;
-  const fiveDaysAgo = addDaysIso(today, -5);
+  // The single completion sits 100 days back: inside the 6m window,
+  // outside 3m, so the completion count varies by period.
+  const hundredDaysAgo = addDaysIso(today, -100);
+  // Enrolment ages cycle so the enrolment count varies per period
+  // (see the header comment for the pinned expectations).
+  const ENROLLED_AGES = [0, 40, 100, 200, 300];
 
   const employees = [
     employee('9990003', 'Demo Manager', 'General Manager', null),
@@ -148,17 +164,31 @@ export function buildLearningFixture(todayIso) {
   };
   for (const [empId, done] of Object.entries(progressA)) {
     addProgress(empId, COURSE_A_ID, 'aos', done, 20, at09Dhaka(today));
-    enrollments.push({ employee_id: empId, course_id: COURSE_A_ID, status: 'enrolled', completed_at: null });
+    const age = ENROLLED_AGES[enrollments.length % ENROLLED_AGES.length];
+    enrollments.push({
+      employee_id: empId,
+      course_id: COURSE_A_ID,
+      status: 'enrolled',
+      enrolled_at: at09Dhaka(addDaysIso(today, -age)),
+      completed_at: null,
+    });
   }
   // 9990004 (Admin) completed course B (the only completion in the
-  // fixture — it shows only in the org-wide admin totals).
-  addProgress('9990004', COURSE_B_ID, 'spe', 5, 5, at09Dhaka(fiveDaysAgo));
-  enrollments.push({ employee_id: '9990004', course_id: COURSE_B_ID, status: 'completed', completed_at: at09Dhaka(fiveDaysAgo) });
+  // fixture — it shows only in the org-wide admin totals). Enrolled
+  // 110 days back, completed 100 days back.
+  addProgress('9990004', COURSE_B_ID, 'spe', 5, 5, at09Dhaka(hundredDaysAgo));
+  enrollments.push({
+    employee_id: '9990004',
+    course_id: COURSE_B_ID,
+    status: 'completed',
+    enrolled_at: at09Dhaka(addDaysIso(today, -110)),
+    completed_at: at09Dhaka(hundredDaysAgo),
+  });
   // 9990001 has progress in the UNPUBLISHED course C — must not count.
   addProgress('9990001', COURSE_C_ID, 'draft', 3, 3, at09Dhaka(today));
 
   const certificates = [
-    { employee_id: '9990004', course_id: COURSE_B_ID, certificate_no: 'DEMO-0001', final_score: 92, issued_at: at09Dhaka(fiveDaysAgo) },
+    { employee_id: '9990004', course_id: COURSE_B_ID, certificate_no: 'DEMO-0001', final_score: 92, issued_at: at09Dhaka(hundredDaysAgo) },
   ];
 
   const creditBalances = [
@@ -175,6 +205,20 @@ export function buildLearningFixture(todayIso) {
   ];
   for (let i = 20; i <= 40; i++) creditBalances.push({ employee_id: `99900${i}`, balance: 5 });
 
+  // credit_ledger rows mirror the balances one-for-one (one row per
+  // employee, points = full balance) at cycled ages — so the 'all'
+  // period credit value equals the balance, and non-'all' periods
+  // vary (see the header comment). Reason strings are the real LH
+  // reasons for realism; the summarizer only reads points + dates.
+  const creditLedger = creditBalances.map((b, idx) => ({
+    employee_id: b.employee_id,
+    course_id: COURSE_A_ID,
+    module_id: null,
+    reason: 'module_complete',
+    points: b.balance,
+    created_at: at09Dhaka(addDaysIso(today, -ENROLLED_AGES[idx % ENROLLED_AGES.length])),
+  }));
+
   return {
     employees,
     moduleProgress,
@@ -183,5 +227,6 @@ export function buildLearningFixture(todayIso) {
     enrollments,
     certificates,
     creditBalances,
+    creditLedger,
   };
 }

@@ -43,6 +43,13 @@
  * (live bug 2026-11-20). The real production lock is the
  * vite.config build guard: a HUB_BUILD_TARGET=production build FAILS
  * with the flag set.
+ *
+ * Time-frame filter: `?period=this-month|3m|6m|this-year|all`
+ * (default 'all'). Only `createdInPeriod` (leads created in the
+ * window, by created_at) follows it — follow-ups, open and converted
+ * are current-state snapshots (see leadflowSummary.js for why
+ * conversions cannot be period-filtered honestly). An invalid value
+ * is a 400.
  */
 
 import { verifySsoTokenNode, publicKeyConfig } from './_lib/verifyJwt.js';
@@ -53,6 +60,7 @@ import {
   dhakaDayBounds,
   dhakaTodayIso,
 } from './_lib/supabase.js';
+import { parsePeriodParam, periodDateWindow, periodMsWindow } from './_lib/periods.js';
 import {
   summarizeLeadflow,
   aggregateLeadCounts,
@@ -219,13 +227,13 @@ async function countLeads(cfg, scope, extra, state) {
   return total;
 }
 
-async function countHeadlines(cfg, scope, bounds, terminal) {
+async function countHeadlines(cfg, scope, bounds, terminal, periodMs) {
   const { startMs, endMs } = bounds;
   const start = naiveIso(startMs);
   const end = naiveIso(endMs);
   const notTerm = notTerminalFilter(terminal);
   const state = { dropCustomFields: false };
-  const [overdue, today, upcoming, total, open, converted, todayCollection] = await Promise.all([
+  const [overdue, today, upcoming, total, open, converted, todayCollection, createdInPeriod] = await Promise.all([
     countLeads(cfg, scope, { 'next_follow_up_at': `lt.${start}`, ...notTerm }, state),
     // Two bounds on one column go through and=(...) — PostgREST has
     // no reliable duplicate-param form for a range.
@@ -235,6 +243,11 @@ async function countHeadlines(cfg, scope, bounds, terminal) {
     countLeads(cfg, scope, { ...notTerm }, state),
     countLeads(cfg, scope, { 'current_status': 'eq.Converted' }, state),
     countLeads(cfg, scope, { and: `(created_at.gte.${start},created_at.lt.${end})` }, state),
+    // 'all' (null window) needs no extra query: createdInPeriod ==
+    // total by definition.
+    periodMs === null
+      ? Promise.resolve(null)
+      : countLeads(cfg, scope, { and: `(created_at.gte.${naiveIso(periodMs.startMs)},created_at.lt.${naiveIso(periodMs.endMs)})` }, state),
   ]);
   return {
     followups: { overdue, today, upcoming },
@@ -242,6 +255,7 @@ async function countHeadlines(cfg, scope, bounds, terminal) {
     open,
     converted,
     todayCollection,
+    createdInPeriod: createdInPeriod === null ? total : createdInPeriod,
   };
 }
 
@@ -323,7 +337,13 @@ export default async function handler(req, res) {
   // The verifier guarantees sub (non-empty) + role (one of the four).
   const user = { employeeId: claims.sub, role: claims.role, name: claims.name };
 
+  const period = parsePeriodParam(new URL(req.url || '/', 'http://localhost').searchParams.get('period'));
+  if (period === null) {
+    return send(res, 400, { error: 'invalid period' });
+  }
   const todayIso = dhakaTodayIso();
+  const periodWindow = periodDateWindow(period, todayIso);
+  const periodMs = periodMsWindow(period, todayIso);
 
   // Demo fixture: synthetic slice through the SAME summarizer.
   if (demoFixtureEnabled() && isDemoUser(user.employeeId)) {
@@ -334,12 +354,14 @@ export default async function handler(req, res) {
         demo: true,
         scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
         role: user.role,
+        period,
+        periodWindow,
         userEmployeeId: user.employeeId,
         userName: null,
         empty: true,
         emptyReason: 'no-leadflow-account',
         followups: { overdue: 0, today: 0, upcoming: 0, all: 0 },
-        leads: { total: 0, open: 0, converted: 0, todayCollection: 0, statusCounts: {} },
+        leads: { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} },
         team: null,
         terminalFallback: false,
         truncated: false,
@@ -356,6 +378,7 @@ export default async function handler(req, res) {
       scopes.ownEmpIds,
       fixture.terminalStatuses,
       todayIso,
+      periodMs,
     );
     const teamCounts = aggregateLeadCounts(
       fixture.leads,
@@ -365,6 +388,7 @@ export default async function handler(req, res) {
       scopes.teamEmpIds,
       fixture.terminalStatuses,
       todayIso,
+      periodMs,
     );
     const summary = summarizeLeadflow(
       {
@@ -375,6 +399,8 @@ export default async function handler(req, res) {
         terminalStatuses: fixture.terminalStatuses,
         terminalFallback: false,
         truncated: false,
+        period,
+        periodWindow,
       },
       user,
       todayIso,
@@ -397,12 +423,14 @@ export default async function handler(req, res) {
         demo: false,
         scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
         role: user.role,
+        period,
+        periodWindow,
         userEmployeeId: user.employeeId,
         userName: null,
         empty: true,
         emptyReason: 'no-leadflow-account',
         followups: { overdue: 0, today: 0, upcoming: 0, all: 0 },
-        leads: { total: 0, open: 0, converted: 0, todayCollection: 0, statusCounts: {} },
+        leads: { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} },
         team: null,
         terminalFallback,
         truncated: false,
@@ -415,10 +443,10 @@ export default async function handler(req, res) {
     const ownScope = isAdmin ? null : scopes.ownPairs;
     const teamScope = isAdmin || scopes.downline.length === 0 ? null : scopes.teamPairs;
 
-    const ownCounts = await countHeadlines(cfg, ownScope, bounds, terminal);
+    const ownCounts = await countHeadlines(cfg, ownScope, bounds, terminal, periodMs);
     const teamCounts = teamScope
-      ? await countHeadlines(cfg, teamScope, bounds, terminal)
-      : { followups: { overdue: 0, today: 0, upcoming: 0 }, total: 0, open: 0, converted: 0, todayCollection: 0 };
+      ? await countHeadlines(cfg, teamScope, bounds, terminal, periodMs)
+      : { followups: { overdue: 0, today: 0, upcoming: 0 }, total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0 };
 
     // Row fetch covers the whole visible set (own + team) so one fetch
     // feeds both the own statusCounts and the member breakdown.
@@ -436,6 +464,8 @@ export default async function handler(req, res) {
         terminalStatuses: terminal,
         terminalFallback,
         truncated,
+        period,
+        periodWindow,
       },
       user,
       todayIso,

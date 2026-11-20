@@ -15,7 +15,18 @@
  * Dashboard page renders aggregates only, so no policy-owner PII ever
  * leaves the server (stricter than spec §9.1, which allows returning the
  * visible slice).
+ *
+ * Time-frame filter: buildRetailIndex takes a period ('this-month' /
+ * '3m' / '6m' / 'this-year' / 'all', default 'all'). The BUSINESS
+ * buckets (FA / direct / residual / BE totals / org) are built from the
+ * PR rows whose `date` falls in the window, so Total Premium / FYCP /
+ * Policies / the leaderboard / the Unassigned line all follow the
+ * period. Due Premium (this calendar month), Persistency (cumulative)
+ * and Active FAs (last 6 months) keep their OWN windows — they are
+ * computed from the unfiltered records / due sheet, so they never move
+ * with the period selector.
  */
+import { periodDateWindow } from './periods.js';
 
 // ---- Orphan rule (standing, Mahadi 2026-11-13; retail zsIsOrphan* ) ----
 export const ORPHAN_CODES = new Set([
@@ -193,7 +204,7 @@ function buildLedgers(records, asOf) {
 }
 
 // ---- Index: everything the summary needs, built once per payload+today ----
-export function buildRetailIndex(payload, todayIso) {
+export function buildRetailIndex(payload, todayIso, period = 'all') {
   const today = todayIso || dhakaToday();
   const monthStart = `${today.slice(0, 7)}-01`;
   const monthEnd = monthEndIso(today);
@@ -202,6 +213,15 @@ export function buildRetailIndex(payload, todayIso) {
   const duePolicies = payload.duePolicies || [];
   const producers = payload.producers || [];
   const directory = payload.producerDirectory || [];
+
+  // Period window for the BUSINESS aggregates (PR row `date`, ISO
+  // strings — string compare is exact). 'all' = no filtering, the
+  // index is identical to the pre-filter build. Due / persistency /
+  // active-FA computation below always uses the full `records`.
+  const periodWindow = periodDateWindow(period, today);
+  const businessRecords = periodWindow
+    ? records.filter((r) => r.date >= periodWindow.start && r.date <= periodWindow.end)
+    : records;
 
   // Directory lookups (retail producerInfo / canonicalFA).
   const dirByCode = new Map(directory.map((d) => [String(d.code), d]));
@@ -301,7 +321,7 @@ export function buildRetailIndex(payload, todayIso) {
   const faBuckets = new Map();
   const directBuckets = new Map(); // `${be}|${ownerCode}`
   const residualBuckets = new Map(); // be ('' = orphan)
-  for (const r of records) {
+  for (const r of businessRecords) {
     const fa = canonicalFA(r.faCode);
     if (fa && faByCode.has(fa)) {
       if (!faBuckets.has(fa)) faBuckets.set(fa, emptyBucket());
@@ -401,11 +421,13 @@ export function buildRetailIndex(payload, todayIso) {
 
   // Org totals (independent of scoping — the Admin / reconciliation base).
   const orgBucket = emptyBucket();
-  for (const r of records) addToBucket(orgBucket, r);
+  for (const r of businessRecords) addToBucket(orgBucket, r);
 
   return {
     payload,
     today,
+    period,
+    periodWindow,
     monthStart,
     monthEnd,
     sixStart,
@@ -754,10 +776,11 @@ function scopeUnassigned(index, scope) {
 
 /**
  * The Dashboard summary for one user. `todayIso` is the Dhaka date
- * (YYYY-MM-DD); pass it explicitly in tests for determinism.
+ * (YYYY-MM-DD); pass it explicitly in tests for determinism. `period`
+ * filters the business aggregates (default 'all' = no filtering).
  */
-export function summarizeRetail(payload, user, todayIso) {
-  const index = buildRetailIndex(payload, todayIso);
+export function summarizeRetail(payload, user, todayIso, period = 'all') {
+  const index = buildRetailIndex(payload, todayIso, period);
   return summarizeWithIndex(index, user);
 }
 
@@ -797,6 +820,8 @@ export function summarizeWithIndex(index, user) {
     demo: false,
     scope: scope.scopeLabel,
     role,
+    period: index.period || 'all',
+    periodWindow: index.periodWindow || null,
     userCode: resolved.code,
     userName: resolved.name,
     userTier: resolved.tier,

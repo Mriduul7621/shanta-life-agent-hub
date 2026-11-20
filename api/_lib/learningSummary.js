@@ -22,6 +22,26 @@
  * "max of progress + ledger" note: the ledger adds a whole-table
  * fetch for a timestamp the progress table already carries).
  *
+ * Time-frame filter: `input.periodWindowMs` is { startMs, endMs }
+ * (half-open, UTC ms) or null for 'all'. Only three fields follow
+ * it: enrolledInPeriod (enrolments.enrolled_at in the window),
+ * completedInPeriod (completion time in the window) and
+ * creditsInPeriod (credit_ledger points in the window, net — earns
+ * minus redeems, matching the balance semantics). Completion time
+ * per (employee, course) is enrollments.completed_at when the
+ * enrolment is completed and carries one, else the course's last
+ * module_progress.updated_at when the course is 100% done. For
+ * 'all' (null window) the period fields EQUAL the snapshots
+ * (coursesEnrolled / coursesCompleted / creditBalance) — the ledger
+ * is not even fetched for 'all'. `input.periodWindow` is the
+ * { start, end } ISO-date form echoed on the summary (matching the
+ * retail and LeadFlow feeds). Everything else (current course,
+ * certificates, team averages, member progress) is a CURRENT-state
+ * snapshot and never moves with the period. Enrolment rows without
+ * an enrolled_at, and progress-only pairs (learning without an
+ * enrolment row), cannot be dated honestly and are excluded from
+ * the non-'all' enrolment counts.
+ *
  * Visibility (Hub rule, spec §6.3): employee → own; team_lead /
  * manager → own + team object; admin → org-wide (the learning fields
  * carry the org totals, team = null — matching the Dashboard and
@@ -98,11 +118,16 @@ export function resolveLearningDownline(employees, caller, rpcIds) {
 /**
  * Per-employee learning state. Returns a Map upper-Employee-ID ->
  * { currentCourse, coursesEnrolled, coursesCompleted, certificates,
- *   creditBalance, overallPercent, modulesCompleted, modulesTotal,
+ *   creditBalance, enrolledInPeriod, completedInPeriod,
+ *   creditsInPeriod, overallPercent, modulesCompleted, modulesTotal,
  *   hasInProgress, lastActivity }.
  */
 function computeEmployeeStates(input) {
-  const { moduleProgress, courseModules, courses, enrollments, certificates, creditBalances } = input;
+  const { moduleProgress, courseModules, courses, enrollments, certificates, creditBalances, creditLedger, periodWindowMs } = input;
+  const periodWindow = periodWindowMs || null;
+  // Strict window test — only used when a window exists ('all' takes
+  // the snapshot path instead, below).
+  const inWindow = (ms) => periodWindow !== null && ms !== null && ms >= periodWindow.startMs && ms < periodWindow.endMs;
 
   const published = new Map(); // course id -> { title, total }
   for (const c of courses || []) {
@@ -132,6 +157,18 @@ function computeEmployeeStates(input) {
       if (prev === undefined || ms > prev) lastActivity.set(emp, ms);
     }
     perCourse.set(key, entry);
+  }
+
+  // Enrolment timestamps (published courses only) — the period source
+  // for enrolments + completions.
+  const enrolmentMeta = new Map(); // key -> { enrolledAtMs, completedAtMs, status }
+  for (const e of enrollments || []) {
+    if (!e || !published.has(String(e.course_id))) continue;
+    enrolmentMeta.set(`${upper(e.employee_id)}|${String(e.course_id)}`, {
+      enrolledAtMs: tsMs(e.enrolled_at),
+      completedAtMs: tsMs(e.completed_at),
+      status: String(e.status || ''),
+    });
   }
 
   // Enrolled (employee, course) pairs — any enrolment row for a
@@ -165,6 +202,22 @@ function computeEmployeeStates(input) {
     if (!b) continue;
     const n = Number(b.balance);
     credits.set(upper(b.employee_id), Number.isFinite(n) ? n : 0);
+  }
+
+  // Period credits from the ledger (net points in the window). The
+  // ledger is only fetched for non-'all' periods — for 'all' the
+  // period value is the balance (sum of all points, by construction).
+  const periodCredits = new Map(); // employee -> net points in window
+  if (periodWindow !== null) {
+    for (const row of creditLedger || []) {
+      if (!row) continue;
+      const ms = tsMs(row.created_at);
+      if (!inWindow(ms)) continue;
+      const n = Number(row.points);
+      if (!Number.isFinite(n)) continue;
+      const emp = upper(row.employee_id);
+      periodCredits.set(emp, (periodCredits.get(emp) || 0) + n);
+    }
   }
 
   // Group courses per employee.
@@ -228,12 +281,42 @@ function computeEmployeeStates(input) {
     const modulesCompleted = list.reduce((sum, c) => sum + c.done, 0);
     const modulesTotal = list.reduce((sum, c) => sum + c.total, 0);
     const lastMs = lastActivity.get(emp);
+    const empPairs = [...enrolledPairs].filter((k) => k.split('|')[0] === emp);
+    const coursesEnrolled = empPairs.length;
+    const coursesCompleted = completed.length;
+    const creditBalance = credits.get(emp) || 0;
+    // Period fields. 'all' (null window) = the snapshots, exactly.
+    // Otherwise: enrolments by enrolled_at; completions by
+    // completed_at (enrolment) else the 100% course's last module
+    // update; credits from the ledger (net). Pairs that cannot be
+    // dated (no enrolment row, no timestamp) are excluded.
+    let enrolledInPeriod = coursesEnrolled;
+    let completedInPeriod = coursesCompleted;
+    let creditsInPeriod = creditBalance;
+    if (periodWindow !== null) {
+      enrolledInPeriod = empPairs.filter((k) => {
+        const meta = enrolmentMeta.get(k);
+        return meta && inWindow(meta.enrolledAtMs);
+      }).length;
+      completedInPeriod = completed.filter((c) => {
+        const meta = enrolmentMeta.get(`${emp}|${c.courseId}`);
+        const completionMs =
+          meta && meta.status === 'completed' && meta.completedAtMs !== null
+            ? meta.completedAtMs
+            : c.lastMs;
+        return inWindow(completionMs);
+      }).length;
+      creditsInPeriod = periodCredits.get(emp) || 0;
+    }
     states.set(emp, {
       currentCourse,
-      coursesEnrolled: [...enrolledPairs].filter((k) => k.split('|')[0] === emp).length,
-      coursesCompleted: completed.length,
+      coursesEnrolled,
+      coursesCompleted,
       certificates: certCounts.get(emp) || 0,
-      creditBalance: credits.get(emp) || 0,
+      creditBalance,
+      enrolledInPeriod,
+      completedInPeriod,
+      creditsInPeriod,
       overallPercent: modulesTotal > 0 ? Math.round((modulesCompleted / modulesTotal) * 100) : 0,
       modulesCompleted,
       modulesTotal,
@@ -251,6 +334,9 @@ function emptyLearning() {
     coursesCompleted: 0,
     certificates: 0,
     creditBalance: 0,
+    enrolledInPeriod: 0,
+    completedInPeriod: 0,
+    creditsInPeriod: 0,
   };
 }
 
@@ -276,6 +362,8 @@ export function summarizeLearning(input, user) {
     demo: false,
     scope,
     role,
+    period: input.period || 'all',
+    periodWindow: input.periodWindow || null,
     userEmployeeId: user.employeeId,
     userName: caller ? String(caller.full_name || '') : null,
     empty: false,
@@ -304,13 +392,19 @@ export function summarizeLearning(input, user) {
     let coursesCompleted = 0;
     let certificates = 0;
     let creditBalance = 0;
+    let enrolledInPeriod = 0;
+    let completedInPeriod = 0;
+    let creditsInPeriod = 0;
     for (const s of states.values()) {
       coursesEnrolled += s.coursesEnrolled;
       coursesCompleted += s.coursesCompleted;
       certificates += s.certificates;
       creditBalance += s.creditBalance;
+      enrolledInPeriod += s.enrolledInPeriod;
+      completedInPeriod += s.completedInPeriod;
+      creditsInPeriod += s.creditsInPeriod;
     }
-    base.learning = { currentCourse: null, coursesEnrolled, coursesCompleted, certificates, creditBalance };
+    base.learning = { currentCourse: null, coursesEnrolled, coursesCompleted, certificates, creditBalance, enrolledInPeriod, completedInPeriod, creditsInPeriod };
     base.empty = states.size === 0;
     if (base.empty) base.emptyReason = 'no-rows';
     return base;
@@ -323,6 +417,9 @@ export function summarizeLearning(input, user) {
     coursesCompleted: ownState.coursesCompleted,
     certificates: ownState.certificates,
     creditBalance: ownState.creditBalance,
+    enrolledInPeriod: ownState.enrolledInPeriod,
+    completedInPeriod: ownState.completedInPeriod,
+    creditsInPeriod: ownState.creditsInPeriod,
   };
 
   if (role === 'team_lead' || role === 'manager') {
