@@ -2,7 +2,11 @@
 #
 # Manual dispatch ONLY: no APK is ever produced by accident. Each run
 # builds the signed release APK from the checked-in version source
-# (android/version.properties) and uploads it as a workflow artifact.
+# (android/version.properties), publishes it to GitHub Releases (a
+# versioned v<versionName> release plus the rolling `latest` release —
+# the web app's download popup and login link point at the `latest`
+# APK URL, which never changes), and uploads it as a workflow
+# artifact (90-day backup).
 #
 # UPLOAD ROUTE — read before pushing: the Muse GitHub App CANNOT push
 # files under .github/workflows/ (deterministic 403, workflows:write
@@ -36,6 +40,10 @@ permissions:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    # Publishing releases needs write; scoped to this job only (the
+    # workflow default stays read).
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -148,6 +156,45 @@ jobs:
             echo "- SHA-256: \`$(cat "$APK.sha256")\`"
             echo "- Signer: release keystore (verified — fingerprint matches AGENTHUB_KEYSTORE_B64)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          VERSION="${{ steps.version.outputs.name }}"
+          CODE="${{ steps.version.outputs.code }}"
+          SHA256=$(cat "$APK.sha256")
+          # Two releases, both public (no login needed to download):
+          #   - v<versionName>: the permanent record for this version.
+          #   - latest: the rolling release the web app links to
+          #     (releases/download/latest/app-release.apk) — the URL
+          #     never changes across versions.
+          # Idempotent: a missing release is created first; an existing
+          # one is re-uploaded with --clobber, so a re-run replaces the
+          # files instead of failing. The `latest` tag keeps pointing
+          # at the commit that first created it — only the assets move
+          # (the download URL serves the newest assets regardless).
+          for TAG in "v$VERSION" latest; do
+            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              if [ "$TAG" = "latest" ]; then
+                gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                  --title "Agent Hub Android (latest)" \
+                  --notes "Latest Agent Hub Android release. Installs over your current build — same signer, higher versionCode updates in place."
+              else
+                gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                  --title "Agent Hub Android $VERSION ($CODE)" \
+                  --notes "Version $VERSION (versionCode $CODE). APK SHA-256: $SHA256"
+              fi
+            fi
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$APK" "$APK.sha256"
+          done
+          {
+            echo ""
+            echo "- Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
+            echo "- Latest APK: https://github.com/$GITHUB_REPOSITORY/releases/download/latest/app-release.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Published: v$VERSION and latest"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
