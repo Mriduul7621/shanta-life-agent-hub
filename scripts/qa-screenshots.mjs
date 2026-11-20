@@ -204,7 +204,7 @@
  *     appears anywhere. Card sub-values and scope labels are kept —
  *     they are data, not title sentences.
  *
- * Checks (Android app download promo — 18):
+ * Checks (Android app download promo — 25):
  * 28. Home popup (Mahadi 2026-11-21): visible on an Android UA at
  *     375 px after the splash, with the rolling-release APK href and
  *     target _blank, no horizontal overflow, no console errors;
@@ -213,10 +213,13 @@
  *     an iOS UA, on desktop, and inside the native app (simulated by
  *     injecting window.androidBridge before load — the same signal
  *     Capacitor's isNativePlatform reads). BN strings render with
- *     hub-lang=bn. Login page: the download link is present on
- *     Android with the same APK href, absent on iOS / native /
+ *     hub-lang=bn. Login page: the SAME popup appears before sign-in
+ *     (Android only, hidden on iOS), and dismissing it there also
+ *     hides it on Home (shared flag); the download link is present
+ *     on Android with the same APK href, absent on iOS / native /
  *     desktop. Screenshots: android-promo-375.png,
- *     android-promo-bn-375.png, login-android-375.png.
+ *     android-promo-bn-375.png, login-android-375.png,
+ *     login-promo-375.png.
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -3241,6 +3244,51 @@ try {
       `lang=${htmlLang} ${bnText.slice(0, 120)}`,
     );
     await page.screenshot({ path: path.join(QA_DIR, 'android-promo-bn-375.png') });
+    await ctx.close();
+  }
+
+  // Login page popup (Mahadi 2026-11-21): Android web visitors are
+  // asked BEFORE they sign in, not only after. Same gate and same
+  // dismissal flag as Home — dismissing on login hides it on Home too.
+  {
+    const { ctx, page, errors } = await newPage(browser, 375);
+    await page.setUserAgent(ANDROID_UA);
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    await waitForSplashGone(page);
+    await page.waitForSelector('#employee-id', { timeout: 5000 });
+    const seen = await page
+      .waitForSelector('[data-android-promo]', { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    check('promo login android 375: popup appears before sign-in', seen);
+    const href = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('href')).catch(() => null);
+    check('promo login android 375: download href is the rolling-release APK URL', href === APK_URL, href ?? 'none');
+    const ov = await overflowCheck(page);
+    check('promo login android 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'login-promo-375.png') });
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('promo login android 375: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    // Dismiss on login, then sign in — the popup must stay gone on Home.
+    await page.click('[data-android-promo-close]');
+    await page.waitForFunction(() => !document.querySelector('[data-android-promo]'), { timeout: 3000 });
+    const flag = await page.evaluate(() => localStorage.getItem('hub-android-promo-dismissed-v1'));
+    check('promo login android: close dismisses and sets the dismissal flag', flag === '1', flag);
+    await login(page, '9990001');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await waitPastPromoTrigger(page);
+    const backOnHome = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo login android: dismissing on login hides it on Home too', !backOnHome);
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await page.setUserAgent(IOS_UA);
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    await waitForSplashGone(page);
+    await page.waitForSelector('#employee-id', { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 2000));
+    const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
+    check('promo login ios 375: hidden on iOS', !shown);
     await ctx.close();
   }
 

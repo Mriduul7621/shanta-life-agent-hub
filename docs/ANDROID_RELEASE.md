@@ -158,11 +158,14 @@ telling users about the download.
 an Android web visitor who has not dismissed it sees a popup — "Get
 the Android app", one line, a Download button (plain link to the
 `latest` APK; Android Chrome downloads it directly) and a close
-control. Tapping Download also dismisses the popup. It never shows
-inside the native app itself (Capacitor native-platform detection —
-the same check the back button uses), never on iOS, never on
-desktop. Dismissal is stored in localStorage under the versioned
-key `hub-android-promo-dismissed-v1` — bump the suffix to re-show
-the promo for a future major release. The login page carries the
-same link (small, Android-only, hidden in the native app) for users
-who dismissed the popup or never saw it.
+control. The SAME popup also appears on the login page, so visitors
+are asked BEFORE they sign in, not only after. Tapping Download
+also dismisses the popup. It never shows inside the native app
+itself (Capacitor native-platform detection — the same check the
+back button uses), never on iOS, never on desktop. Dismissal is
+stored in localStorage under the versioned key
+`hub-android-promo-dismissed-v1` — shared by both pages, so
+dismissing on login hides it on Home too — bump the suffix to
+re-show the promo for a future major release. The login page also
+carries the same link (small, Android-only, hidden in the native
+app) for users who dismissed the popup or never saw it.

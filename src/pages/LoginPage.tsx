@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
-import { ANDROID_APK_URL, isAndroidDevice, isNativeApp } from '../data/appDownload';
+import { ANDROID_APK_URL, isAndroidDevice, isNativeApp, shouldShowAndroidPromo } from '../data/appDownload';
+import { AndroidAppPromo } from '../components/AndroidAppPromo';
 import { LanguagePill } from '../components/LanguagePill';
 import { IconCheck } from '../components/icons';
 import type { AuthError } from '../auth/types';
@@ -81,6 +82,18 @@ export function LoginPage() {
   // desktop. Evaluated once: the UA / native state cannot change
   // during a page lifetime.
   const [showAndroidLink] = useState(() => isAndroidDevice() && !isNativeApp());
+
+  // Android app promo (Mahadi 2026-11-21): the same popup as Home,
+  // shown here too so Android web visitors are asked BEFORE they sign
+  // in, not only after. Same gate and same dismissal flag (dismissing
+  // here also hides it on Home, and vice versa). The 1.2s delay lets
+  // the splash finish first.
+  const [showPromo, setShowPromo] = useState(false);
+  useEffect(() => {
+    if (!shouldShowAndroidPromo()) return;
+    const t = window.setTimeout(() => setShowPromo(true), 1200);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // One identifier field (LH pattern): an email routes to the staff
   // password track, anything else to the PIN track — the server
@@ -285,6 +298,8 @@ export function LoginPage() {
           {t('appTagline')}
         </footer>
       </div>
+
+      {showPromo && <AndroidAppPromo onDismiss={() => setShowPromo(false)} />}
     </div>
   );
 }
