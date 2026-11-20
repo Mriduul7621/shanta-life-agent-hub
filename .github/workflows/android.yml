@@ -116,10 +116,14 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify "$APK"
           # 2. The signer must be the release keystore — never a debug key.
           #    (Compares the APK cert fingerprint with the keystore cert.)
-          APK_FP=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 'SHA-256' | awk '{print $NF}')
+          #    FORMAT TRAP (run #1, 2026-11-21): apksigner prints the
+          #    digest lowercase WITHOUT colons, keytool prints it
+          #    uppercase WITH colons — the same fingerprint failed a
+          #    plain string compare. Normalise both sides first.
+          APK_FP=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 'SHA-256' | awk '{print $NF}' | tr -d ':' | tr '[:lower:]' '[:upper:]')
           KS_FP=$(keytool -list -v -keystore "$RUNNER_TEMP/agenthub-release.keystore" \
             -storepass "$AGENTHUB_KEYSTORE_PASSWORD" -alias "$AGENTHUB_KEY_ALIAS" \
-            | grep -m1 'SHA256:' | awk '{print $NF}')
+            | grep -m1 'SHA256:' | awk '{print $NF}' | tr -d ':' | tr '[:lower:]' '[:upper:]')
           if [ "$APK_FP" != "$KS_FP" ]; then
             echo "::error::APK signer does not match the release keystore (APK=$APK_FP keystore=$KS_FP)"
             exit 1
