@@ -17,12 +17,18 @@
  * aggregates only. No JWT = 401. Response is `private, no-store`.
  *
  * Demo fixture: fictional 999xxxx users match no real rows, so when
- * HUB_DEMO_FIXTURE=true AND the deployment is not production
- * (VERCEL_ENV !== 'production'), demo callers get the synthetic slice
+ * HUB_DEMO_FIXTURE=true, demo callers get the synthetic slice
  * (api/_lib/demoFixture.js) through the same summarizer, labelled
- * demo: true. The flag must only ever be set in the Preview
- * environment; VERCEL_ENV is the second lock — production deployments
- * can never serve the fixture even if the flag were set by mistake.
+ * demo: true. The locks are: the flag itself (set only on this demo
+ * project, never on a real production project), the 999xxxx caller
+ * check (real Employee IDs never start with 999), and the
+ * vite.config.ts build guard (a HUB_BUILD_TARGET=production build
+ * FAILS with HUB_DEMO_FIXTURE=true). NOTE: do NOT gate on
+ * VERCEL_ENV — this demo project's main-branch deployments run on
+ * the production target, so VERCEL_ENV is always 'production' here
+ * and such a check would silently disable the fixture (found live
+ * 2026-11-20: the Dashboard showed the empty state until the check
+ * was removed).
  * No new secrets: the retail endpoint needs no credentials, and the
  * proxy verifies with the PUBLIC key (api/_lib/verifyJwt.js).
  *
@@ -44,7 +50,7 @@ let payloadCache = null; // { payload, fetchedAtMs }
 let indexCache = null; // { key, index }
 
 function demoFixtureEnabled(env) {
-  return env.HUB_DEMO_FIXTURE === 'true' && env.VERCEL_ENV !== 'production';
+  return env.HUB_DEMO_FIXTURE === 'true';
 }
 
 async function fetchRetailPayload() {

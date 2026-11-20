@@ -337,10 +337,14 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     process.env.HUB_DEMO_FIXTURE = 'true';
   }
   {
+    // This demo project's deployments run on the production target, so
+    // VERCEL_ENV is 'production' live — the fixture must serve with the
+    // flag set regardless of VERCEL_ENV (live bug 2026-11-20: the old
+    // VERCEL_ENV gate silently disabled the fixture on the preview).
     process.env.VERCEL_ENV = 'production';
     const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
     const { res, json } = await call(mockReq({ token: t }));
-    check('proxy: demo in production env -> no fixture', res.statusCode === 200 && json?.demo === false && json?.empty === true, `demo=${json?.demo} empty=${json?.empty}`);
+    check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
     process.env.VERCEL_ENV = 'preview';
   }
   check('proxy: retail fetch cached (1 call)', fetchCalls === 1, `${fetchCalls} calls`);
