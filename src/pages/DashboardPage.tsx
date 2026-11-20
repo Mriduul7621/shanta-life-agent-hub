@@ -27,14 +27,15 @@
  * Time-frame filter: Total Premium / FYCP / Policies and the
  * leaderboard follow the selected period (PR row date); Due Premium
  * stays this calendar month, Persistency stays cumulative, Active FAs
- * stay last-6-months — each labelled as such. Default is All time.
+ * stay last-6-months — each labelled as such. Default is Today; the
+ * selector is a dropdown with a Custom range (start/end dates).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailLoadResult, RetailScope } from '../data/retailData';
-import { DEFAULT_PERIOD, periodLabelKey, type Period } from '../data/period';
+import { DEFAULT_SELECTION, isCompleteSelection, periodLabelKey, type PeriodSelection } from '../data/period';
 import PeriodSelector from '../components/PeriodSelector';
 import { formatBdt } from '../data/demoData';
 import { MODULES } from '../data/modules';
@@ -78,17 +79,23 @@ export function DashboardPage() {
   const { user, token } = useAuth();
   const [state, setState] = useState<PageState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
-  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
+  const [selection, setSelection] = useState<PeriodSelection>(DEFAULT_SELECTION);
   const retailModule = MODULES.find((m) => m.id === 'retail-dashboard');
   const employeeId = user?.employeeId ?? '';
-  const periodLabel = t(periodLabelKey(period));
+  // The sub-label under the period-filtered KPIs: the named period, or
+  // the custom range itself ("2026-11-01 – 2026-11-20").
+  const periodLabel =
+    selection.period === 'custom' && selection.from && selection.to
+      ? `${selection.from} – ${selection.to}`
+      : t(periodLabelKey(selection.period));
+  const selectionReady = isCompleteSelection(selection);
 
   const refresh = useCallback(async () => {
-    if (!token || !employeeId) return;
+    if (!token || !employeeId || !selectionReady) return;
     if (state.status === 'error') setState({ status: 'loading' });
     setRefreshing(true);
     try {
-      const result = await loadRetailFresh(token, employeeId, period);
+      const result = await loadRetailFresh(token, employeeId, selection);
       setState({ status: 'ready', result, refreshFailed: false });
     } catch {
       setState((prev) =>
@@ -97,19 +104,19 @@ export function DashboardPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [state.status, token, employeeId, period]);
+  }, [state.status, token, employeeId, selection, selectionReady]);
 
   useEffect(() => {
-    if (!token || !employeeId) return;
+    if (!token || !employeeId || !selectionReady) return;
     let cancelled = false;
-    const cached = loadRetailCached(employeeId, period);
+    const cached = loadRetailCached(employeeId, selection);
     if (cached) {
       setState({ status: 'ready', result: cached, refreshFailed: false });
     } else {
       setState({ status: 'loading' });
     }
     setRefreshing(true);
-    loadRetailFresh(token, employeeId, period)
+    loadRetailFresh(token, employeeId, selection)
       .then((result) => {
         if (!cancelled) setState({ status: 'ready', result, refreshFailed: false });
       })
@@ -127,7 +134,7 @@ export function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, employeeId, period]);
+  }, [token, employeeId, selection, selectionReady]);
 
   const ready = state.status === 'ready' ? state.result : null;
   const summary = ready?.summary ?? null;
@@ -169,7 +176,7 @@ export function DashboardPage() {
           </button>
         </div>
         <div className="mt-3">
-          <PeriodSelector value={period} onChange={setPeriod} />
+          <PeriodSelector value={selection} onChange={setSelection} />
         </div>
         {summary?.demo && (
           <p className="mt-3 rounded-xl bg-sunset/10 px-4 py-3 text-sm font-medium text-charcoal">

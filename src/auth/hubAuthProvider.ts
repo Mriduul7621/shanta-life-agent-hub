@@ -1,5 +1,5 @@
 /**
- * Hub auth provider — REAL sign-in (Phase 2, spec §10).
+ * Hub auth provider — the ONLY sign-in (Phase 2, spec §10).
  *
  * POSTs the Hub-side serverless function `/api/hub-auth` (same origin),
  * which verifies the credential against the Learning Hub store
@@ -12,11 +12,12 @@
  * the routing happens server-side (api/hub-auth.js); this provider
  * just sends { identifier, credential }.
  *
- * Demo routing: in QA/dev builds with demo auth enabled
- * (VITE_DEMO_AUTH=true), a 999xxxx identifier is routed to the
- * demo provider instead, so demo sign-in keeps working alongside
- * real sign-in. With demo auth off, 999xxxx identifiers go to
- * /api/hub-auth like any other ID and fail there (no such LH row).
+ * NO demo path: the demo accounts were removed entirely (Mahadi
+ * 2026-11-20). A 999xxxx identifier goes to /api/hub-auth like any
+ * other ID and fails there (no such LH row). The proxy fixture gates
+ * (HUB_DEMO_FIXTURE + 999 sub) remain as QA-only scaffolding — the
+ * QA harness signs test tokens in Node and calls the proxies
+ * directly; no login path can reach them.
  *
  * Error mapping (api/hub-auth.js error bodies → AuthError codes):
  * - 401 wrong_pin (+attemptsLeft) / locked (+lockedMinutesLeft) —
@@ -24,21 +25,16 @@
  * - 401 no_lms_record / inactive — plain-language guidance to T&D.
  * - 403 must_change_credential — LH flags a forced change: no Hub
  *   session is created; the user changes the credential in the
- *   Learning Hub itself (the Hub builds no password-change flow
- *   for real users).
+ *   Learning Hub itself (the Hub builds no password-change flow).
  * - 5xx / malformed response → 'unavailable' (try again later).
  * - fetch throws (no API server reachable at all — e.g. the
  *   production-build QA harness, or a broken deployment) →
  *   'not_configured': sign-in is not available in this build.
  */
-import { DemoAuthProvider } from './demoProvider';
-import type { AuthProvider, ChangeCredentialResult, HubUser, SignInResult } from './types';
+import type { AuthProvider, HubUser, SignInResult } from './types';
 
 const AUTH_URL = '/api/hub-auth';
 const FETCH_TIMEOUT_MS = 30_000;
-
-const isDemoEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
-const isDemoId = (identifier: string) => identifier.trim().startsWith('999');
 
 function isValidUser(value: unknown): value is HubUser {
   if (typeof value !== 'object' || value === null) return false;
@@ -56,16 +52,9 @@ function isValidUser(value: unknown): value is HubUser {
 export class HubAuthProvider implements AuthProvider {
   readonly id = 'hub' as const;
   readonly label = 'Agent Hub';
-  private readonly demo = new DemoAuthProvider();
 
   async signIn(identifier: string, credential: string): Promise<SignInResult> {
     const id = identifier.trim();
-    // Demo path (QA/dev only): 999xxxx identifiers keep the demo
-    // provider — demo users, DEMO-labelled fixture data, forced
-    // first-login PIN change, all unchanged.
-    if (isDemoEnabled && isDemoId(id)) {
-      return this.demo.signIn(id, credential);
-    }
 
     let res: Response;
     try {
@@ -114,20 +103,5 @@ export class HubAuthProvider implements AuthProvider {
       return { ok: false, error: { code: 'must_change' } };
     }
     return { ok: false, error: { code: 'unavailable' } };
-  }
-
-  async changeCredential(
-    employeeId: string,
-    newCredential: string,
-    confirmCredential: string,
-  ): Promise<ChangeCredentialResult> {
-    // Demo users keep the Hub-side forced-change flow (demo provider,
-    // localStorage). Real users never reach the Hub change screen —
-    // a forced change routes them to the Learning Hub at sign-in —
-    // so a real-user change here is refused.
-    if (isDemoEnabled && isDemoId(employeeId)) {
-      return this.demo.changeCredential(employeeId, newCredential, confirmCredential);
-    }
-    return { ok: false, error: 'invalid' };
   }
 }

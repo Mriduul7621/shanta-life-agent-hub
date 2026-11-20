@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { HubAuthProvider } from './hubAuthProvider';
-import { signSsoToken, verifySsoToken } from './jwt';
+import { verifySsoToken } from './jwt';
 import { HUB_PUBLIC_KEY_PEM } from './keys';
 import type { AuthError, AuthProvider, HubUser } from './types';
 import { clearRetailCache } from '../data/retailData';
@@ -11,23 +11,10 @@ import { clearLearningCache } from '../data/learningData';
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
 const SESSION_CHECK_MS = 30_000;
 
-export const isDemoAuthEnabled = import.meta.env.VITE_DEMO_AUTH === 'true';
-
 /**
- * DEV-ONLY RS256 signing key (PKCS#8 DER, base64). Signs demo tokens in
- * dev/QA builds ONLY. Production tokens are issued server-side — the browser
- * never holds a signing key, and the production-target build guard in
- * vite.config.ts refuses to build when any VITE_JWT_* variable is set.
- * See docs/SSO_TOKEN.md and docs/SSO_PRODUCTION.md.
- */
-const devPrivateKeyB64: string | undefined = import.meta.env.VITE_JWT_PRIVATE_KEY_B64 as string | undefined;
-
-/**
- * One provider for every build: HubAuthProvider routes 999xxxx
- * identifiers to the demo provider when demo auth is enabled (QA/dev
- * builds) and everything else to the Hub auth function
- * (/api/hub-auth). With demo auth off, demo IDs go to the server
- * too and fail there (no such LH row) — fail closed, no demo users.
+ * One provider: HubAuthProvider posts /api/hub-auth and returns a
+ * server-issued RS256 token. The browser never signs tokens — the
+ * dev signing path left with the demo accounts (Mahadi 2026-11-20).
  */
 export function selectProvider(): AuthProvider {
   return new HubAuthProvider();
@@ -42,7 +29,6 @@ interface AuthValue {
   sessionExpired: boolean;
   provider: AuthProvider;
   signIn: (employeeId: string, credential: string) => Promise<{ ok: true } | { ok: false; error: AuthError }>;
-  changeCredential: (next: string, confirm: string) => Promise<{ ok: true } | { ok: false; error: 'invalid' | 'mismatch' | 'same' }>;
   signOut: () => void;
 }
 
@@ -54,8 +40,6 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const userRef = useRef<HubUser | null>(null);
-  userRef.current = user;
 
   const clearSession = useCallback(() => {
     try {
@@ -137,29 +121,19 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
     async (employeeId: string, credential: string) => {
       const result = await provider.signIn(employeeId, credential);
       if (!result.ok) return { ok: false as const, error: result.error };
-      let nextToken: string | null = null;
+      // The provider ALWAYS returns a server-issued token on success.
+      // Verify it (signature + claims) before trusting it, and bind it
+      // to the authenticated user — a token for someone else is rejected.
+      // No token, no session: fail closed.
+      let nextToken: string;
       try {
-        if (result.token) {
-          // PRODUCTION PATH: the provider returned a server-issued token.
-          // Verify it (signature + claims) before trusting it, and bind it
-          // to the authenticated user — a token for someone else is rejected.
-          const claims = await verifySsoToken(result.token, HUB_PUBLIC_KEY_PEM);
-          if (!claims || claims.sub !== result.user.employeeId || claims.role !== result.user.role) {
-            return { ok: false as const, error: { code: 'not_configured' as const } };
-          }
-          nextToken = result.token;
-        } else if (devPrivateKeyB64) {
-          // DEV PATH: sign locally with the dev-only key.
-          nextToken = await signSsoToken(
-            { sub: result.user.employeeId, name: result.user.name, role: result.user.role },
-            devPrivateKeyB64,
-          );
-        } else {
-          // No server token and no dev signing key — fail closed.
+        const claims = await verifySsoToken(result.token, HUB_PUBLIC_KEY_PEM);
+        if (!claims || claims.sub !== result.user.employeeId || claims.role !== result.user.role) {
           return { ok: false as const, error: { code: 'not_configured' as const } };
         }
+        nextToken = result.token;
       } catch {
-        // Signing/verification failure (e.g. a malformed dev key) — fail closed.
+        // Verification failure — fail closed.
         return { ok: false as const, error: { code: 'not_configured' as const } };
       }
       try {
@@ -175,21 +149,9 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
     [provider],
   );
 
-  const changeCredential = useCallback(
-    async (next: string, confirm: string) => {
-      const current = userRef.current;
-      if (!current) return { ok: false as const, error: 'invalid' as const };
-      const result = await provider.changeCredential(current.employeeId, next, confirm);
-      if (!result.ok) return { ok: false as const, error: result.error };
-      setUser({ ...current, mustChangeCredential: false });
-      return { ok: true as const };
-    },
-    [provider],
-  );
-
   const value = useMemo(
-    () => ({ user, token, restoring, sessionExpired, provider, signIn, changeCredential, signOut }),
-    [user, token, restoring, sessionExpired, provider, signIn, changeCredential, signOut],
+    () => ({ user, token, restoring, sessionExpired, provider, signIn, signOut }),
+    [user, token, restoring, sessionExpired, provider, signIn, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

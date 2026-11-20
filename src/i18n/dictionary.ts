@@ -19,7 +19,6 @@ export type DictKey =
   | 'loginTitle'
   | 'loginSubtitle'
   | 'employeeId'
-  | 'employeeIdPlaceholder'
   | 'loginIdentifier'
   | 'loginIdentifierPlaceholder'
   | 'pin'
@@ -28,9 +27,6 @@ export type DictKey =
   | 'forgotCredential'
   | 'signIn'
   | 'signingIn'
-  | 'demoNoticeTitle'
-  | 'demoNoticeBody'
-  | 'demoUser'
   | 'errorWrongPin'
   | 'errorAttemptsLeft'
   | 'errorLocked'
@@ -43,14 +39,6 @@ export type DictKey =
   | 'errorUnavailable'
   | 'changeInLearningHub'
   | 'lockedMinutes'
-  | 'changePinTitle'
-  | 'changePinSubtitle'
-  | 'newPin'
-  | 'confirmPin'
-  | 'changePinButton'
-  | 'errorPinMismatch'
-  | 'errorPinInvalid'
-  | 'errorPinSame'
   | 'greetingMorning'
   | 'greetingAfternoon'
   | 'greetingEvening'
@@ -117,7 +105,6 @@ export type DictKey =
   | 'teamMembers'
   | 'teamLearningInProgress'
   | 'demoRoleNote'
-  | 'demoFirstLoginChange'
   // Retail Dashboard — scoped retail KPIs (replaces the SCC summary)
   | 'dashboardPageTitle'
   | 'dashboardLiveFrom'
@@ -196,14 +183,33 @@ export type DictKey =
   | 'learningEnrolled'
   // Time-frame filter
   | 'periodLabel'
+  | 'periodToday'
   | 'periodThisMonth'
   | 'periodLast3Months'
   | 'periodLast6Months'
   | 'periodThisYear'
   | 'periodAllTime'
+  | 'periodCustom'
+  | 'periodCustomFrom'
+  | 'periodCustomTo'
+  | 'periodCustomInvalid'
   | 'snapshotNow'
   | 'kpiSubCumulative'
-  | 'dashboardDueThisMonth';
+  | 'dashboardDueThisMonth'
+  // Home sales overview (all-time retail snapshots)
+  | 'homeSalesTitle'
+  | 'homeSalesPolicies'
+  | 'homeSalesPoliciesSub'
+  | 'homeSalesFycp'
+  | 'homeSalesFycpSub'
+  // Login page (Learning Hub pattern: photo panel + splash)
+  | 'loginPanelEyebrow'
+  | 'loginPanelHeadline'
+  | 'loginPanelSub'
+  | 'loginPanelValue1'
+  | 'loginPanelValue2'
+  | 'loginPanelValue3'
+  | 'splashLoading';
 
 export const dict: Record<Lang, Record<DictKey, string>> = {
   en: {
@@ -225,7 +231,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginTitle: 'Sign in to Agent Hub',
     loginSubtitle: 'One login for all your tools',
     employeeId: 'Employee ID',
-    employeeIdPlaceholder: 'e.g. 9990001',
     loginIdentifier: 'Employee ID or email',
     loginIdentifierPlaceholder: 'e.g. 2025019 or name@shantalife.com',
     pin: 'PIN / Password',
@@ -234,10 +239,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     forgotCredential: 'Forgot PIN or password?',
     signIn: 'Sign in',
     signingIn: 'Signing in…',
-    demoNoticeTitle: 'DEMO — for testing only',
-    demoNoticeBody:
-      'Demo sign-in is enabled in this build. Use a demo account below. No real employee data is used.',
-    demoUser: 'Demo',
     errorWrongPin: 'Wrong PIN or password. Please try again.',
     errorAttemptsLeft: 'attempts left before lockout',
     errorLocked: 'Account locked after 5 wrong attempts.',
@@ -252,15 +253,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     errorUnavailable: 'Sign-in is temporarily unavailable. Please try again in a moment.',
     changeInLearningHub: 'Change it in the Learning Hub',
     lockedMinutes: 'Try again in {minutes} minutes.',
-    changePinTitle: 'Set a new PIN',
-    changePinSubtitle:
-      'This is your first sign-in with a temporary PIN. Set a new 6-digit PIN to continue.',
-    newPin: 'New PIN',
-    confirmPin: 'Confirm new PIN',
-    changePinButton: 'Save new PIN & continue',
-    errorPinMismatch: 'The two PINs do not match.',
-    errorPinInvalid: 'PIN must be exactly 6 digits.',
-    errorPinSame: 'New PIN must be different from the temporary PIN.',
     greetingMorning: 'Good morning',
     greetingAfternoon: 'Good afternoon',
     greetingEvening: 'Good evening',
@@ -329,7 +321,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamMembers: 'team members',
     teamLearningInProgress: '{count} team members learning in progress',
     demoRoleNote: 'Demo view for this role — real data arrives in a later milestone.',
-    demoFirstLoginChange: 'first-login PIN change',
     dashboardPageTitle: 'Retail Sales Dashboard',
     dashboardLiveFrom: 'Live from Retail Sales Dashboard',
     dashboardScopeOwn: 'Own data',
@@ -408,14 +399,31 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     learningCredits: 'Knowledge Credit',
     learningEnrolled: 'Courses enrolled',
     periodLabel: 'Time frame',
+    periodToday: 'Today',
     periodThisMonth: 'This month',
     periodLast3Months: 'Last 3 months',
     periodLast6Months: 'Last 6 months',
     periodThisYear: 'This year',
     periodAllTime: 'All time',
+    periodCustom: 'Custom',
+    periodCustomFrom: 'From',
+    periodCustomTo: 'To',
+    periodCustomInvalid: 'Pick a valid date range (up to 2 years, ending today).',
     snapshotNow: 'Now',
     kpiSubCumulative: 'Cumulative',
     dashboardDueThisMonth: 'Due Premium is this month',
+    homeSalesTitle: 'Sales overview',
+    homeSalesPolicies: 'Total policy sales',
+    homeSalesPoliciesSub: 'New policies · All time',
+    homeSalesFycp: 'Total FYCP',
+    homeSalesFycpSub: 'New {new} · Deferred {deferred}',
+    loginPanelEyebrow: 'AGENT HUB',
+    loginPanelHeadline: 'One login. Every field tool.',
+    loginPanelSub: 'Leads, learning, calculators and sales — together in one place, with your data only.',
+    loginPanelValue1: 'Leads, learning & sales in one place',
+    loginPanelValue2: 'Live data from your connected apps',
+    loginPanelValue3: 'You see only your own data — and your team’s',
+    splashLoading: 'Loading Agent Hub…',
   },
   bn: {
     appName: 'এজেন্ট হাব',
@@ -436,7 +444,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     loginTitle: 'এজেন্ট হাবে সাইন ইন করুন',
     loginSubtitle: 'সব টুলের জন্য একটি লগইন',
     employeeId: 'কর্মচারী আইডি',
-    employeeIdPlaceholder: 'যেমন 9990001',
     loginIdentifier: 'কর্মচারী আইডি বা ইমেইল',
     loginIdentifierPlaceholder: 'যেমন 2025019 বা name@shantalife.com',
     pin: 'পিন / পাসওয়ার্ড',
@@ -445,10 +452,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     forgotCredential: 'পিন বা পাসওয়ার্ড ভুলে গেছেন?',
     signIn: 'সাইন ইন',
     signingIn: 'সাইন ইন হচ্ছে…',
-    demoNoticeTitle: 'ডেমো — শুধুমাত্র পরীক্ষার জন্য',
-    demoNoticeBody:
-      'এই বিল্ডে ডেমো সাইন-ইন চালু আছে। নিচের ডেমো অ্যাকাউন্ট ব্যবহার করুন। কোনো বাস্তব কর্মচারী তথ্য ব্যবহৃত হয় না।',
-    demoUser: 'ডেমো',
     errorWrongPin: 'ভুল পিন বা পাসওয়ার্ড। আবার চেষ্টা করুন।',
     errorAttemptsLeft: 'বার চেষ্টা বাকি আছে, তারপর লক হবে',
     errorLocked: '৫ বার ভুল চেষ্টার পর অ্যাকাউন্ট লক হয়েছে।',
@@ -463,15 +466,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     errorUnavailable: 'সাইন-ইন সাময়িকভাবে অনুপলব্ধ। কিছুক্ষণ পরে আবার চেষ্টা করুন।',
     changeInLearningHub: 'লার্নিং হাবে পরিবর্তন করুন',
     lockedMinutes: '{minutes} মিনিট পরে আবার চেষ্টা করুন।',
-    changePinTitle: 'নতুন পিন সেট করুন',
-    changePinSubtitle:
-      'অস্থায়ী পিন দিয়ে এটি আপনার প্রথম সাইন-ইন। চালিয়ে যেতে নতুন ৬ সংখ্যার পিন সেট করুন।',
-    newPin: 'নতুন পিন',
-    confirmPin: 'নতুন পিন নিশ্চিত করুন',
-    changePinButton: 'নতুন পিন সংরক্ষণ করুন',
-    errorPinMismatch: 'দুটি পিন মিলছে না।',
-    errorPinInvalid: 'পিন অবশ্যই ঠিক ৬ সংখ্যার হতে হবে।',
-    errorPinSame: 'নতুন পিন অস্থায়ী পিন থেকে আলাদা হতে হবে।',
     greetingMorning: 'শুভ সকাল',
     greetingAfternoon: 'শুভ অপরাহ্ন',
     greetingEvening: 'শুভ সন্ধ্যা',
@@ -539,7 +533,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     teamMembers: 'টিম সদস্য',
     teamLearningInProgress: '{count} জন টিম মেম্বার শিখছেন',
     demoRoleNote: 'এই ভূমিকার ডেমো ভিউ — বাস্তব ডেটা পরের মাইলস্টোনে আসবে।',
-    demoFirstLoginChange: 'প্রথম সাইন-ইনে পিন পরিবর্তন',
     dashboardPageTitle: 'রিটেইল সেলস ড্যাশবোর্ড',
     dashboardLiveFrom: 'রিটেইল সেলস ড্যাশবোর্ড থেকে লাইভ',
     dashboardScopeOwn: 'নিজের ডেটা',
@@ -618,13 +611,30 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     learningCredits: 'নলেজ ক্রেডিট',
     learningEnrolled: 'ভর্তি কোর্স',
     periodLabel: 'সময়সীমা',
+    periodToday: 'আজ',
     periodThisMonth: 'এই মাস',
     periodLast3Months: 'গত ৩ মাস',
     periodLast6Months: 'গত ৬ মাস',
     periodThisYear: 'এই বছর',
     periodAllTime: 'সর্বমোট',
+    periodCustom: 'নিজস্ব',
+    periodCustomFrom: 'শুরু',
+    periodCustomTo: 'শেষ',
+    periodCustomInvalid: 'সঠিক তারিখের পরিসর দিন (সর্বোচ্চ ২ বছর, আজ পর্যন্ত)।',
     snapshotNow: 'এখন',
     kpiSubCumulative: 'সব মিলিয়ে',
     dashboardDueThisMonth: 'বকেয়া প্রিমিয়াম এই মাসের',
+    homeSalesTitle: 'বিক্রয় সারসংক্ষেপ',
+    homeSalesPolicies: 'মোট পলিসি বিক্রয়',
+    homeSalesPoliciesSub: 'নতুন পলিসি · সর্বমোট',
+    homeSalesFycp: 'মোট এফওয়াইসিপি',
+    homeSalesFycpSub: 'নতুন {new} · ডেফার্ড {deferred}',
+    loginPanelEyebrow: 'এজেন্ট হাব',
+    loginPanelHeadline: 'এক লগইন। সব ফিল্ড টুল।',
+    loginPanelSub: 'লিডস, লার্নিং, ক্যালকুলেটর ও সেলস — এক জায়গায়, শুধু আপনার ডেটা নিয়ে।',
+    loginPanelValue1: 'লিডস, লার্নিং ও সেলস এক জায়গায়',
+    loginPanelValue2: 'আপনার সংযুক্ত অ্যাপ থেকে লাইভ ডেটা',
+    loginPanelValue3: 'আপনি শুধু নিজের ডেটা দেখেন — আর আপনার টিমেরটা',
+    splashLoading: 'এজেন্ট হাব লোড হচ্ছে…',
   },
 };

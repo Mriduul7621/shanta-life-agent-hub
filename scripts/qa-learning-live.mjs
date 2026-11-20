@@ -27,7 +27,8 @@
  *     deterministic.
  *  2b. Time-frame filter (fixture, pinned date): enrolled/completed/
  *     credits in period per window (hand-computed org + employee
- *     values, independent recomputation from the raw rows);
+ *     values, independent recomputation from the raw rows),
+ *     including 'today' (the new default) and custom ranges;
  *     snapshots (certificates, balances, current course) never move;
  *     boundary dates via hand-built inputs (window start inclusive,
  *     end exclusive; a completion at exactly endMs is out).
@@ -40,7 +41,9 @@
  *     env), live-path scoping, no-PII canaries in the stub rows, the
  *     RPC-failure BFS fallback, and the inactive-employee empty state.
  *     Period handling: invalid period -> 400, demo + live paths
- *     honour ?period= (the stub serves credit_ledger rows too).
+ *     honour ?period= (the stub serves credit_ledger rows too); the
+ *     default period is Today; custom ranges return exactly the rows
+ *     inside them and invalid custom ranges -> 400.
  *
  * Read-only: SELECTs only against Learning Hub Supabase, no writes.
  * The proxy section never touches the network (stubbed fetch). Exits
@@ -311,7 +314,7 @@ function summarizeFixture(employeeId, role, overrides = {}) {
 }
 
 // ---- 2b. Time-frame filter (fixture, pinned date) ----
-function summarizeFixturePeriod(employeeId, role, period) {
+function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   const fixture = buildLearningFixture(FIXTURE_TODAY);
   return summarizeLearning(
     {
@@ -320,8 +323,8 @@ function summarizeFixturePeriod(employeeId, role, period) {
       downlineIds: null,
       truncated: false,
       period,
-      periodWindow: periodDateWindow(period, FIXTURE_TODAY),
-      periodWindowMs: periodMsWindow(period, FIXTURE_TODAY),
+      periodWindow: periodDateWindow(period, FIXTURE_TODAY, customRange),
+      periodWindowMs: periodMsWindow(period, FIXTURE_TODAY, customRange),
     },
     { employeeId, role },
   );
@@ -332,6 +335,7 @@ function summarizeFixturePeriod(employeeId, role, period) {
   // B enrolment at 110 days; the single completion is 100 days back;
   // ledger rows mirror the balances at cycled ages.
   const orgExpected = {
+    'today': { enrolled: 6, completed: 0, credits: 140 },
     'this-month': { enrolled: 6, completed: 0, credits: 140 },
     '3m': { enrolled: 12, completed: 0, credits: 290 },
     '6m': { enrolled: 19, completed: 1, credits: 535 },
@@ -354,6 +358,7 @@ function summarizeFixturePeriod(employeeId, role, period) {
   // in NUMERIC order, so the cycle assigns 9990002 age 40, 9990005
   // age 100, 9990011 age 200 — verified above, not assumed.)
   const empExpected = {
+    'today': { enrolled: 0, credits: 0 },
     'this-month': { enrolled: 0, credits: 0 },
     '3m': { enrolled: 1, credits: 120 },
     '6m': { enrolled: 1, credits: 120 },
@@ -371,7 +376,7 @@ function summarizeFixturePeriod(employeeId, role, period) {
   // enrolments by enrolled_at, credits by ledger created_at.
   const fixture = buildLearningFixture(FIXTURE_TODAY);
   const publishedIds = new Set(fixture.courses.filter((c) => c.is_published).map((c) => String(c.id)));
-  for (const period of ['this-month', '3m', '6m', 'this-year', 'all']) {
+  for (const period of ['today', 'this-month', '3m', '6m', 'this-year', 'all']) {
     const w = periodMsWindow(period, FIXTURE_TODAY);
     const inWindow = (iso) => {
       if (w === null) return true;
@@ -383,6 +388,27 @@ function summarizeFixturePeriod(employeeId, role, period) {
     const s = summarizeFixturePeriod('9990004', 'admin', period);
     check(`period ${period}: recomputed org enrolled matches`, s.learning.enrolledInPeriod === enrolledExp, `${s.learning.enrolledInPeriod} vs ${enrolledExp}`);
     check(`period ${period}: recomputed org credits match`, s.learning.creditsInPeriod === creditsExp, `${s.learning.creditsInPeriod} vs ${creditsExp}`);
+  }
+
+  // Custom ranges: [today, today] is the today window (org 6/0/140);
+  // [3m start, today] equals the 3m window (org 12/0/290) —
+  // recomputed from the raw rows.
+  for (const [from, to, enrolledExp, creditsExp] of [
+    ['2026-11-20', '2026-11-20', 6, 140],
+    ['2026-08-20', '2026-11-20', 12, 290],
+  ]) {
+    const range = { start: from, end: to };
+    const w = periodMsWindow('custom', FIXTURE_TODAY, range);
+    const inWindow = (iso) => {
+      const ms = Date.parse(iso);
+      return ms >= w.startMs && ms < w.endMs;
+    };
+    const enrolledRows = fixture.enrollments.filter((e) => publishedIds.has(String(e.course_id)) && inWindow(e.enrolled_at)).length;
+    const creditsRows = fixture.creditLedger.filter((r) => inWindow(r.created_at)).reduce((a, r) => a + Number(r.points), 0);
+    const s = summarizeFixturePeriod('9990004', 'admin', 'custom', range);
+    check(`custom ${from}..${to}: org enrolled ${enrolledExp}`, s.learning.enrolledInPeriod === enrolledExp && s.learning.enrolledInPeriod === enrolledRows, `${s.learning.enrolledInPeriod} vs ${enrolledRows}`);
+    check(`custom ${from}..${to}: org credits ${creditsExp}`, s.learning.creditsInPeriod === creditsExp && s.learning.creditsInPeriod === creditsRows, `${s.learning.creditsInPeriod} vs ${creditsRows}`);
+    check(`custom ${from}..${to}: echoes period + window`, s.period === 'custom' && s.periodWindow?.start === from && s.periodWindow?.end === to, `${s.period} ${JSON.stringify(s.periodWindow)}`);
   }
 
   // Boundary dates via hand-built inputs. 3m window pinned 2026-11-20:
@@ -429,6 +455,8 @@ function summarizeFixturePeriod(employeeId, role, period) {
     check('boundary 3m: completedInPeriod 1 (progress in, completed_at at end out)', s.learning.completedInPeriod === 1, String(s.learning.completedInPeriod));
     check('boundary 3m: creditsInPeriod 40 net (50 − 10)', s.learning.creditsInPeriod === 40, String(s.learning.creditsInPeriod));
     check('boundary 3m: snapshots stay 2/2/70', s.learning.coursesEnrolled === 2 && s.learning.coursesCompleted === 2 && s.learning.creditBalance === 70, JSON.stringify(s.learning));
+    const sToday = summarizeLearning({ ...input, period: 'today', periodWindow: periodDateWindow('today', FIXTURE_TODAY), periodWindowMs: periodMsWindow('today', FIXTURE_TODAY) }, { employeeId: '2025001', role: 'employee' });
+    check('boundary today: enrolled 0, completed 1 (progress today), credits −10', sToday.learning.enrolledInPeriod === 0 && sToday.learning.completedInPeriod === 1 && sToday.learning.creditsInPeriod === -10, JSON.stringify(sToday.learning));
     const sAll = summarizeLearning({ ...input, period: 'all', periodWindow: null, periodWindowMs: null }, { employeeId: '2025001', role: 'employee' });
     check('boundary all: period fields == snapshots (2/2/70)', sAll.learning.enrolledInPeriod === 2 && sAll.learning.completedInPeriod === 2 && sAll.learning.creditsInPeriod === 70, JSON.stringify(sAll.learning));
   }
@@ -690,6 +718,45 @@ function summarizeFixturePeriod(employeeId, role, period) {
     const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=3m' }));
     check('proxy: demo ?period=3m -> 12/0/290', res.statusCode === 200 && json?.demo === true && json?.learning?.enrolledInPeriod === 12 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 290, JSON.stringify(json?.learning));
     check('proxy: demo ?period=3m echoes period', json?.period === '3m', String(json?.period));
+  }
+  {
+    // Default period is Today now: a bare demo call returns the
+    // today window (fixture: 6 enrolled, 0 completed, 140 credits).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res, json } = await callHandler(handler, mockReq({ token: t }));
+    check('proxy: default period is today (6/0/140)', res.statusCode === 200 && json?.period === 'today' && json?.learning?.enrolledInPeriod === 6 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 140, JSON.stringify(json?.learning));
+  }
+  {
+    // Custom ranges through the handler, demo + live paths. The
+    // fixture is relative-dated, so [today, today] is 6/0/140 (demo
+    // org) and [3m start, today] is 12/0/290; the live stub user
+    // enrolled today with 50 ledger credits today (1/0/50).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const todayIso = STUB_TODAY;
+    const start3m = periodDateWindow('3m', todayIso).start;
+    const { res: resD1, json: jsonD1 } = await callHandler(handler, mockReq({ token: t, url: `/api/learning-data?period=custom&from=${todayIso}&to=${todayIso}` }));
+    check('proxy: demo custom [today, today] -> 6/0/140', resD1.statusCode === 200 && jsonD1?.learning?.enrolledInPeriod === 6 && jsonD1?.learning?.completedInPeriod === 0 && jsonD1?.learning?.creditsInPeriod === 140, JSON.stringify(jsonD1?.learning));
+    check('proxy: demo custom echoes period + window', jsonD1?.period === 'custom' && jsonD1?.periodWindow?.start === todayIso && jsonD1?.periodWindow?.end === todayIso, `${jsonD1?.period} ${JSON.stringify(jsonD1?.periodWindow)}`);
+    const { res: resD2, json: jsonD2 } = await callHandler(handler, mockReq({ token: t, url: `/api/learning-data?period=custom&from=${start3m}&to=${todayIso}` }));
+    check('proxy: demo custom [3m start, today] -> 12/0/290', resD2.statusCode === 200 && jsonD2?.learning?.enrolledInPeriod === 12 && jsonD2?.learning?.completedInPeriod === 0 && jsonD2?.learning?.creditsInPeriod === 290, JSON.stringify(jsonD2?.learning));
+    const tLive = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
+    const { res: resL1, json: jsonL1 } = await callHandler(handler, mockReq({ token: tLive, url: `/api/learning-data?period=custom&from=${todayIso}&to=${todayIso}` }));
+    check('proxy: live custom [today, today] -> 1/0/50', resL1.statusCode === 200 && jsonL1?.learning?.enrolledInPeriod === 1 && jsonL1?.learning?.completedInPeriod === 0 && jsonL1?.learning?.creditsInPeriod === 50, JSON.stringify(jsonL1?.learning));
+  }
+  {
+    // Invalid custom ranges are 400s, never silent fallbacks.
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const cases = [
+      ['custom without a range', '/api/learning-data?period=custom'],
+      ['custom from > to', '/api/learning-data?period=custom&from=2026-11-20&to=2026-11-01'],
+      ['custom to in the future', '/api/learning-data?period=custom&from=2026-11-01&to=2099-01-01'],
+      ['custom range over 2 years', '/api/learning-data?period=custom&from=2020-01-01&to=2026-11-20'],
+      ['custom bad date', '/api/learning-data?period=custom&from=2026-02-30&to=2026-11-20'],
+    ];
+    for (const [name, url] of cases) {
+      const { res } = await callHandler(handler, mockReq({ token: t, url }));
+      check(`proxy: ${name} -> 400`, res.statusCode === 400, String(res.statusCode));
+    }
   }
   {
     // Live path through the stub: 2025001 enrolled today with 50

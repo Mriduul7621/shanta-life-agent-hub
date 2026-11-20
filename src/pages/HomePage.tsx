@@ -17,6 +17,12 @@
  * out of this slice), so the business card keeps its demo figure with
  * an explicit DEMO marker whenever any feed is live.
  *
+ * Sales overview (Mahadi 2026-11-20): two all-time retail cards —
+ * Total policy sales (distinct New policies, same definition as the
+ * Dashboard Policies KPI) and Total FYCP with New / Deferred premium
+ * in small sub-text. All-time snapshots like the other Home widgets,
+ * scoped to the caller via the retail proxy.
+ *
  * The retail summary is ONE scoped slice (own for employee, own+team
  * for team_lead, own+subtree for manager, org for admin) — it cannot
  * be split into own vs team, so in live mode the own grid's dues card
@@ -35,6 +41,7 @@ import { loadLearningCached, loadLearningFresh } from '../data/learningData';
 import type { LearningSummary } from '../data/learningData';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailScope, RetailSummary } from '../data/retailData';
+import { ALL_TIME_SELECTION } from '../data/period';
 import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
@@ -46,6 +53,8 @@ function greetingKey(hour: number) {
   if (hour < 18) return 'greetingAfternoon' as const;
   return 'greetingEvening' as const;
 }
+
+const fmtCount = (n: number): string => n.toLocaleString('en-IN');
 
 const SCOPE_KEY = {
   own: 'dashboardScopeOwn',
@@ -170,27 +179,29 @@ export function HomePage() {
 
   // Each feed loads independently: cached first, fresh in the
   // background. A failed fetch leaves the demo fallback in place —
-  // the page never shows a feed error state.
+  // the page never shows a feed error state. Home widgets are
+  // all-time snapshots, so every feed loads with ALL_TIME_SELECTION
+  // explicitly (the data pages default to Today; Home never does).
   useEffect(() => {
     if (!token || !employeeId) return;
     let cancelled = false;
-    const cachedLeadflow = loadLeadflowCached(employeeId);
+    const cachedLeadflow = loadLeadflowCached(employeeId, ALL_TIME_SELECTION);
     if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
-    const cachedLearning = loadLearningCached(employeeId);
+    const cachedLearning = loadLearningCached(employeeId, ALL_TIME_SELECTION);
     if (cachedLearning) setLearning(cachedLearning.summary);
-    const cachedRetail = loadRetailCached(employeeId);
+    const cachedRetail = loadRetailCached(employeeId, ALL_TIME_SELECTION);
     if (cachedRetail) setRetail(cachedRetail.summary);
-    void loadLeadflowFresh(token, employeeId)
+    void loadLeadflowFresh(token, employeeId, ALL_TIME_SELECTION)
       .then((r) => {
         if (!cancelled) setLeadflow(r.summary);
       })
       .catch(() => {});
-    void loadLearningFresh(token, employeeId)
+    void loadLearningFresh(token, employeeId, ALL_TIME_SELECTION)
       .then((r) => {
         if (!cancelled) setLearning(r.summary);
       })
       .catch(() => {});
-    void loadRetailFresh(token, employeeId)
+    void loadRetailFresh(token, employeeId, ALL_TIME_SELECTION)
       .then((r) => {
         if (!cancelled) setRetail(r.summary);
       })
@@ -272,6 +283,53 @@ export function HomePage() {
         />
       ) : (
         <DuePremiumsWidget data={dashboard.own} />
+      )}
+
+      {/* Sales overview — all-time retail snapshots (Total policy sales
+          + Total FYCP with New / Deferred sub-text), scoped to the
+          caller. Shown once the retail feed has loaded (live or
+          fixture); no demo fallback — the figures are retail-only.
+          An empty retail scope shows no cards at all (same rule as
+          the Dashboard's empty state — never fixture figures). */}
+      {retail && !retail.empty && (
+        <section aria-label={t('homeSalesTitle')}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-bold text-charcoal">{t('homeSalesTitle')}</h2>
+            {retail.demo ? (
+              <span className="rounded-full bg-sunset/15 px-2.5 py-1 text-xs font-bold text-sunset-dark">
+                {t('dashboardDemoBadge')}
+              </span>
+            ) : (
+              <span className="rounded-full bg-olive/15 px-2.5 py-1 text-xs font-bold text-olive">
+                {t('dashboardLiveFrom')}
+              </span>
+            )}
+            <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
+              {t(SCOPE_KEY[retail.scope])} · {t('periodAllTime')}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+            <WidgetCard
+              title={t('homeSalesPolicies')}
+              value={fmtCount(retail.policies)}
+              sub={t('homeSalesPoliciesSub')}
+              emptyText=""
+              accent="charcoal"
+              icon={<IconCheck />}
+            />
+            <WidgetCard
+              title={t('homeSalesFycp')}
+              value={formatBdt(retail.fycp)}
+              sub={t('homeSalesFycpSub', {
+                new: formatBdt(retail.newPremium),
+                deferred: formatBdt(retail.deferredPremium),
+              })}
+              emptyText=""
+              accent="olive"
+              icon={<IconCoin />}
+            />
+          </div>
+        </section>
       )}
 
       {/* Team section — Team Lead and Manager only */}

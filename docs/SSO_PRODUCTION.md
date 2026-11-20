@@ -203,12 +203,14 @@ correct trade-off for a compromise.
 
 ## What stays dev-only, forever
 
-- The demo provider (`src/auth/demoProvider.ts`) and its four fictional
-  users. Env-gated, OFF by default, blocked from production builds by the
-  build-target guard.
-- Local signing in the browser (`signSsoToken` with `VITE_JWT_PRIVATE_KEY_B64`).
-  It exists so the token format and handoff are verifiable without a
-  backend. Production never calls it.
+- The demo accounts and the demo provider (`src/auth/demoProvider.ts`)
+  — REMOVED entirely (Mahadi 2026-11-20). There is no demo sign-in
+  path; the `999xxxx` fixture slices behind the proxy gates
+  (`HUB_DEMO_FIXTURE` + 999 sub) remain as QA-only scaffolding and are
+  unreachable via login.
+- Browser-side signing (`signSsoToken` with `VITE_JWT_PRIVATE_KEY_B64`).
+  REMOVED from the app — the QA harness still signs test tokens in
+  Node. Production tokens are issued server-side only.
 - The dev keypair (kid `c804e3560b5c8059`). If it ever appears in a
   production bundle or a production token, that is a misconfiguration to
   fix immediately, not a supported setup.

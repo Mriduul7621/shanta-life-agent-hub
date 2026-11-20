@@ -18,7 +18,13 @@
  * must never leak across users on a shared device. The cache key
  * also includes the time-frame period.
  */
-import { DEFAULT_PERIOD, PERIODS, type Period } from './period';
+import {
+  DEFAULT_SELECTION,
+  selectionCacheSuffix,
+  selectionQuery,
+  type Period,
+  type PeriodSelection,
+} from './period';
 
 export type LearningScope = 'own' | 'team' | 'subtree' | 'org';
 
@@ -116,13 +122,13 @@ function isValidSummary(value: unknown): value is LearningSummary {
   );
 }
 
-function cacheKey(period: Period): string {
-  return `${CACHE_KEY}:${period}`;
+function cacheKey(selection: PeriodSelection): string {
+  return `${CACHE_KEY}:${selectionCacheSuffix(selection)}`;
 }
 
-function readCache(employeeId: string, period: Period): LearningCache | null {
+function readCache(employeeId: string, selection: PeriodSelection): LearningCache | null {
   try {
-    const raw = sessionStorage.getItem(cacheKey(period));
+    const raw = sessionStorage.getItem(cacheKey(selection));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LearningCache;
     if (parsed.employeeId !== employeeId) return null;
@@ -133,19 +139,27 @@ function readCache(employeeId: string, period: Period): LearningCache | null {
   }
 }
 
-function writeCache(cache: LearningCache, period: Period): void {
+function writeCache(cache: LearningCache, selection: PeriodSelection): void {
   try {
-    sessionStorage.setItem(cacheKey(period), JSON.stringify(cache));
+    sessionStorage.setItem(cacheKey(selection), JSON.stringify(cache));
   } catch {
     // Storage full or unavailable — the page still works, just without a cache.
   }
 }
 
-/** Clear the cached Learning summaries for ALL periods (sign-out, user switch). Never throws. */
+/**
+ * Clear the cached Learning summaries for ALL periods (sign-out, user
+ * switch). Never throws. Iterates by key prefix — custom-range keys
+ * are unbounded, so they cannot be enumerated from PERIODS.
+ */
 export function clearLearningCache(): void {
   try {
-    for (const period of PERIODS) sessionStorage.removeItem(cacheKey(period));
-    sessionStorage.removeItem(CACHE_KEY); // pre-filter cache key, if any
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (key.startsWith(`${CACHE_KEY}:`) || key === CACHE_KEY)) keys.push(key);
+    }
+    for (const key of keys) sessionStorage.removeItem(key);
   } catch {
     /* ignore */
   }
@@ -156,8 +170,8 @@ function toResult(cache: LearningCache, fromCache: boolean): LearningLoadResult 
 }
 
 /** Cached data for instant display (null on first visit). Never throws. */
-export function loadLearningCached(employeeId: string, period: Period = DEFAULT_PERIOD): LearningLoadResult | null {
-  const cache = readCache(employeeId, period);
+export function loadLearningCached(employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): LearningLoadResult | null {
+  const cache = readCache(employeeId, selection);
   return cache ? toResult(cache, true) : null;
 }
 
@@ -166,8 +180,8 @@ export function loadLearningCached(employeeId: string, period: Period = DEFAULT_
  * the caller's token is missing or expired; AuthContext's expiry checker
  * signs the session out separately).
  */
-export async function loadLearningFresh(token: string, employeeId: string, period: Period = DEFAULT_PERIOD): Promise<LearningLoadResult> {
-  const res = await fetch(`/api/learning-data?period=${period}`, {
+export async function loadLearningFresh(token: string, employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): Promise<LearningLoadResult> {
+  const res = await fetch(`/api/learning-data?${selectionQuery(selection)}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -175,6 +189,6 @@ export async function loadLearningFresh(token: string, employeeId: string, perio
   const summary: unknown = await res.json();
   if (!isValidSummary(summary)) throw new Error('learning-data: unexpected response shape');
   const cache: LearningCache = { summary, employeeId, syncedAt: Date.now() };
-  writeCache(cache, period);
+  writeCache(cache, selection);
   return toResult(cache, false);
 }

@@ -1,9 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_DEMO_AUTH?: string;
-  /** Dev-only RS256 signing key (PKCS#8 DER, base64). Never in production. */
-  readonly VITE_JWT_PRIVATE_KEY_B64?: string;
   /** Public-key override (QA / rotation testing). Public material only. */
   readonly VITE_HUB_PUBLIC_KEY_PEM?: string;
   /** Kid matching VITE_HUB_PUBLIC_KEY_PEM. Set as a pair. */

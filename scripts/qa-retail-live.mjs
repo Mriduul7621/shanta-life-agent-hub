@@ -29,7 +29,8 @@
  *     sections above use the real current date.
  *  5b. Time-frame filter (fixture, pinned date): each period window
  *     returns exactly the rows inside it (hand-computed values +
- *     independent recomputation from the raw rows); snapshot KPIs
+ *     independent recomputation from the raw rows), including 'today'
+ *     (the new default) and custom ranges; snapshot KPIs
  *     (due / persistency / active FAs) never move with the period;
  *     boundary dates included/excluded correctly; scoping still
  *     correct inside a period.
@@ -42,7 +43,9 @@
  *     demo fixture gating (flag on/off, production env), no raw rows
  *     in any response, payload caching. Period handling: invalid
  *     period -> 400, demo + live paths honour ?period=, two periods
- *     cached separately (one payload fetch, two different summaries).
+ *     cached separately (one payload fetch, two different summaries);
+ *     the default period is Today; custom ranges return exactly the
+ *     rows inside them and invalid custom ranges -> 400.
  *
  * Read-only: one GET to the public retail endpoint, no writes. The proxy
  * section never touches the network (stubbed fetch). Exits non-zero if
@@ -195,7 +198,20 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture lead leaders 67000/57000/15000', lead.leaderboard.entries.map((e) => e.premium).join(',') === '67000,57000,15000', JSON.stringify(lead.leaderboard.entries));
   check('fixture lead deferred 3.0% / renewal 4.9%', Math.abs(lead.deferredRatio - (5000 / 164000) * 100) < 0.01 && Math.abs(lead.renewalRatio - (8000 / 164000) * 100) < 0.01, `${lead.deferredRatio} / ${lead.renewalRatio}`);
 
+  // New / Deferred premium sums (Home FYCP card sub-text, Mahadi
+  // 2026-11-20): New = Σ new-premium column, Deferred = Σ deferred
+  // column, FYCP = New + Deferred — the same columns the
+  // deferredRatio/renewalRatio are computed from.
+  check('fixture admin new 218000 / deferred 15000', adm.newPremium === 218000 && adm.deferredPremium === 15000, `${adm.newPremium} / ${adm.deferredPremium}`);
+  check('fixture mgr new 211000 / deferred 15000', mgr.newPremium === 211000 && mgr.deferredPremium === 15000, `${mgr.newPremium} / ${mgr.deferredPremium}`);
+  check('fixture lead new 151000 / deferred 5000', lead.newPremium === 151000 && lead.deferredPremium === 5000, `${lead.newPremium} / ${lead.deferredPremium}`);
   const emp = summarizeRetail(fx, { employeeId: '9990001', role: 'employee' }, FIXTURE_TODAY);
+  check('fixture emp new 62000 / deferred 5000', emp.newPremium === 62000 && emp.deferredPremium === 5000, `${emp.newPremium} / ${emp.deferredPremium}`);
+  check('fixture FYCP == new + deferred (all roles)', adm.fycp === adm.newPremium + adm.deferredPremium && mgr.fycp === mgr.newPremium + mgr.deferredPremium && lead.fycp === lead.newPremium + lead.deferredPremium && emp.fycp === emp.newPremium + emp.deferredPremium);
+  const sumNewFx = fx.records.reduce((a, r) => a + num(r.new), 0);
+  const sumDefFx = fx.records.reduce((a, r) => a + num(r.deferred), 0);
+  check('fixture recompute: Σ new == admin newPremium', adm.newPremium === sumNewFx, `${adm.newPremium} vs ${sumNewFx}`);
+  check('fixture recompute: Σ deferred == admin deferredPremium', adm.deferredPremium === sumDefFx, `${adm.deferredPremium} vs ${sumDefFx}`);
   check('fixture emp total 67000', emp.totalPremium === 67000, String(emp.totalPremium));
   check('fixture emp policies 3', emp.policies === 3, String(emp.policies));
   check('fixture emp due 17000 (2)', emp.duePremium === 17000 && emp.duePolicies === 2, `${emp.duePremium} (${emp.duePolicies})`);
@@ -215,8 +231,11 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   const empUser = { employeeId: '9990001', role: 'employee' };
 
   // Hand-computed org values per period (see api/_lib/demoFixture.js).
+  // D1001's two records are dated today (2026-11-20), so 'today' is
+  // non-zero and this-month includes them.
   const orgExpected = {
-    'this-month': { total: 83000, fycp: 75000, policies: 1, unassigned: null, be: 83000 },
+    'today': { total: 35000, fycp: 35000, policies: 1, unassigned: null, be: 35000 },
+    'this-month': { total: 113000, fycp: 105000, policies: 2, unassigned: null, be: 113000 },
     '3m': { total: 185000, fycp: 177000, policies: 5, unassigned: 7000, be: 178000 },
     '6m': { total: 205000, fycp: 197000, policies: 6, unassigned: 7000, be: 198000 },
     'this-year': { total: 241000, fycp: 233000, policies: 9, unassigned: 7000, be: 234000 },
@@ -244,7 +263,8 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
 
   // Employee scope inside a period (own rows only).
   const empExpected = {
-    'this-month': { total: 5000, policies: 0 },
+    'today': { total: 35000, policies: 1 },
+    'this-month': { total: 35000, policies: 1 },
     '3m': { total: 35000, policies: 1 },
     '6m': { total: 55000, policies: 2 },
     'this-year': { total: 67000, policies: 3 },
@@ -259,7 +279,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
 
   // Independent recomputation: org total + policies from the raw rows,
   // filtered by the same window, must match the summarizer exactly.
-  for (const period of ['this-month', '3m', '6m', 'this-year', 'all']) {
+  for (const period of ['today', 'this-month', '3m', '6m', 'this-year', 'all']) {
     const w = periodDateWindow(period, FIXTURE_TODAY);
     const rows = w ? fx.records.filter((r) => r.date >= w.start && r.date <= w.end) : fx.records;
     const total = rows.reduce((a, r) => a + num(r.total), 0);
@@ -274,6 +294,34 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     const e = summarizeRetail(fx, empUser, FIXTURE_TODAY, period);
     check(`period ${period}: recomputed emp total matches`, e.totalPremium === ownTotal, `${e.totalPremium} vs ${ownTotal}`);
     check(`period ${period}: recomputed emp policies match`, e.policies === ownPolicies, `${e.policies} vs ${ownPolicies}`);
+  }
+
+  // Custom ranges: a valid range returns exactly the rows inside it
+  // (org + employee, recomputed from the raw rows), and the summary
+  // echoes period='custom' + the window. A single empty day returns
+  // zero business with the snapshots intact.
+  for (const [from, to] of [['2026-11-01', '2026-11-20'], ['2026-08-20', '2026-08-20']]) {
+    const range = { start: from, end: to };
+    const rows = fx.records.filter((r) => r.date >= from && r.date <= to);
+    const total = rows.reduce((a, r) => a + num(r.total), 0);
+    const policies = new Set(rows.filter(isNewType).map((r) => String(r.policy))).size;
+    const s = summarizeRetail(fx, adminUser, FIXTURE_TODAY, 'custom', range);
+    check(`custom ${from}..${to}: org total ${total}`, s.totalPremium === total, String(s.totalPremium));
+    check(`custom ${from}..${to}: org policies ${policies}`, s.policies === policies, String(s.policies));
+    check(`custom ${from}..${to}: echoes period + window`, s.period === 'custom' && s.periodWindow?.start === from && s.periodWindow?.end === to, `${s.period} ${JSON.stringify(s.periodWindow)}`);
+    check(`custom ${from}..${to}: snapshots intact (due 38000, 8/9, 3 of 4)`, s.duePremium === 38000 && s.persistency?.inf === 8 && s.persistency?.all === 9 && s.activeFas.active === 3, `${s.duePremium} ${JSON.stringify(s.persistency)} ${JSON.stringify(s.activeFas)}`);
+    const ownRows = rows.filter((r) => String(r.faCode) === '9990001');
+    const ownTotal = ownRows.reduce((a, r) => a + num(r.total), 0);
+    const ownPolicies = new Set(ownRows.filter(isNewType).map((r) => String(r.policy))).size;
+    const e = summarizeRetail(fx, empUser, FIXTURE_TODAY, 'custom', range);
+    check(`custom ${from}..${to}: emp total ${ownTotal}`, e.totalPremium === ownTotal, String(e.totalPremium));
+    check(`custom ${from}..${to}: emp policies ${ownPolicies}`, e.policies === ownPolicies, String(e.policies));
+  }
+  // The November custom range equals this-month exactly.
+  {
+    const tm = summarizeRetail(fx, adminUser, FIXTURE_TODAY, 'this-month');
+    const cu = summarizeRetail(fx, adminUser, FIXTURE_TODAY, 'custom', { start: '2026-11-01', end: '2026-11-20' });
+    check('custom Nov == this-month (113000, 2 pol)', cu.totalPremium === tm.totalPremium && cu.policies === tm.policies && cu.totalPremium === 113000, `${cu.totalPremium} (${cu.policies}) vs ${tm.totalPremium} (${tm.policies})`);
   }
 
   // Boundary dates: a record ON the 3m start date is in; one day
@@ -305,7 +353,9 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     const sAll = summarizeRetail(fxB, empUser, FIXTURE_TODAY, 'all');
     check('boundary all: no date filter (82000, 7 pol)', sAll.totalPremium === 82000 && sAll.policies === 7, `${sAll.totalPremium} (${sAll.policies})`);
     const sTm = summarizeRetail(fxB, empUser, FIXTURE_TODAY, 'this-month');
-    check('boundary this-month: only today in (9000, 1 pol)', sTm.totalPremium === 9000 && sTm.policies === 1, `${sTm.totalPremium} (${sTm.policies})`);
+    check('boundary this-month: D1001 today + B-TODAY in (39000, 2 pol)', sTm.totalPremium === 39000 && sTm.policies === 2, `${sTm.totalPremium} (${sTm.policies})`);
+    const sToday = summarizeRetail(fxB, empUser, FIXTURE_TODAY, 'today');
+    check('boundary today: D1001 today + B-TODAY in (39000, 2 pol)', sToday.totalPremium === 39000 && sToday.policies === 2, `${sToday.totalPremium} (${sToday.policies})`);
   }
 }
 
@@ -422,22 +472,29 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     check('proxy: POST -> 405', res.statusCode === 405, String(res.statusCode));
   }
   {
+    // Bare call: the default period is Today now (fixture: D1001's
+    // two records, 35000). All-time needs an explicit ?period=all.
     const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
     const { res, json } = await call(mockReq({ token: t }));
     check('proxy: demo admin -> 200, fixture (demo:true)', res.statusCode === 200 && json?.demo === true, `status=${res.statusCode} demo=${json?.demo}`);
-    check('proxy: demo admin fixture total 241000', json?.totalPremium === 241000, String(json?.totalPremium));
+    check('proxy: demo admin default period today, total 35000', json?.period === 'today' && json?.totalPremium === 35000, `period=${json?.period} total=${json?.totalPremium}`);
     check('proxy: Cache-Control private, no-store', res.headers['Cache-Control'] === 'private, no-store', res.headers['Cache-Control']);
+    const { res: resAll, json: jsonAll } = await call(mockReq({ token: t, url: '/api/retail-data?period=all' }));
+    check('proxy: demo admin ?period=all fixture total 241000', resAll.statusCode === 200 && jsonAll?.totalPremium === 241000, `status=${resAll.statusCode} total=${jsonAll?.totalPremium}`);
   }
   {
+    // The live `admin` summary above is all-time (the summarizer's
+    // default), so the comparison call passes ?period=all explicitly
+    // — the bare-call default is Today now.
     const t = signToken({ sub: '2025019', name: 'Staff', role: 'admin' });
-    const { res, json } = await call(mockReq({ token: t }));
+    const { res, json } = await call(mockReq({ token: t, url: '/api/retail-data?period=all' }));
     check('proxy: real admin -> 200, live org summary', res.statusCode === 200 && json?.demo === false && json?.scope === 'org', `status=${res.statusCode} demo=${json?.demo} scope=${json?.scope}`);
     check('proxy: real admin total == live admin total', json?.totalPremium === admin.totalPremium, `${fmt(json?.totalPremium ?? 0)} vs ${fmt(admin.totalPremium)}`);
     check('proxy: no raw rows leak in the response', !res.body.includes('"records"') && !res.body.includes('NAZAHA HAQUE'), '');
   }
   {
     const t = signToken({ sub: '1101020102', name: 'UM', role: 'team_lead' });
-    const { res, json } = await call(mockReq({ token: t }));
+    const { res, json } = await call(mockReq({ token: t, url: '/api/retail-data?period=all' }));
     check('proxy: UM team_lead -> 200 scoped', res.statusCode === 200 && json?.scope === 'team' && json?.totalPremium === um.totalPremium, `status=${res.statusCode} scope=${json?.scope} total=${json?.totalPremium}`);
   }
   {
@@ -473,6 +530,52 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     const w = periodDateWindow('3m', dhakaToday());
     check('proxy: demo ?period=3m -> 200, fixture 3m total 185000', res.statusCode === 200 && json?.demo === true && json?.totalPremium === 185000, `status=${res.statusCode} total=${json?.totalPremium}`);
     check('proxy: demo ?period=3m echoes period + window', json?.period === '3m' && JSON.stringify(json?.periodWindow) === JSON.stringify(w), `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
+  }
+  {
+    // Default period is Today now: a bare call returns the today
+    // window (fixture: D1001's two records, 35000).
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const { res, json } = await call(mockReq({ token: t }));
+    check('proxy: default period is today (fixture total 35000)', res.statusCode === 200 && json?.period === 'today' && json?.totalPremium === 35000, `status=${res.statusCode} period=${json?.period} total=${json?.totalPremium}`);
+    const { res: resT, json: jsonT } = await call(mockReq({ token: t, url: '/api/retail-data?period=today' }));
+    check('proxy: explicit ?period=today -> same as default', resT.statusCode === 200 && jsonT?.totalPremium === 35000 && jsonT?.period === 'today', `status=${resT.statusCode} total=${jsonT?.totalPremium}`);
+  }
+  {
+    // Custom ranges through the handler: a valid range returns
+    // exactly the rows inside it, and echoes period='custom' + the
+    // window. [1st of month, today] must equal this-month.
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const todayIso = dhakaToday();
+    const monthStart = `${todayIso.slice(0, 7)}-01`;
+    const { res: resTm, json: jsonTm } = await call(mockReq({ token: t, url: '/api/retail-data?period=this-month' }));
+    const { res, json } = await call(mockReq({ token: t, url: `/api/retail-data?period=custom&from=${monthStart}&to=${todayIso}` }));
+    check('proxy: custom [month-start, today] -> 200', res.statusCode === 200, String(res.statusCode));
+    check('proxy: custom == this-month total + policies', res.statusCode === 200 && json?.totalPremium === jsonTm?.totalPremium && json?.policies === jsonTm?.policies, `custom=${json?.totalPremium} (${json?.policies}) vs this-month=${jsonTm?.totalPremium} (${jsonTm?.policies})`);
+    check('proxy: custom echoes period + window', json?.period === 'custom' && json?.periodWindow?.start === monthStart && json?.periodWindow?.end === todayIso, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
+    // A named period with from/to ignores the range.
+    const { res: resNamed, json: jsonNamed } = await call(mockReq({ token: t, url: `/api/retail-data?period=3m&from=${monthStart}&to=${todayIso}` }));
+    check('proxy: named period + from/to ignores the range', resNamed.statusCode === 200 && jsonNamed?.period === '3m' && jsonNamed?.totalPremium === 185000, `period=${jsonNamed?.period} total=${jsonNamed?.totalPremium}`);
+  }
+  {
+    // Invalid custom ranges are 400s, never silent fallbacks.
+    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const todayIso = dhakaToday();
+    const cases = [
+      ['custom without a range', '/api/retail-data?period=custom'],
+      ['custom with only from', `/api/retail-data?period=custom&from=2026-11-01`],
+      ['custom from > to', '/api/retail-data?period=custom&from=2026-11-20&to=2026-11-01'],
+      ['custom to in the future', `/api/retail-data?period=custom&from=2026-11-01&to=2099-01-01`],
+      ['custom range over 2 years', '/api/retail-data?period=custom&from=2020-01-01&to=2026-11-20'],
+      ['custom bad date', '/api/retail-data?period=custom&from=2026-02-30&to=2026-11-20'],
+      ['custom bad format', '/api/retail-data?period=custom&from=01-11-2026&to=2026-11-20'],
+    ];
+    for (const [name, url] of cases) {
+      const { res } = await call(mockReq({ token: t, url }));
+      check(`proxy: ${name} -> 400`, res.statusCode === 400, String(res.statusCode));
+    }
+    // 'today' is a valid period even with a from/to attached (ignored).
+    const { res } = await call(mockReq({ token: t, url: `/api/retail-data?period=today&from=2026-11-01&to=${todayIso}` }));
+    check('proxy: today + from/to ignores the range (200)', res.statusCode === 200, String(res.statusCode));
   }
   {
     // Two periods cached separately: the live payload is fetched once

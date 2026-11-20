@@ -26,7 +26,8 @@
  * and credits by their timestamps); follow-ups, open/converted
  * counts, certificates and current progress are snapshots, labelled
  * as such. The retail dues on the Leads page stay 'all' — dues are
- * this-calendar-month by definition. Default is All time.
+ * this-calendar-month by definition. Default is Today; the selector
+ * is a dropdown with a Custom range (start/end dates).
  */
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -40,7 +41,7 @@ import { loadLearningCached, loadLearningFresh } from '../data/learningData';
 import type { LearningSummary } from '../data/learningData';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailSummary } from '../data/retailData';
-import { DEFAULT_PERIOD, periodLabelKey, type Period } from '../data/period';
+import { ALL_TIME_SELECTION, DEFAULT_SELECTION, isCompleteSelection, periodLabelKey, type PeriodSelection } from '../data/period';
 import PeriodSelector from '../components/PeriodSelector';
 import { GROUP_TITLE_KEY, MODULES } from '../data/modules';
 import type { HubModule, ModuleGroup } from '../data/modules';
@@ -330,23 +331,30 @@ export function ModulePage({ view }: { view: View }) {
   const [leadflow, setLeadflow] = useState<LeadflowSummary | null>(null);
   const [learning, setLearning] = useState<LearningSummary | null>(null);
   const [retail, setRetail] = useState<RetailSummary | null>(null);
-  const [period, setPeriod] = useState<Period>(DEFAULT_PERIOD);
+  const [selection, setSelection] = useState<PeriodSelection>(DEFAULT_SELECTION);
   const employeeId = user?.employeeId ?? '';
   const group = VIEW_TO_GROUP[view];
-  const periodLabel = t(periodLabelKey(period));
+  const periodLabel =
+    selection.period === 'custom' && selection.from && selection.to
+      ? `${selection.from} – ${selection.to}`
+      : t(periodLabelKey(selection.period));
+  const selectionReady = isCompleteSelection(selection);
 
   // Leads loads the LeadFlow + retail feeds; Learning loads the
   // Learning Hub feed. Each loads independently (cached first, fresh
   // in the background); a failed fetch leaves the demo fallback.
   // The LeadFlow + Learning feeds follow the period; the retail dues
-  // feed stays 'all' (dues are this-calendar-month by definition),
-  // so it lives in its own effect and never re-runs on period change.
+  // feed is ALWAYS all-time (dues are this-calendar-month by
+  // definition), so it passes ALL_TIME_SELECTION explicitly and
+  // lives in its own effect that never re-runs on period change.
+  // An incomplete custom selection (no range yet) skips fetching and
+  // keeps the last summary.
   useEffect(() => {
-    if (!token || !employeeId || group !== 'leads') return;
+    if (!token || !employeeId || group !== 'leads' || !selectionReady) return;
     let cancelled = false;
-    const cachedLeadflow = loadLeadflowCached(employeeId, period);
+    const cachedLeadflow = loadLeadflowCached(employeeId, selection);
     if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
-    void loadLeadflowFresh(token, employeeId, period)
+    void loadLeadflowFresh(token, employeeId, selection)
       .then((r) => {
         if (!cancelled) setLeadflow(r.summary);
       })
@@ -354,14 +362,14 @@ export function ModulePage({ view }: { view: View }) {
     return () => {
       cancelled = true;
     };
-  }, [token, employeeId, group, period]);
+  }, [token, employeeId, group, selection, selectionReady]);
 
   useEffect(() => {
     if (!token || !employeeId || group !== 'leads') return;
     let cancelled = false;
-    const cachedRetail = loadRetailCached(employeeId);
+    const cachedRetail = loadRetailCached(employeeId, ALL_TIME_SELECTION);
     if (cachedRetail) setRetail(cachedRetail.summary);
-    void loadRetailFresh(token, employeeId)
+    void loadRetailFresh(token, employeeId, ALL_TIME_SELECTION)
       .then((r) => {
         if (!cancelled) setRetail(r.summary);
       })
@@ -372,11 +380,11 @@ export function ModulePage({ view }: { view: View }) {
   }, [token, employeeId, group]);
 
   useEffect(() => {
-    if (!token || !employeeId || group !== 'learning') return;
+    if (!token || !employeeId || group !== 'learning' || !selectionReady) return;
     let cancelled = false;
-    const cachedLearning = loadLearningCached(employeeId, period);
+    const cachedLearning = loadLearningCached(employeeId, selection);
     if (cachedLearning) setLearning(cachedLearning.summary);
-    void loadLearningFresh(token, employeeId, period)
+    void loadLearningFresh(token, employeeId, selection)
       .then((r) => {
         if (!cancelled) setLearning(r.summary);
       })
@@ -384,7 +392,7 @@ export function ModulePage({ view }: { view: View }) {
     return () => {
       cancelled = true;
     };
-  }, [token, employeeId, group, period]);
+  }, [token, employeeId, group, selection, selectionReady]);
 
   if (!group) return null;
   const tiles = MODULES.filter((m) => m.group === group);
@@ -430,7 +438,7 @@ export function ModulePage({ view }: { view: View }) {
       </section>
       {dataGroup && dashboard ? (
         <>
-          <PeriodSelector value={period} onChange={setPeriod} />
+          <PeriodSelector value={selection} onChange={setSelection} />
           <SummaryCard
             mode={mode}
             noteKey={noteKey}

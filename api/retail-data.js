@@ -39,13 +39,15 @@
  * payload cache itself is period-agnostic (raw rows, no aggregates).
  * The response itself is never cached (private, no-store).
  *
- * Time-frame filter: `?period=this-month|3m|6m|this-year|all`
- * (default 'all'). An invalid value is a 400 — never silently fall
- * back to 'all', or the caller would read the wrong window.
+ * Time-frame filter: `?period=today|this-month|3m|6m|this-year|all|custom`
+ * (default 'today'). For 'custom', `?from=YYYY-MM-DD&to=YYYY-MM-DD`
+ * is required (real dates, from <= to, to <= today, range <= 2
+ * years). An invalid value is a 400 — never silently fall back to
+ * another window, or the caller would read the wrong figures.
  */
 import { verifySsoTokenNode, publicKeyConfig } from './_lib/verifyJwt.js';
 import { summarizeWithIndex, buildRetailIndex, dhakaToday } from './_lib/retailSummary.js';
-import { parsePeriodParam } from './_lib/periods.js';
+import { parsePeriodQuery } from './_lib/periods.js';
 import { buildDemoPayload } from './_lib/demoFixture.js';
 
 export const config = { maxDuration: 30 };
@@ -53,7 +55,7 @@ export const config = { maxDuration: 30 };
 const RETAIL_URL = 'https://retail-dashboard-zeta.vercel.app/api/sales-data';
 const PAYLOAD_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20_000;
-const INDEX_CACHE_MAX = 8; // 5 periods x a couple of payload versions
+const INDEX_CACHE_MAX = 16; // 7 periods x a couple of payload versions (+ custom ranges)
 
 let payloadCache = null; // { payload, fetchedAtMs }
 let indexCache = new Map(); // key -> index (key includes the period)
@@ -77,11 +79,12 @@ async function fetchRetailPayload() {
   return payload;
 }
 
-function indexFor(payload, today, period) {
-  const key = `${payload?.sync?.lastUpdated || ''}|${today}|${period}`;
+function indexFor(payload, today, period, customRange) {
+  const range = customRange ? `${customRange.start}..${customRange.end}` : '';
+  const key = `${payload?.sync?.lastUpdated || ''}|${today}|${period}|${range}`;
   const hit = indexCache.get(key);
   if (hit) return hit;
-  const index = buildRetailIndex(payload, today, period);
+  const index = buildRetailIndex(payload, today, period, customRange);
   indexCache.set(key, index);
   if (indexCache.size > INDEX_CACHE_MAX) {
     indexCache.delete(indexCache.keys().next().value);
@@ -107,24 +110,28 @@ export default async function handler(req, res) {
     if (!claims) {
       return send(res, 401, { error: 'a valid Hub sign-in is required' });
     }
-    const period = parsePeriodParam(new URL(req.url || '/', 'http://localhost').searchParams.get('period'));
-    if (period === null) {
+    const today = dhakaToday();
+    const parsed = parsePeriodQuery(
+      new URL(req.url || '/', 'http://localhost').searchParams,
+      today,
+    );
+    if (parsed === null) {
       return send(res, 400, { error: 'invalid period' });
     }
-    const today = dhakaToday();
+    const { period, customRange } = parsed;
     // Demo users (fictional 999xxxx IDs) get the synthetic slice — never
     // real rows — when the fixture gate is open. Real users always get
     // the live payload, fixture or not.
     if (claims.sub.startsWith('999') && demoFixtureEnabled(process.env)) {
       const summary = summarizeWithIndex(
-        buildRetailIndex(buildDemoPayload(today), today, period),
+        buildRetailIndex(buildDemoPayload(today), today, period, customRange),
         { employeeId: claims.sub, role: claims.role },
       );
       summary.demo = true;
       return send(res, 200, summary);
     }
     const payload = await fetchRetailPayload();
-    const summary = summarizeWithIndex(indexFor(payload, today, period), {
+    const summary = summarizeWithIndex(indexFor(payload, today, period, customRange), {
       employeeId: claims.sub,
       role: claims.role,
     });

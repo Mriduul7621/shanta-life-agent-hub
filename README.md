@@ -25,71 +25,70 @@ and opens from the Hub. See the full plan in
 ## Run it
 
 ```bash
-cp .env.example .env   # demo auth OFF by default; dev-only RS256 key (see below)
+cp .env.example .env   # real-auth only; dev RS256 key for the QA harness (see below)
 npm install
 npm run dev            # http://localhost:5173
 npm run build          # build into dist/ (target from HUB_BUILD_TARGET, default production)
 npm run preview        # serve the production build
-npm run qa             # performs its own demo-enabled build, then headless-Chrome checks + screenshots
+npm run qa             # performs its own QA build, then headless-Chrome checks + screenshots
 npm run qa:retail-live # live retail check (Node; real retail payload + proxy + fixture)
 npm run keygen         # print a fresh RSA-2048 keypair (never writes .env)
 ```
 
-Requirements: Node 20+ (built with Node 24). No other services needed —
-the demo provider runs entirely in the browser. The Dashboard calls the
+Requirements: Node 20+ (built with Node 24). Sign-in is real Learning Hub
+credentials only (Employee ID + PIN, or staff email + password) via the
+Hub-side `/api/hub-auth` function — there are no demo accounts (removed
+Mahadi 2026-11-20). The Dashboard calls the
 Hub-side proxy `/api/retail-data` at runtime (see "Dashboard data" below);
 without network (or without the proxy, e.g. a `file://` QA run) it shows
 an error state, never fake numbers.
 
-For local demo sign-in, set in your `.env` (gitignored):
+For local development, set in your `.env` (gitignored):
 
 ```bash
-HUB_BUILD_TARGET=dev     # dev builds allow demo auth + local signing
-VITE_DEMO_AUTH=true      # enables the 4 fictional demo users
+HUB_BUILD_TARGET=dev     # dev builds allow the QA harness key
 VITE_JWT_PRIVATE_KEY_B64=<dev key>   # from `npm run keygen`, or the shared dev key
 ```
 
 The private key must be the pair of the public key committed in
-`src/auth/keys.ts`, or token verification fails. `npm run qa` works without
-any of this — it forces its own build env and generates an ephemeral keypair
-when no `.env` key exists, so it passes from a fresh clone.
+`src/auth/keys.ts`, or token verification fails. It is used by the QA
+harness (Node-side test-token signing) and by the preview server's
+`/api/hub-auth` fallback — never by the browser. `npm run qa` works
+without any of this — it forces its own build env and generates an
+ephemeral keypair when no `.env` key exists, so it passes from a fresh
+clone.
 
-## Demo sign-in (dev only)
+## Sign-in (real accounts only)
 
-Demo auth is env-gated (`VITE_DEMO_AUTH=true`) and **must never be enabled in
-a production build**. All four users are fictional — `999xxxx` IDs that match
-no real employee — and no real credential exists anywhere in this repo.
-
-| Employee ID | Role | PIN | Notes |
-|---|---|---|---|
-| 9990001 | Employee | 123456 | First login forces a PIN change (tests the must-change flow) |
-| 9990002 | Team Lead | 123456 | Own widgets + team section |
-| 9990003 | Manager | 123456 | Downline totals + team section |
-| 9990004 | Admin / T&D | 123456 | Zero-state widgets + console placeholder on Profile |
+Sign-in verifies against the Learning Hub credential store server-side
+(`/api/hub-auth`, Phase 2). The demo accounts are gone entirely (Mahadi
+2026-11-20) — there is no demo sign-in path in the app, no demo provider,
+and no browser-side token signing. The `999xxxx` fixture slices behind the
+proxy gates (`HUB_DEMO_FIXTURE` + 999 sub) remain as QA-only scaffolding:
+the QA harness signs test tokens in Node and calls the proxies directly.
 
 Login behaviour (matches the Learning Hub contract from Plan A):
 
-- 5 wrong attempts locks the account for **15 minutes** (persisted in
-  localStorage, so reloading does not reset it).
-- First login with a temporary PIN forces a new 6-digit PIN before the home
-  screen appears.
+- 5 wrong attempts locks the account for **15 minutes** (Learning Hub's
+  own lockout, enforced server-side and surfaced as-is).
+- A temporary PIN/password forces a change in the Learning Hub first —
+  the Hub shows a link out and creates no session.
 - Sessions expire after **1 hour**; the app checks expiry every 30 seconds
   and signs out with a notice.
-- Sign-out clears the session token from sessionStorage.
+- Sign-out clears the session token from sessionStorage and every cached
+  feed summary.
 
 ## Architecture
 
 ```
 src/
   main.tsx                 entry + service-worker registration (prod only)
-  App.tsx                  shell: login → forced-change → layout + views
+  App.tsx                  shell: splash → login → layout + views
   auth/
     types.ts               AuthProvider interface, HubUser, errors
-    AuthContext.tsx        session restore, JWT issue/verify, sign-out
-    jwt.ts                 RS256 sign/verify (WebCrypto, no deps)
+    AuthContext.tsx        session restore, JWT verify, sign-out
+    jwt.ts                 RS256 verify (WebCrypto, no deps); sign used by the QA harness only (Node)
     keys.ts                bundled Hub SSO PUBLIC key + kid (public — safe to commit)
-    demoProvider.ts        dev-only demo users, lockout, forced change
-    supabaseProvider.ts    STUB — Milestone 2 design documented, not wired
   sso/
     handoff.ts             Hub → module fragment-URL handoff (same-tab)
   i18n/
@@ -104,7 +103,7 @@ src/
   components/              Layout (sidebar/bottom nav), WidgetCard,
                            ModuleTile, QuickActionTile, ModuleIcon,
                            DuePremiumsWidget, LanguagePill, icons
-  pages/                   Login, ForceChange, Home, Module, Dashboard, Profile
+  pages/                   Splash, Login, Home, Module, Dashboard, Profile
 api/
   retail-data.js           Vercel proxy: verifies the Hub JWT, fetches the
                            retail endpoint server-side, returns ONLY the
@@ -141,25 +140,22 @@ itself.
 
 ### Auth providers
 
-`AuthContext` picks a provider by env: `VITE_DEMO_AUTH=true` → the demo
-provider; anything else → the Supabase provider stub, which fails closed
-(`not_configured`) until it is wired. Adding a provider means implementing
-the `AuthProvider` interface in `src/auth/types.ts` — sign-in and
-credential change, nothing else. A provider may return a server-issued
-token in `SignInResult.token`; when it does, `AuthContext` uses that token
-instead of signing locally (the production path — the demo provider returns
-none). The Supabase design (Edge Function verify + issue) is documented in
-`src/auth/supabaseProvider.ts` and `docs/SSO_PRODUCTION.md`.
+One provider: `HubAuthProvider` POSTs the Hub-side serverless function
+`/api/hub-auth`, which verifies the credential against the Learning Hub
+store server-side and returns a server-issued RS256 token in
+`SignInResult.token`; `AuthContext` verifies that token (signature +
+claims) before trusting it. The browser never holds a signing key. See
+`docs/SSO_PRODUCTION.md` for the issuer design and rotation runbook.
 
 ### SSO token
 
 On successful sign-in the Hub holds a signed JWT (RS256, 1-hour expiry)
 with claims `sub` (Employee ID), `name`, `role`, `iat`, `exp`, `iss`. The
 token lives in `sessionStorage` and is verified (signature + claims) on
-session restore and every 30 seconds. **Dev/QA builds sign tokens in the
-browser with a dev-only private key from `.env`** so the format and the
-handoff are verifiable end to end. Production tokens are issued server-side
-— the browser never holds a signing key. Full spec, verification steps,
+session restore and every 30 seconds. Tokens are issued server-side
+(`api/hub-auth.js`) — the browser never holds a signing key. The QA
+harness signs test tokens in Node (it bundles `src/auth/jwt.ts`) to seed
+sessions and call the proxies directly. Full spec, verification steps,
 key distribution and rotation: [`docs/SSO_TOKEN.md`](docs/SSO_TOKEN.md);
 production design: [`docs/SSO_PRODUCTION.md`](docs/SSO_PRODUCTION.md).
 

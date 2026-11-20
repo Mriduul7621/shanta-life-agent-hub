@@ -1,20 +1,71 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useAuth, isDemoAuthEnabled } from '../auth/AuthContext';
-import { DEMO_PIN, DEMO_USERS } from '../auth/demoProvider';
+import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { LanguagePill } from '../components/LanguagePill';
+import { IconCheck } from '../components/icons';
 import type { AuthError } from '../auth/types';
-import type { DictKey } from '../i18n/dictionary';
-
-function roleKey(role: string): DictKey {
-  if (role === 'team_lead') return 'roleTeamLead';
-  if (role === 'manager') return 'roleManager';
-  if (role === 'admin') return 'roleAdmin';
-  return 'roleEmployee';
-}
 
 const LEARNING_HUB_URL = 'https://shanta-life-learning-hub.vercel.app';
+/**
+ * Learning Hub brand assets, live-referenced (same approach as the
+ * module tile icons — the apps' own deployed URLs, verified 200 on
+ * 2026-11-20). Raster files cannot travel through the Hub's
+ * text-only connector push, so they are referenced, not copied. Each
+ * <img> falls back to the geometric hub mark on error, so a failed
+ * load never leaves an empty slot — and the photo panel has a dark
+ * ground behind the image, so the white panel text stays readable
+ * even with no photo at all.
+ */
+const FIELD_PHOTO_URL = `${LEARNING_HUB_URL}/assets/img/field-training-1.jpg`;
+const LOGO_WHITE_URL = `${LEARNING_HUB_URL}/assets/img/logo-white.png`;
+const LOGO_COLOR_URL = `${LEARNING_HUB_URL}/assets/img/logo-color.png`;
+
+/** The geometric hub mark (same as Layout's Wordmark), sized by prop. */
+function HubMark({ size }: { size: 'sm' | 'md' }) {
+  const box = size === 'sm' ? 'h-8 w-8 rounded-lg' : 'h-12 w-12 rounded-xl';
+  const ring = size === 'sm' ? 'h-4 w-4' : 'h-6 w-6';
+  const dot = size === 'sm' ? 'h-2 w-2' : 'h-3 w-3';
+  return (
+    <span aria-hidden className={`flex shrink-0 items-center justify-center bg-charcoal ${box}`}>
+      <span className={`relative flex items-center justify-center ${ring}`}>
+        <span className={`absolute rounded-full bg-sunset ${dot}`} />
+        <span className="absolute h-full w-full rounded-full border-olive" style={{ borderWidth: size === 'sm' ? 2 : 3 }} />
+      </span>
+    </span>
+  );
+}
+
+/** Shanta Life logo (live) with the hub-mark fallback. */
+function ShantaLogo({ variant, className }: { variant: 'white' | 'color'; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <HubMark size={variant === 'white' ? 'md' : 'sm'} />;
+  return (
+    <img
+      src={variant === 'white' ? LOGO_WHITE_URL : LOGO_COLOR_URL}
+      alt="Shanta Life"
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** Mobile wave band — the Learning Hub splash treatment (same paths). */
+function WaveBand() {
+  return (
+    <svg
+      aria-hidden
+      data-wave
+      className="pointer-events-none absolute inset-x-0 bottom-0 h-20 w-full lg:hidden"
+      viewBox="0 0 1440 120"
+      preserveAspectRatio="none"
+    >
+      <path d="M0,64 C240,110 480,20 720,48 C960,76 1200,110 1440,56 L1440,120 L0,120 Z" fill="#707817" opacity="0.35" />
+      <path d="M0,84 C260,120 520,52 780,74 C1040,96 1240,116 1440,84 L1440,120 L0,120 Z" fill="#555D20" opacity="0.9" />
+      <path d="M0,102 C280,126 560,84 840,98 C1120,112 1280,120 1440,104 L1440,120 L0,120 Z" fill="#555D20" />
+    </svg>
+  );
+}
 
 export function LoginPage() {
   const { t } = useI18n();
@@ -63,146 +114,160 @@ export function LoginPage() {
     }
   }
 
+  const panelValues = [t('loginPanelValue1'), t('loginPanelValue2'), t('loginPanelValue3')];
+
   return (
-    <div className="flex min-h-dvh flex-col bg-cream">
-      <header className="flex items-center justify-between px-4 py-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <span aria-hidden className="flex h-10 w-10 items-center justify-center rounded-xl bg-charcoal">
-            <span className="relative flex h-5 w-5 items-center justify-center">
-              <span className="absolute h-2.5 w-2.5 rounded-full bg-sunset" />
-              <span className="absolute h-full w-full rounded-full border-2 border-olive" />
-            </span>
-          </span>
-          <span className="leading-tight">
-            <span className="block text-base font-bold text-charcoal">Shanta Life</span>
-            <span className="block text-xs font-semibold tracking-wide text-sunset">AGENT HUB</span>
-          </span>
+    <div className="relative min-h-dvh overflow-hidden bg-cream">
+      {/* Desktop photo panel (Learning Hub pattern): the field photo
+          under a lighter overlay than LH's — more of the photo shows
+          (Mahadi: background image with increased transparency) — with
+          a dark ground behind it so the white text stays readable even
+          if the photo fails to load. */}
+      <div className="absolute inset-y-0 left-0 hidden w-[46%] bg-charcoal lg:block" aria-hidden="true">
+        <img
+          src={FIELD_PHOTO_URL}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(160deg, rgba(60,60,59,0.78) 0%, rgba(60,60,59,0.62) 48%, rgba(151,140,33,0.55) 100%)',
+          }}
+        />
+      </div>
+      <div className="absolute inset-y-0 left-0 hidden w-[46%] lg:block">
+        <div className="flex h-full flex-col justify-center px-12 text-white xl:px-16">
+          <ShantaLogo variant="white" className="h-12 w-auto self-start" />
+          <p className="mt-10 text-[11px] font-bold uppercase tracking-[0.3em] text-sunset">
+            {t('loginPanelEyebrow')}
+          </p>
+          <p className="mt-3 max-w-lg text-[2.1rem] font-extrabold leading-snug">
+            {t('loginPanelHeadline')}
+          </p>
+          <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/80">
+            {t('loginPanelSub')}
+          </p>
+          <ul className="mt-9 max-w-md space-y-3">
+            {panelValues.map((title) => (
+              <li key={title} className="flex items-center gap-3">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-olive text-white">
+                  <IconCheck className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-[14px] font-bold">{title}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <LanguagePill />
-      </header>
+      </div>
 
-      <main className="flex flex-1 items-center justify-center px-4 py-8">
-        <div className="w-full max-w-md">
-          <div className="rounded-3xl border border-cream-dark bg-white p-6 shadow-sm sm:p-8">
-            <h1 className="text-2xl font-bold tracking-tight text-charcoal">{t('loginTitle')}</h1>
-            <p className="mt-1 text-sm text-charcoal/60">{t('loginSubtitle')}</p>
+      <WaveBand />
 
-            {sessionExpired && (
-              <p role="status" className="mt-4 rounded-xl bg-olive/10 px-4 py-3 text-sm font-medium text-charcoal">
-                {t('errorSessionExpired')}
-              </p>
-            )}
+      <div className="relative flex min-h-dvh w-full flex-col px-4 pb-24 sm:px-6 lg:ml-[46%] lg:w-[54%] lg:px-10 lg:pb-0">
+        <header className="flex items-center justify-between gap-3 pt-5">
+          <ShantaLogo variant="color" className="h-8 w-auto lg:hidden" />
+          <span className="hidden lg:block" aria-hidden="true" />
+          <LanguagePill />
+        </header>
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
-              <div>
-                <label htmlFor="employee-id" className="mb-1.5 block text-sm font-semibold text-charcoal">
-                  {t('loginIdentifier')}
-                </label>
-                <input
-                  id="employee-id"
-                  name="employee-id"
-                  type="text"
-                  autoComplete="username"
-                  autoFocus
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={t('loginIdentifierPlaceholder')}
-                  className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
-                />
-              </div>
-              <div>
-                <label htmlFor="pin" className="mb-1.5 block text-sm font-semibold text-charcoal">
-                  {t('pin')}
-                </label>
-                <input
-                  id="pin"
-                  name="pin"
-                  type="password"
-                  inputMode={looksLikeEmail ? 'text' : 'numeric'}
-                  autoComplete="current-password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder={looksLikeEmail ? t('passwordPlaceholder') : t('pinPlaceholder')}
-                  className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
-                />
-                <p className="mt-2 text-right">
-                  <a
-                    href={`${LEARNING_HUB_URL}/login/forgot`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm font-semibold text-sunset underline-offset-2 hover:underline"
-                  >
-                    {t('forgotCredential')}
-                  </a>
+        <div className="grid flex-1 place-items-center py-10">
+          <div className="animate-hub-page w-full max-w-md">
+            <div className="overflow-hidden rounded-3xl bg-white shadow-lift">
+              {/* Soft animated accent: a thin sunset bar drawing in. */}
+              <div aria-hidden className="animate-hub-accent h-1 bg-sunset" />
+              <div className="p-6 sm:p-8">
+                <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-sunset">
+                  {t('loginPanelEyebrow')}
                 </p>
-              </div>
+                <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-charcoal">
+                  {t('loginTitle')}
+                </h1>
+                <p className="mt-1 text-sm text-charcoal/60">{t('loginSubtitle')}</p>
 
-              {error && (
-                <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-                  <p>{errorMessage(error)}</p>
-                  {error.code === 'must_change' && (
-                    <p className="mt-2">
+                {sessionExpired && (
+                  <p role="status" className="mt-4 rounded-xl bg-olive/10 px-4 py-3 text-sm font-medium text-charcoal">
+                    {t('errorSessionExpired')}
+                  </p>
+                )}
+
+                <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+                  <div>
+                    <label htmlFor="employee-id" className="mb-1.5 block text-sm font-semibold text-charcoal">
+                      {t('loginIdentifier')}
+                    </label>
+                    <input
+                      id="employee-id"
+                      name="employee-id"
+                      type="text"
+                      autoComplete="username"
+                      autoFocus
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder={t('loginIdentifierPlaceholder')}
+                      className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="pin" className="mb-1.5 block text-sm font-semibold text-charcoal">
+                      {t('pin')}
+                    </label>
+                    <input
+                      id="pin"
+                      name="pin"
+                      type="password"
+                      inputMode={looksLikeEmail ? 'text' : 'numeric'}
+                      autoComplete="current-password"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      placeholder={looksLikeEmail ? t('passwordPlaceholder') : t('pinPlaceholder')}
+                      className="min-h-12 w-full rounded-xl border border-cream-dark bg-white px-4 text-base text-charcoal outline-none placeholder:text-charcoal/40 focus:border-sunset focus:ring-2 focus:ring-sunset/30"
+                    />
+                    <p className="mt-2 text-right">
                       <a
-                        href={`${LEARNING_HUB_URL}/login`}
+                        href={`${LEARNING_HUB_URL}/login/forgot`}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-bold text-sunset underline-offset-2 hover:underline"
+                        className="text-sm font-semibold text-sunset underline-offset-2 hover:underline"
                       >
-                        {t('changeInLearningHub')} →
+                        {t('forgotCredential')}
                       </a>
                     </p>
+                  </div>
+
+                  {error && (
+                    <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                      <p>{errorMessage(error)}</p>
+                      {error.code === 'must_change' && (
+                        <p className="mt-2">
+                          <a
+                            href={`${LEARNING_HUB_URL}/login`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-bold text-sunset underline-offset-2 hover:underline"
+                          >
+                            {t('changeInLearningHub')} →
+                          </a>
+                        </p>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={busy || !identifier.trim() || !pin}
-                className="min-h-12 w-full rounded-xl bg-sunset text-base font-bold text-white transition-colors hover:bg-sunset-dark disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy ? t('signingIn') : t('signIn')}
-              </button>
-            </form>
+                  <button
+                    type="submit"
+                    disabled={busy || !identifier.trim() || !pin}
+                    className="min-h-12 w-full rounded-xl bg-sunset text-base font-bold text-white transition-colors hover:bg-sunset-dark disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy ? t('signingIn') : t('signIn')}
+                  </button>
+                </form>
+              </div>
+            </div>
           </div>
-
-          {isDemoAuthEnabled && (
-            <section
-              aria-label={t('demoNoticeTitle')}
-              className="mt-4 rounded-3xl border border-dashed border-olive/50 bg-olive/10 p-5"
-            >
-              <h2 className="text-sm font-bold text-charcoal">{t('demoNoticeTitle')}</h2>
-              <p className="mt-1 text-sm text-charcoal/70">{t('demoNoticeBody')}</p>
-              <ul className="mt-3 space-y-2">
-                {DEMO_USERS.map((u) => (
-                  <li key={u.employeeId} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIdentifier(u.employeeId);
-                        setPin(DEMO_PIN);
-                      }}
-                      className="font-mono font-bold text-charcoal underline decoration-sunset decoration-2 underline-offset-2"
-                    >
-                      {u.employeeId}
-                    </button>
-                    <span className="text-charcoal/70">
-                      {t(roleKey(u.role))} · PIN {DEMO_PIN}
-                    </span>
-                    {u.mustChangeCredential && (
-                      <span className="rounded-full bg-sunset/15 px-2 py-0.5 text-xs font-bold text-sunset">
-                        {t('demoFirstLoginChange')}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-xs text-charcoal/55">{t('demoUser')} · {t('appTagline')}</p>
-            </section>
-          )}
         </div>
-      </main>
 
-      <footer className="px-4 pb-6 text-center text-xs text-charcoal/45">{t('appTagline')}</footer>
+        <footer className="pb-5 text-center text-xs text-charcoal/45">{t('appTagline')}</footer>
+      </div>
     </div>
   );
 }

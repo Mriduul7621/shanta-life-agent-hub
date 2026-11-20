@@ -30,8 +30,10 @@
  * vite.config build guard: a HUB_BUILD_TARGET=production build FAILS
  * with the flag set.
  *
- * Time-frame filter: `?period=this-month|3m|6m|this-year|all`
- * (default 'all'). Enrolments (enrolled_at), completions
+ * Time-frame filter: `?period=today|this-month|3m|6m|this-year|all|custom`
+ * (default 'today'). For 'custom', `?from=YYYY-MM-DD&to=YYYY-MM-DD`
+ * is required (real dates, from <= to, to <= today, range <= 2
+ * years). Enrolments (enrolled_at), completions
  * (completed_at / module_progress.updated_at) and credits
  * (credit_ledger.created_at) follow the period; certificates and
  * current progress are current-state snapshots. The credit_ledger
@@ -48,7 +50,7 @@ import {
   supaRpc,
   dhakaTodayIso,
 } from './_lib/supabase.js';
-import { parsePeriodParam, periodDateWindow, periodMsWindow } from './_lib/periods.js';
+import { parsePeriodQuery, periodDateWindow, periodMsWindow } from './_lib/periods.js';
 import {
   summarizeLearning,
   resolveLearningDownline,
@@ -202,13 +204,17 @@ export default async function handler(req, res) {
   // The verifier guarantees sub (non-empty) + role (one of the four).
   const user = { employeeId: claims.sub, role: claims.role, name: claims.name };
 
-  const period = parsePeriodParam(new URL(req.url || '/', 'http://localhost').searchParams.get('period'));
-  if (period === null) {
+  const todayIso = dhakaTodayIso();
+  const parsed = parsePeriodQuery(
+    new URL(req.url || '/', 'http://localhost').searchParams,
+    todayIso,
+  );
+  if (parsed === null) {
     return send(res, 400, { error: 'invalid period' });
   }
-  const todayIso = dhakaTodayIso();
-  const periodWindow = periodDateWindow(period, todayIso);
-  const periodMs = periodMsWindow(period, todayIso);
+  const { period, customRange } = parsed;
+  const periodWindow = periodDateWindow(period, todayIso, customRange);
+  const periodMs = periodMsWindow(period, todayIso, customRange);
 
   // Demo fixture: synthetic slice through the SAME summarizer.
   if (demoFixtureEnabled() && isDemoUser(user.employeeId)) {

@@ -18,7 +18,13 @@
  * The cache key also includes the time-frame period: one period's
  * summary must never be shown for another period.
  */
-import { DEFAULT_PERIOD, PERIODS, type Period } from './period';
+import {
+  DEFAULT_SELECTION,
+  selectionCacheSuffix,
+  selectionQuery,
+  type Period,
+  type PeriodSelection,
+} from './period';
 
 export type RetailScope = 'own' | 'team' | 'subtree' | 'org';
 
@@ -49,6 +55,9 @@ export interface RetailSummary {
   deferredRatio: number | null;
   renewalRatio: number | null;
   fycp: number;
+  /** Raw New / Deferred premium sums (FYCP = new + deferred) — the Home FYCP card's sub-text. */
+  newPremium: number;
+  deferredPremium: number;
   policies: number;
   duePremium: number;
   duePolicies: number;
@@ -87,6 +96,8 @@ function isValidSummary(value: unknown): value is RetailSummary {
     typeof s.scope === 'string' &&
     typeof s.totalPremium === 'number' &&
     typeof s.fycp === 'number' &&
+    typeof s.newPremium === 'number' &&
+    typeof s.deferredPremium === 'number' &&
     typeof s.policies === 'number' &&
     typeof s.duePremium === 'number' &&
     typeof s.empty === 'boolean' &&
@@ -97,13 +108,13 @@ function isValidSummary(value: unknown): value is RetailSummary {
   );
 }
 
-function cacheKey(period: Period): string {
-  return `${CACHE_KEY}:${period}`;
+function cacheKey(selection: PeriodSelection): string {
+  return `${CACHE_KEY}:${selectionCacheSuffix(selection)}`;
 }
 
-function readCache(employeeId: string, period: Period): RetailCache | null {
+function readCache(employeeId: string, selection: PeriodSelection): RetailCache | null {
   try {
-    const raw = sessionStorage.getItem(cacheKey(period));
+    const raw = sessionStorage.getItem(cacheKey(selection));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as RetailCache;
     if (parsed.employeeId !== employeeId) return null;
@@ -114,19 +125,27 @@ function readCache(employeeId: string, period: Period): RetailCache | null {
   }
 }
 
-function writeCache(cache: RetailCache, period: Period): void {
+function writeCache(cache: RetailCache, selection: PeriodSelection): void {
   try {
-    sessionStorage.setItem(cacheKey(period), JSON.stringify(cache));
+    sessionStorage.setItem(cacheKey(selection), JSON.stringify(cache));
   } catch {
     // Storage full or unavailable — the page still works, just without a cache.
   }
 }
 
-/** Clear the cached Dashboard summaries for ALL periods (sign-out, user switch). Never throws. */
+/**
+ * Clear the cached Dashboard summaries for ALL periods (sign-out, user
+ * switch). Never throws. Iterates by key prefix — custom-range keys
+ * are unbounded, so they cannot be enumerated from PERIODS.
+ */
 export function clearRetailCache(): void {
   try {
-    for (const period of PERIODS) sessionStorage.removeItem(cacheKey(period));
-    sessionStorage.removeItem(CACHE_KEY); // pre-filter cache key, if any
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (key.startsWith(`${CACHE_KEY}:`) || key === CACHE_KEY)) keys.push(key);
+    }
+    for (const key of keys) sessionStorage.removeItem(key);
   } catch {
     /* ignore */
   }
@@ -137,8 +156,8 @@ function toResult(cache: RetailCache, fromCache: boolean): RetailLoadResult {
 }
 
 /** Cached data for instant display (null on first visit). Never throws. */
-export function loadRetailCached(employeeId: string, period: Period = DEFAULT_PERIOD): RetailLoadResult | null {
-  const cache = readCache(employeeId, period);
+export function loadRetailCached(employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): RetailLoadResult | null {
+  const cache = readCache(employeeId, selection);
   return cache ? toResult(cache, true) : null;
 }
 
@@ -147,8 +166,8 @@ export function loadRetailCached(employeeId: string, period: Period = DEFAULT_PE
  * the caller's token is missing or expired; AuthContext's expiry checker
  * signs the session out separately).
  */
-export async function loadRetailFresh(token: string, employeeId: string, period: Period = DEFAULT_PERIOD): Promise<RetailLoadResult> {
-  const res = await fetch(`/api/retail-data?period=${period}`, {
+export async function loadRetailFresh(token: string, employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): Promise<RetailLoadResult> {
+  const res = await fetch(`/api/retail-data?${selectionQuery(selection)}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -156,6 +175,6 @@ export async function loadRetailFresh(token: string, employeeId: string, period:
   const summary: unknown = await res.json();
   if (!isValidSummary(summary)) throw new Error('retail-data: unexpected response shape');
   const cache: RetailCache = { summary, employeeId, syncedAt: Date.now() };
-  writeCache(cache, period);
+  writeCache(cache, selection);
   return toResult(cache, false);
 }

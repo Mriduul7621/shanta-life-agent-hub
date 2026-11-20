@@ -8,10 +8,12 @@
  *
  * DEV keypair (generated 2026-11-20, kid c804e3560b5c8059): the private half
  * lives ONLY in the developer's local `.env` as VITE_JWT_PRIVATE_KEY_B64
- * (gitignored) and signs demo tokens in dev/QA builds. It is NEVER a
- * production key. Production tokens are issued server-side with a production
- * keypair held in server secrets; the production public key is bundled at
- * deploy time (see docs/SSO_PRODUCTION.md).
+ * (gitignored). It signs QA test tokens in Node (the harness) and the
+ * preview server's tokens (api/hub-auth.js falls back to it when no
+ * production key is set). It is NEVER a production key, and the browser
+ * never holds it. Production tokens are issued server-side with a
+ * production keypair held in server secrets; the production public key
+ * is bundled at deploy time (see docs/SSO_PRODUCTION.md).
  *
  * Rotation: a new keypair gets a new kid (first 16 hex chars of the SHA-256
  * of the public key's DER encoding). During rotation, add the new kid to

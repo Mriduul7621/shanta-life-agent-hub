@@ -112,9 +112,6 @@ export function Layout({ view, onNavigate, children }: LayoutProps) {
             </div>
             <p className="hidden text-lg font-bold lg:block">{t(pageTitleKey(view))}</p>
             <div className="flex items-center gap-3">
-              <span className="hidden rounded-full bg-olive/15 px-2.5 py-1 text-xs font-bold text-olive sm:inline-block">
-                {t('demoDataBadge')}
-              </span>
               <LanguagePill />
             </div>
           </div>

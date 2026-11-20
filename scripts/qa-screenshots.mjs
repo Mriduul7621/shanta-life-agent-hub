@@ -1,10 +1,19 @@
 /**
  * Milestone 3 QA — headless-Chrome checks for the Agent Hub.
  *
- * Usage: `npm run qa` — the script performs its own demo-enabled build
- * (HUB_BUILD_TARGET=qa + VITE_DEMO_AUTH=true, script-forced) so it passes
- * from a fresh clone. Plain `npm run build` still respects `.env` and
- * defaults to the production target (see vite.config.ts).
+ * Usage: `npm run qa` — the script performs its own QA build
+ * (HUB_BUILD_TARGET=qa, script-forced) so it passes from a fresh
+ * clone. Plain `npm run build` still respects `.env` and defaults
+ * to the production target (see vite.config.ts).
+ *
+ * Sessions are SEEDED, not typed: the demo sign-in path is gone
+ * (Mahadi 2026-11-20), so `login()` signs a test token in Node with
+ * the bundled jwt.ts + the .env dev key (or the ephemeral keypair
+ * when no .env key exists) and drops it into sessionStorage — the
+ * app restores it exactly as it would a server-issued token. The
+ * UI sign-in form is tested separately (§3/§22): a 999xxxx attempt
+ * must FAIL (no demo route), and the server side of real auth is
+ * covered by `npm run qa:auth-live`.
  *
  * Runs against the PRODUCTION build via file:// — the VM's Chrome build
  * hard-blocks loopback navigation (ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS;
@@ -13,7 +22,8 @@
  * so the same build also runs from file:// and, later, from a Capacitor
  * webview. Override with HUB_QA_URL to point at a live server instead — in
  * that mode only the Milestone 1 browser checks run (the M2 checks need the
- * local QA build). The handoff test navigates same-tab to a temp file://
+ * local QA build), and session seeding needs the .env dev key to match
+ * the server's bundled public key. The handoff test navigates same-tab to a temp file://
  * stub fixture, so it needs no loopback server at all.
  *
  * NOTE (Retail Dashboard): this VM's headless Chrome has no external network
@@ -29,26 +39,27 @@
  * feeds (§21): the LeadFlow / Learning Hub / retail proxies do not exist
  * under file://, so the live ready states are verified against seeded
  * session caches (hub-leadflow-cache-v1, hub-learning-cache-v1,
- * hub-retail-cache-v1, each suffixed with the period — `:all` by
- * default, `:3m` for the time-frame filter in §23) computed by the
- * Hub's own summarizers, with the fixture summaries flipped to
- * demo:false to exercise the live chrome.
+ * hub-retail-cache-v1, each suffixed with the period — `:today` by
+ * default, `:all` for Home + the dues feed, `:custom:from:to` for a
+ * custom range) computed by the Hub's own summarizers, with the
+ * fixture summaries flipped to demo:false to exercise the live chrome.
  * The live paths are verified by `npm run qa:leadflow-live` and
  * `npm run qa:learning-live`.
  *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
- *  2. All 4 demo roles can sign in; a JWT is issued with the documented claims.
- *  3. 5 wrong PINs lock the account (15-minute lockout message).
- *  4. 9990001 first-login forced PIN change works; the new PIN signs in after.
- *  5. Sign-out clears the session token.
- *  6. EN/BN switch changes UI strings.
- *  7. Role views differ (team section only for Team Lead / Manager; Admin sees
+ *  2. All 4 roles render from a seeded session; the token carries the
+ *     documented claims.
+ *  3. A 999xxxx UI sign-in attempt FAILS (no demo route — the demo
+ *     accounts are gone); no token is issued, no lockout message.
+ *  4. Sign-out clears the session token.
+ *  5. EN/BN switch changes UI strings.
+ *  6. Role views differ (team section only for Team Lead / Manager; Admin sees
  *     the console placeholder on Profile).
- *  8. Screenshots: login + home + profile + dashboard at 375 / 768 / 1440 px,
- *     plus one home screenshot per role at 1440 px. Each shot also checks for
- *     horizontal overflow (scrollWidth > innerWidth). (Dashboard shots are
- *     Milestone 3 — 3 of its 22 checks.)
+ *  7. Screenshots: login + home + profile + dashboard at 375 / 768 / 1440 px.
+ *     Each shot also checks for horizontal overflow (scrollWidth >
+ *     innerWidth). (Dashboard shots are Milestone 3 — 3 of its 22 checks.)
+ *  8. One home screenshot per role at 1440 px.
  *
  * Checks (Milestone 2 — 31):
  *  9. Key sanity: the signing private key matches the public key QA
@@ -134,26 +145,43 @@
  * Checks (Phase 2 — real auth):
  * 22. Real-login form at 375 / 768 / 1440: identifier label "Employee
  *     ID or email", identifier placeholder, forgot link out to the
- *     Learning Hub, demo notice still shown in the QA build, and the
- *     credential field switching to a password field when an email is
- *     typed; error state (wrong PIN shows the message + attempts left)
- *     and lockout state (5 wrong PINs) at 375 px, with screenshots
- *     (login-real-*, login-error-375, login-locked-375). The server
- *     side of real auth is covered by `npm run qa:auth-live`.
+ *     Learning Hub, NO demo notice anywhere (the demo accounts are
+ *     gone), and the credential field switching to a password field
+ *     when an email is typed; error state (a 999xxxx attempt shows
+ *     the not-configured message, never a lockout) at 375 px, with
+ *     screenshots (login-real-*, login-error-375,
+ *     login-error-repeat-375). The server side of real auth is
+ *     covered by `npm run qa:auth-live`.
  *
  * Checks (Phase 2 — time-frame filter):
- * 23. Dashboard / Leads / Learning at 375 / 768 / 1440: both the :all
- *     and :3m session caches seeded (live mode), the page shows the
- *     'all' figures, clicking the 'Last 3 months' pill switches the
- *     figures to the 3m values (Dashboard total ৳1,64,000 ->
- *     ৳1,08,000, FYCP -> ৳1,00,000, policies 7 -> 3; Leads new leads
- *     own 9 -> 5, team 24 -> 11; Learning org enrolled 30 -> 12,
- *     credits 690 -> 290) while the snapshots stay put (due ৳34,000,
- *     persistency 83.3%, overdue/open/converted, certificates 1);
- *     the pill shows aria-pressed, no horizontal overflow, with
- *     screenshots (*-period-3m-*). The exact period math is covered by
+ * 23. Dashboard / Leads / Learning at 375 / 768 / 1440: the period
+ *     control is a dropdown (default Today) with a Custom range. The
+ *     :today and :3m session caches are seeded (live mode); the page
+ *     shows the Today figures first (Dashboard total ৳35,000, FYCP
+ *     ৳35,000, policies 1; Leads new leads own 2 + team 1; Learning
+ *     org enrolled 6, credits 140), then selecting 'Last 3 months'
+ *     switches the figures to the 3m values (Dashboard total
+ *     ৳1,08,000, FYCP ৳1,00,000, policies 3; Leads new leads own 5 +
+ *     team 11; Learning org enrolled 12, credits 290) while the
+ *     snapshots stay put (due ৳34,000, persistency 83.3%,
+ *     overdue/open/converted, certificates 1); the select's value
+ *     tracks the selection, no horizontal overflow, with screenshots
+ *     (*-period-3m-*). A custom range (2026-11-01..2026-11-20) returns
+ *     exactly the rows inside it (Dashboard total ৳43,000, FYCP
+ *     ৳35,000, policies 1 — the this-month values), and an invalid
+ *     range (to before from) shows the inline error and keeps the
+ *     last figures. The exact period math is covered by
  *     `npm run qa:retail-live` (§5b), `qa:leadflow-live` (§2b) and
- *     `qa:learning-live` (§2b).
+ *     `qa:learning-live` (§2b), including invalid custom ranges
+ *     returning 400 from the proxies.
+ *
+ * Checks (Demo removal + login visuals):
+ * 24. No DEMO badge in the header for any session (999xxxx or real
+ *     Employee ID); the built bundle contains no signing key, no
+ *     demo ID and no demo PIN.
+ * 25. Splash screen: present on first load, gone within ~1.5s; the
+ *     login photo panel, wave band and animated card render at
+ *     1440/375 with the logo fallbacks; screenshots (splash-*).
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -326,27 +354,41 @@ if (LOCAL_QA) {
   console.log(`stub module: ${STUB_URL}`);
 }
 
-// ---- 10. QA's own demo-enabled build (local QA only) ----
+// ---- 10. QA's own build (local QA only) ----
+// The build needs NO demo or signing variables: the app signs
+// nothing in the browser and the demo sign-in path is gone. The
+// private key stays in the harness (Node-side test-token signing
+// only) — the check below proves it never reaches the bundle.
 if (LOCAL_QA) {
   const qaBuild = runBuild(ROOT, {
     ...process.env,
     HUB_BUILD_TARGET: 'qa',
-    VITE_DEMO_AUTH: 'true',
-    VITE_JWT_PRIVATE_KEY_B64: privateB64,
     VITE_MODULE_URL_OVERRIDES: JSON.stringify({ premiumpulse: STUB_URL }),
     ...extraBuildEnv,
   });
-  check('qa build succeeds (HUB_BUILD_TARGET=qa, demo on, stub override)', qaBuild.status === 0, qaBuild.status === 0 ? '' : qaBuild.output.slice(-500));
+  check('qa build succeeds (HUB_BUILD_TARGET=qa, stub override)', qaBuild.status === 0, qaBuild.status === 0 ? '' : qaBuild.output.slice(-500));
   if (qaBuild.status !== 0) {
     console.log(qaBuild.output);
     summarizeAndExit(1);
   }
+  // The dev signing key, the demo IDs and the demo PIN must not ship
+  // in the browser bundle (the browser never signs; there are no demo
+  // accounts). Read the built assets and check the raw strings.
+  const bundleText = fs
+    .readdirSync(path.join(ROOT, 'dist', 'assets'))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => fs.readFileSync(path.join(ROOT, 'dist', 'assets', f), 'utf8'))
+    .join('\n');
+  check('bundle: no dev signing key ships in the browser bundle', !bundleText.includes(privateB64));
+  check('bundle: no demo Employee ID ships in the browser bundle', !bundleText.includes('9990001'));
+  check('bundle: no demo PIN ships in the browser bundle', !bundleText.includes('123456'));
 }
 
 // ---- Bundle the app's jwt.ts for Node (negative-case tests use the REAL code) ----
+// Unconditional: session seeding (login()) needs it in HUB_QA_URL mode too.
 let jwtNode = null;
 let jwtBundleDir = null;
-if (LOCAL_QA) {
+{
   jwtBundleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-qa-jwt-'));
   const bundlePath = path.join(jwtBundleDir, 'jwt-bundle.mjs');
   const esbuild = spawnSync(path.join(ROOT, 'node_modules', '.bin', 'esbuild'), [
@@ -379,12 +421,55 @@ async function newPage(browser, width) {
   return { ctx, page, errors };
 }
 
-async function login(page, id, pin) {
-  await page.goto(BASE, { waitUntil: 'networkidle0' });
-  await page.waitForSelector('#employee-id', { timeout: 10000 });
-  await page.type('#employee-id', id);
-  await page.type('#pin', pin);
-  await page.click('button[type="submit"]');
+/**
+ * Test users for session seeding. The demo SIGN-IN path is gone
+ * (Mahadi 2026-11-20) — these records exist only so the harness can
+ * mint test tokens for the proxy fixture slices (999xxxx) and the
+ * role views. No PIN exists for any of them.
+ */
+const TEST_USERS = {
+  9990001: { role: 'employee', name: 'Demo Agent' },
+  9990002: { role: 'team_lead', name: 'Demo Team Lead' },
+  9990003: { role: 'manager', name: 'Demo Manager' },
+  9990004: { role: 'admin', name: 'Demo Admin' },
+};
+
+/**
+ * Seed a session: sign a test token in Node with the app's own
+ * jwt.ts (bundled above) + the dev/ephemeral private key, drop it
+ * into sessionStorage, and reload — the app restores it exactly as
+ * it would a server-issued token (signature + claims verified
+ * against the bundled public key). Returns the token. Unknown IDs
+ * seed as an employee named 'Test User' unless role/name are given.
+ */
+async function login(page, id, role, name) {
+  const u = TEST_USERS[id] ?? { role: 'employee', name: 'Test User' };
+  const token = await jwtNode.signSsoToken(
+    { sub: id, name: name ?? u.name, role: role ?? u.role },
+    privateB64,
+  );
+  // domcontentloaded, NOT networkidle0: the tile-icon section (§16)
+  // holds live-icon requests via request interception, so the
+  // network never goes idle after the reload (the home page's tiles
+  // request the held icons). Call sites wait for content afterwards.
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.evaluate((t) => sessionStorage.setItem('hub-session-token', t), token);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  return token;
+}
+
+/**
+ * Set a native date input's value the way React notices it: the
+ * native value setter + a bubbling 'input' event (page.type cannot
+ * reliably fill date inputs).
+ */
+async function setDateInput(page, selector, value) {
+  await page.evaluate((sel, val) => {
+    const el = document.querySelector(sel);
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, val);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, selector, value);
 }
 
 async function getToken(page) {
@@ -454,8 +539,8 @@ async function waitForDashboardTerminal(page) {
  * keeps the seeded values deterministic whatever day the suite runs.
  */
 const FIXTURE_TODAY = '2026-11-20';
-function demoSummaryFor(employeeId, role, period = 'all') {
-  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY, period);
+function demoSummaryFor(employeeId, role, period = 'all', customRange = null) {
+  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY, period, customRange);
   summary.demo = true; // the proxy marks fixture summaries demo: true
   return summary;
 }
@@ -514,7 +599,9 @@ function learningSummaryFor(employeeId, role, live = false, period = 'all') {
 }
 
 /** Seed any of the three feed caches (null = leave unseeded).
- * Seeds the `:<period>` key — the pages default to All time. */
+ * Seeds the `:<period>` key — the pages default to Today; Home and
+ * the dues feed read `:all`. A custom range is seeded by passing
+ * its full suffix, e.g. 'custom:2026-11-01:2026-11-20'. */
 async function seedFeedCaches(page, employeeId, { leadflow, learning, retail }, period = 'all') {
   await page.evaluate(
     (caches) => {
@@ -545,7 +632,7 @@ const browser = await puppeteer.launch({
 
 fs.mkdirSync(QA_DIR, { recursive: true });
 
-// The issued token from the 9990002 login, reused by the RS256 checks.
+// The seeded token from the 9990002 session, reused by the RS256 checks.
 let issuedToken = null;
 
 // Temp copy used by the clean production-build check (removed in finally).
@@ -558,30 +645,33 @@ try {
     await page.goto(BASE, { waitUntil: 'networkidle0' });
     const title = await page.$eval('h1', (el) => el.textContent);
     check('login page loads (EN default)', title.includes('Sign in to Agent Hub'), title);
-    check('login page: no console errors', errors.length === 0, errors.join(' | '));
+    // The login photo + logos are live-referenced from the Learning
+    // Hub deployment and cannot load in this VM (no external
+    // network) — "Failed to load resource" is a handled network
+    // failure (the fallbacks show), not an app error.
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('login page: no console errors', appErrors.length === 0, appErrors.join(' | '));
     await ctx.close();
   }
 
-  // ---- 2. All 4 roles sign in; JWT claims ----
+  // ---- 2. All 4 roles render from a seeded session; JWT claims ----
+  // The demo sign-in path is gone (Mahadi 2026-11-20) — login() seeds
+  // a Node-signed test token and the app restores it. The token's
+  // claims (sub/name/role/exp-iat=3600) are checked from the stored
+  // session, and the 9990002 token is reused by the RS256 checks.
   const roleCases = [
-    { id: '9990001', role: 'employee', name: 'Demo Agent', mustChange: true },
-    { id: '9990002', role: 'team_lead', name: 'Demo Team Lead', mustChange: false },
-    { id: '9990003', role: 'manager', name: 'Demo Manager', mustChange: false },
-    { id: '9990004', role: 'admin', name: 'Demo Admin', mustChange: false },
+    { id: '9990001', role: 'employee', name: 'Demo Agent' },
+    { id: '9990002', role: 'team_lead', name: 'Demo Team Lead' },
+    { id: '9990003', role: 'manager', name: 'Demo Manager' },
+    { id: '9990004', role: 'admin', name: 'Demo Admin' },
   ];
   for (const c of roleCases) {
     const { ctx, page, errors } = await newPage(browser, 1440);
-    await login(page, c.id, '123456');
-    if (c.mustChange) {
-      await page.waitForSelector('#new-pin', { timeout: 5000 });
-      check(`login ${c.id}: forced PIN-change screen shown`, true);
-      await page.type('#new-pin', '654321');
-      await page.type('#confirm-pin', '654321');
-      await page.click('button[type="submit"]');
-    }
+    await login(page, c.id);
     await page.waitForFunction(
-      () => document.body.textContent.includes('DEMO DATA') || document.body.textContent.includes('ডেমো ডেটা'),
+      (name) => document.body.textContent.includes(name),
       { timeout: 5000 },
+      c.name,
     );
     const token = await getToken(page);
     if (c.id === '9990002' && token) issuedToken = token;
@@ -605,7 +695,13 @@ try {
     await ctx.close();
   }
 
-  // ---- 3. Lockout after 5 wrong PINs ----
+  // ---- 3. A 999xxxx UI sign-in attempt FAILS (no demo route) ----
+  // The demo accounts are gone entirely — submitting a 999xxxx ID in
+  // the form must not sign in, must not issue a token, and must never
+  // show a lockout message (there is no client-side lockout any more;
+  // the server lockout is covered by qa:auth-live). Under file:// the
+  // /api/hub-auth fetch throws, so the form shows the not-configured
+  // message; the point here is the failure, not the wording.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -621,20 +717,20 @@ try {
       await new Promise((r) => setTimeout(r, 400));
     }
     const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
-    check('lockout: 5 wrong PINs locks account', /লক|lock/i.test(alert), alert);
+    check('demo sign-in removed: 999xxxx attempt fails (not configured)', /কনফিগার করা হয়নি|not configured/i.test(alert), alert);
+    check('demo sign-in removed: 5 attempts never show a lock message', !/লক|lock/i.test(alert), alert);
+    const tokenAfterFail = await getToken(page);
+    check('demo sign-in removed: no token issued', tokenAfterFail === null);
+    const stillLogin = await page.evaluate(() => !!document.querySelector('#employee-id'));
+    check('demo sign-in removed: still on the login page', stillLogin);
     await ctx.close();
   }
 
-  // ---- 4. Must-change flow: new PIN works on next sign-in ----
+  // ---- 4. Sign-out clears the session token ----
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990001', '123456');
-    await page.waitForSelector('#new-pin', { timeout: 5000 });
-    await page.type('#new-pin', '654321');
-    await page.type('#confirm-pin', '654321');
-    await page.click('button[type="submit"]');
+    await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    // Sign out via Profile, then sign back in with the NEW pin.
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll('button')];
       btns.find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
@@ -647,10 +743,6 @@ try {
     await page.waitForSelector('#employee-id', { timeout: 5000 });
     const tokenAfter = await getToken(page);
     check('sign-out clears session token', tokenBefore !== null && tokenAfter === null);
-    await login(page, '9990001', '654321');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    const forceChangeGone = (await page.$('#new-pin')) === null;
-    check('must-change: new PIN signs in without re-prompting', forceChangeGone);
     await ctx.close();
   }
 
@@ -673,7 +765,7 @@ try {
   // ---- 6. Role views differ ----
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     const teamLeadHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('team lead home: team section present', teamLeadHasTeam);
@@ -681,11 +773,7 @@ try {
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990001', '123456');
-    await page.waitForSelector('#new-pin', { timeout: 5000 });
-    await page.type('#new-pin', '654321');
-    await page.type('#confirm-pin', '654321');
-    await page.click('button[type="submit"]');
+    await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
     const employeeHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('employee home: NO team section', !employeeHasTeam);
@@ -693,7 +781,7 @@ try {
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990004', '123456');
+    await login(page, '9990004');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
     await page.evaluate(() => {
       [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
@@ -715,14 +803,16 @@ try {
   // ---- 7. Screenshots at 375 / 768 / 1440 + overflow checks ----
   for (const width of [375, 768, 1440]) {
     const { ctx, page } = await newPage(browser, width);
-    // Login
+    // Login — wait for the splash to fade first, or the shot shows
+    // the splash instead of the form.
     await page.goto(BASE, { waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => !document.querySelector('[data-splash]'), { timeout: 5000 }).catch(() => {});
     await new Promise((r) => setTimeout(r, 300));
     const loginOv = await overflowCheck(page);
     check(`screenshot login-${width}: no horizontal overflow`, !loginOv.overflow, `scrollWidth=${loginOv.scrollWidth} innerWidth=${loginOv.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, `login-${width}.png`), fullPage: true });
     // Home as Team Lead (richest view: own + team widgets)
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const homeOv = await overflowCheck(page);
@@ -748,19 +838,13 @@ try {
 
   // ---- 8. One home screenshot per role at 1440 ----
   const roleShots = [
-    { id: '9990001', pin: '123456', file: 'home-employee-1440.png', mustChange: true },
-    { id: '9990003', pin: '123456', file: 'home-manager-1440.png', mustChange: false },
-    { id: '9990004', pin: '123456', file: 'home-admin-1440.png', mustChange: false },
+    { id: '9990001', file: 'home-employee-1440.png' },
+    { id: '9990003', file: 'home-manager-1440.png' },
+    { id: '9990004', file: 'home-admin-1440.png' },
   ];
   for (const s of roleShots) {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, s.id, s.pin);
-    if (s.mustChange) {
-      await page.waitForSelector('#new-pin', { timeout: 5000 });
-      await page.type('#new-pin', '654321');
-      await page.type('#confirm-pin', '654321');
-      await page.click('button[type="submit"]');
-    }
+    await login(page, s.id);
     await page.waitForFunction(() => document.body.textContent.includes('Demo'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     await page.screenshot({ path: path.join(QA_DIR, s.file), fullPage: true });
@@ -771,7 +855,7 @@ try {
   // ---- 16. Dashboard page (retail): terminal state, retail link, refresh ----
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
@@ -829,39 +913,54 @@ try {
 
   // ---- 16b. Dashboard ready state (retail): synthetic cache, exact figures ----
   // Seeded with the demo fixture summary for 9990002 (Team Lead), computed
-  // by the Hub's own summarizer — the exact values the proxy returns:
-  // total ৳1,64,000 · FYCP ৳1,56,000 · policies 7 · due ৳34,000 (4 pol) ·
-  // persistency 83.3% (5/6) · active 2 of 3 · leaders Demo Agent ৳67,000,
-  // Demo FA Eleven ৳57,000, Demo FA Twelve ৳15,000 · DEMO badge · scope
-  // "Own + team". The background refresh fails here (no proxy under
-  // file://), so the cached-while-refreshing banner must also show.
+  // by the Hub's own summarizer — the exact values the proxy returns.
+  // The page defaults to Today: total ৳35,000 · FYCP ৳35,000 · policies 1 ·
+  // due ৳34,000 (4 pol) · persistency 83.3% (5/6) · active 2 of 3 ·
+  // leaders Demo Agent ৳35,000, Eleven ৳0, Twelve ৳0. Switching the
+  // dropdown to All time shows total ৳1,64,000 · FYCP ৳1,56,000 ·
+  // policies 7 · leaders Demo Agent ৳67,000, Demo FA Eleven ৳57,000,
+  // Demo FA Twelve ৳15,000 · DEMO badge · scope "Own + team". The
+  // background refresh fails here (no proxy under file://), so the
+  // cached-while-refreshing banner must also show.
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-    await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
-      { summary: demoSummaryFor('9990002', 'team_lead'), employeeId: '9990002', syncedAt: Date.now() },
-    );
+    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead', 'today') }, 'today');
+    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (synthetic cache): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    // KPI values read per card (WidgetCard renders <section aria-label={title}>),
+    // so a figure is attributed to its card — not just present somewhere.
+    const readKpisHere = () =>
+      page.evaluate(() => {
+        const out = {};
+        for (const section of document.querySelectorAll('section[aria-label]')) {
+          const value = section.querySelector('p.text-3xl');
+          if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
+        }
+        return out;
+      });
+    // Default is Today — assert the today figures first.
+    const kpisToday = await readKpisHere();
+    check('dashboard ready (today default): total ৳35,000 + FYCP ৳35,000 + policies 1', kpisToday['Total premium received'] === '৳35,000' && kpisToday.FYCP === '৳35,000' && kpisToday.Policies === '1', JSON.stringify(kpisToday));
+    check('dashboard ready (today): due ৳34,000 + persistency 83.3% + active 2 of 3', kpisToday['Due premium — this month'] === '৳34,000' && kpisToday.Persistency === '83.3%' && kpisToday['Active field FAs'] === '2 of 3', JSON.stringify(kpisToday));
+    const bodyToday = await page.evaluate(() => document.body.textContent);
+    check('dashboard ready (today): leaders still listed (35,000 / 0 / 0)', bodyToday.includes('Demo Agent') && bodyToday.includes('Demo FA Eleven') && bodyToday.includes('Demo FA Twelve'));
+    // Switch the dropdown to All time and assert the all-time figures.
+    await page.select('#period-select', 'all');
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,64,000'),
+      { timeout: 5000 },
+    );
     // Wait for the background refresh to fail so the banner is visible.
     await page.waitForFunction(
       () => document.body.textContent.includes('Refresh failed') || document.body.textContent.includes('রিফ্রেশ ব্যর্থ'),
       { timeout: 10000 },
     ).catch(() => {});
     const body = await page.evaluate(() => document.body.textContent);
-    // KPI values read per card (WidgetCard renders <section aria-label={title}>),
-    // so a figure is attributed to its card — not just present somewhere.
-    const kpis = await page.evaluate(() => {
-      const out = {};
-      for (const section of document.querySelectorAll('section[aria-label]')) {
-        const value = section.querySelector('p.text-3xl');
-        if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
-      }
-      return out;
-    });
+    const kpis = await readKpisHere();
     check('dashboard ready: total premium ৳1,64,000', kpis['Total premium received'] === '৳1,64,000', JSON.stringify(kpis));
     check('dashboard ready: FYCP ৳1,56,000 + policies 7', kpis.FYCP === '৳1,56,000' && kpis.Policies === '7', JSON.stringify(kpis));
     check('dashboard ready: due premium ৳34,000', kpis['Due premium — this month'] === '৳34,000', JSON.stringify(kpis));
@@ -883,22 +982,23 @@ try {
 
   // ---- 16c. Dashboard role views: Employee, Admin, empty scope ----
   // Employee (9990001): own data only — total ৳67,000, persistency 100.0%,
-  // scope "Own data", and NO leaderboard section at all.
+  // scope "Own data", and NO leaderboard section at all. Both the :today
+  // and :all caches are seeded; the page defaults to Today, so the
+  // all-time assertions need the dropdown switched to All time first.
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990001', '123456');
-    await page.waitForSelector('#new-pin', { timeout: 5000 });
-    await page.type('#new-pin', '654321');
-    await page.type('#confirm-pin', '654321');
-    await page.click('button[type="submit"]');
+    await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
-      { summary: demoSummaryFor('9990001', 'employee'), employeeId: '9990001', syncedAt: Date.now() },
-    );
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee', 'today') }, 'today');
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (employee): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    await page.select('#period-select', 'all');
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳67,000'),
+      { timeout: 5000 },
+    );
     const body = await page.evaluate(() => document.body.textContent);
     check('dashboard (employee): own total ৳67,000 + persistency 100.0%', body.includes('৳67,000') && body.includes('100.0%'));
     check('dashboard (employee): scope label Own data', body.includes('Own data'));
@@ -909,15 +1009,18 @@ try {
   // ৳2,34,000, the Unassigned line ৳7,000, scope "Org-wide".
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990004', '123456');
+    await login(page, '9990004');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
-    await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
-      { summary: demoSummaryFor('9990004', 'admin'), employeeId: '9990004', syncedAt: Date.now() },
-    );
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin', 'today') }, 'today');
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (admin): ready state renders', dashPath === 'live', `path=${dashPath}`);
+    await page.select('#period-select', 'all');
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳2,41,000'),
+      { timeout: 5000 },
+    );
     const body = await page.evaluate(() => document.body.textContent);
     check('dashboard (admin): Top Business Executives + Demo BE ৳2,34,000', body.includes('Top Business Executives') && body.includes('Demo BE') && body.includes('৳2,34,000'));
     check('dashboard (admin): Unassigned line ৳7,000', body.includes('Unassigned') && body.includes('৳7,000'));
@@ -925,21 +1028,16 @@ try {
     await ctx.close();
   }
   // Empty scope: the empty state with the no-code note — and no KPI cards.
+  // Only the :today cache is seeded — the page defaults to Today, so the
+  // empty state renders immediately.
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990001', '123456');
-    await page.waitForSelector('#new-pin', { timeout: 5000 });
-    await page.type('#new-pin', '654321');
-    await page.type('#confirm-pin', '654321');
-    await page.click('button[type="submit"]');
+    await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    const emptySummary = demoSummaryFor('9990001', 'employee');
+    const emptySummary = demoSummaryFor('9990001', 'employee', 'today');
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
-    await page.evaluate(
-      (cache) => sessionStorage.setItem('hub-retail-cache-v1:all', JSON.stringify(cache)),
-      { summary: emptySummary, employeeId: '9990001', syncedAt: Date.now() },
-    );
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: emptySummary }, 'today');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (empty scope): empty state renders', dashPath === 'empty', `path=${dashPath}`);
@@ -951,7 +1049,7 @@ try {
   // ---- 17. Due-premium widget (M3) ----
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     const widget = await page.evaluate(() => {
       const sections = [
@@ -973,7 +1071,7 @@ try {
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990003', '123456');
+    await login(page, '9990003');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Manager'), { timeout: 5000 });
     const showing = await page.evaluate(
       () =>
@@ -985,7 +1083,7 @@ try {
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990004', '123456');
+    await login(page, '9990004');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
     const adminWidget = await page.evaluate(() => {
       const el = document.querySelector(
@@ -1089,7 +1187,7 @@ try {
   if (LOCAL_QA) {
     const { ctx, page, errors } = await newPage(browser, 1440);
     try {
-      await login(page, '9990002', '123456');
+      await login(page, '9990002');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
 
       // 14. Tile wiring (read-only — no live navigation).
@@ -1417,7 +1515,7 @@ try {
       }
     });
     try {
-      await login(page, '9990002', '123456');
+      await login(page, '9990002');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
       await page.waitForFunction(
         (names) => names.every((n) => [...document.querySelectorAll('h3')].some((h) => h.textContent === n)),
@@ -1529,7 +1627,7 @@ try {
     ];
     const { ctx, page } = await newPage(browser, 1440);
     try {
-      await login(page, '9990002', '123456');
+      await login(page, '9990002');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
       const headLinks = await page.evaluate(() => ({
         preconnect: [...document.querySelectorAll('link[rel="preconnect"]')].map((l) => l.getAttribute('href')),
@@ -1605,7 +1703,7 @@ try {
   // + Go button, no ModuleTile. Calculators/Proposals pages: unchanged.
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     // Home quick-actions.
     const toolsSection = await page.evaluate(() => {
@@ -1760,7 +1858,7 @@ try {
   // ---- 20b. Leads/Learning pages at 375 px (device gate) ----
   {
     const { ctx, page } = await newPage(browser, 375);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
@@ -1784,7 +1882,7 @@ try {
   // widget.
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
@@ -1836,6 +1934,23 @@ try {
         cards.own["This month's business"]?.sub.includes('DEMO DATA'),
       JSON.stringify(cards.own["This month's business"]),
     );
+    // Sales overview (Mahadi 2026-11-20): all-time retail snapshots —
+    // Total policy sales 7 (distinct New policies, same definition as
+    // the Dashboard Policies KPI) and Total FYCP ৳1,56,000 with the
+    // New ৳1,51,000 · Deferred ৳5,000 sub-text, scoped Own + team.
+    check(
+      'home live sales: Total policy sales 7, New policies · All time',
+      cards.own['Total policy sales']?.value === '7' &&
+        cards.own['Total policy sales']?.sub === 'New policies · All time',
+      JSON.stringify(cards.own['Total policy sales']),
+    );
+    check(
+      'home live sales: Total FYCP ৳1,56,000, New ৳1,51,000 · Deferred ৳5,000',
+      cards.own['Total FYCP']?.value === '৳1,56,000' &&
+        cards.own['Total FYCP']?.sub === 'New ৳1,51,000 · Deferred ৳5,000',
+      JSON.stringify(cards.own['Total FYCP']),
+    );
+    check('home live sales: scope chip Own + team · All time', body.includes('Own + team · All time'));
     check(
       'home live team: 2 cards only (follow-ups 12, learning 45%)',
       Object.keys(cards.team).length === 2 &&
@@ -1870,15 +1985,23 @@ try {
   }
 
   // ---- 21b. Leads page live ready state (Team Lead) ----
+  // The Leads page defaults to Today now, so the leadflow summary is
+  // seeded at :today (the snapshot assertions below are
+  // period-independent); the retail dues feed stays :all.
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', true, 'today'),
+      learning: null,
+      retail: null,
+    }, 'today');
+    await seedFeedCaches(page, '9990002', {
+      leadflow: null,
       learning: null,
       retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
-    });
+    }, 'all');
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
     const strip = await page.evaluate(() => {
@@ -1924,15 +2047,24 @@ try {
   }
 
   // ---- 21c. Learning page live ready state (Team Lead) ----
+  // The Learning page defaults to Today now: seed :today AND :all,
+  // assert the today figures first (9990002 enrolled 0, credits 0 —
+  // the enrolment is 40 days back), then switch the dropdown to All
+  // time and assert the all-time figures (1 / 0 / 0 / 120).
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: null,
+      learning: learningSummaryFor('9990002', 'team_lead', true, 'today'),
+      retail: null,
+    }, 'today');
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
       learning: learningSummaryFor('9990002', 'team_lead', true),
       retail: null,
-    });
+    }, 'all');
     await clickNav(page, 'লার্নিং', 'Learning');
     await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
     const strip = await page.evaluate(() => {
@@ -1960,6 +2092,27 @@ try {
       }, label);
     check('learning live: progress 80% own + 45% team', JSON.stringify(await readStats('Learning in progress')) === JSON.stringify(['80%', '45%']));
     check(
+      'learning live (today default): enrolled 0, completed 0, certificates 0, credits 0',
+      JSON.stringify(await readStats('Courses enrolled')) === JSON.stringify(['0']) &&
+        JSON.stringify(await readStats('Courses completed')) === JSON.stringify(['0']) &&
+        JSON.stringify(await readStats('Certificates')) === JSON.stringify(['0']) &&
+        JSON.stringify(await readStats('Knowledge Credit')) === JSON.stringify(['0']),
+    );
+    await page.select('#period-select', 'all');
+    await page.waitForFunction(
+      () => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        if (!section) return false;
+        const vals = [];
+        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+          const labelEl = valueEl.previousElementSibling;
+          if (labelEl && labelEl.textContent.trim() === 'Courses enrolled') vals.push(valueEl.textContent.trim());
+        }
+        return JSON.stringify(vals) === JSON.stringify(['1']);
+      },
+      { timeout: 5000 },
+    );
+    check(
       'learning live: enrolled 1, completed 0, certificates 0, credits 120',
       JSON.stringify(await readStats('Courses enrolled')) === JSON.stringify(['1']) &&
         JSON.stringify(await readStats('Courses completed')) === JSON.stringify(['0']) &&
@@ -1981,7 +2134,7 @@ try {
   // ---- 21d. Home live at 375 + 768 px (device gate) ----
   for (const width of [375, 768]) {
     const { ctx, page } = await newPage(browser, width);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
@@ -1998,13 +2151,11 @@ try {
   }
 
   // ---- 21e. Empty live states (Employee): plain empty text, no demo figures ----
+  // The empty summaries are seeded at BOTH :all (Home) and :today
+  // (Leads/Learning pages default to Today now).
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990001', '123456');
-    await page.waitForSelector('#new-pin', { timeout: 5000 });
-    await page.type('#new-pin', '654321');
-    await page.type('#confirm-pin', '654321');
-    await page.click('button[type="submit"]');
+    await login(page, '9990001');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
     const emptyLeadflow = leadflowSummaryFor('9990001', 'employee', true);
     emptyLeadflow.empty = true;
@@ -2024,6 +2175,7 @@ try {
       duePremium: 0,
     };
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail });
+    await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'today');
     await page.reload({ waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
     const cards = await page.evaluate(() => {
@@ -2039,6 +2191,7 @@ try {
     check('home empty live: follow-ups empty text', cards["Today's follow-ups"] === 'No follow-ups due today', JSON.stringify(cards));
     check('home empty live: dues this month empty text', cards['Dues this month'] === 'No premiums due this month', JSON.stringify(cards));
     check('home empty live: learning empty text', cards['Learning in progress'] === 'No course in progress', JSON.stringify(cards));
+    check('home empty live: no Sales overview cards (empty retail)', cards['Total policy sales'] === undefined && cards['Total FYCP'] === undefined, JSON.stringify(cards));
     const dueText = await page.evaluate(() => {
       const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
       return el ? el.textContent : '';
@@ -2062,15 +2215,22 @@ try {
   }
 
   // ---- 21f. Fixture mode (demo:true seeds): DEMO chrome, not the unloaded note ----
+  // Seeded at BOTH :all (Home) and :today (the Leads page defaults
+  // to Today now).
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002', '123456');
+    await login(page, '9990002');
     await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead'),
       learning: learningSummaryFor('9990002', 'team_lead'),
       retail: demoSummaryFor('9990002', 'team_lead'),
     });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', false, 'today'),
+      learning: learningSummaryFor('9990002', 'team_lead', false, 'today'),
+      retail: demoSummaryFor('9990002', 'team_lead', 'today'),
+    }, 'today');
     await page.reload({ waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.body.textContent.includes('Demo view for this role'), { timeout: 5000 });
     const body = await page.evaluate(() => document.body.textContent);
@@ -2103,15 +2263,16 @@ try {
   }
 
   // ---- 22. Real-auth login states (Phase 2) ----
-  // The form is the real-login form now: one identifier field (Employee
-  // ID or email) + one credential field, with a forgot link out to the
-  // Learning Hub. Demo sign-in still works behind the QA flag (the
-  // demo notice is still shown in this build) and the demo lockout is
-  // the local one (§3) — the server lockout surfaces via the same alert
-  // (qa:auth-live covers the server side).
+  // The form is the real-login form: one identifier field (Employee
+  // ID or email) + one credential field, with a forgot link out to
+  // the Learning Hub. There is NO demo notice any more — the demo
+  // accounts are gone entirely (Mahadi 2026-11-20), so the page must
+  // not mention a demo ID anywhere. The server lockout surfaces via
+  // the same alert (qa:auth-live covers the server side).
   for (const width of [375, 768, 1440]) {
     const { ctx, page } = await newPage(browser, width);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => !document.querySelector('[data-splash]'), { timeout: 5000 }).catch(() => {});
     await page.waitForSelector('#employee-id', { timeout: 10000 });
     const idLabel = await page.$eval('label[for="employee-id"]', (el) => el.textContent);
     const idPlaceholder = await page.$eval('#employee-id', (el) => el.placeholder);
@@ -2122,7 +2283,7 @@ try {
     check(`login real form ${width}: identifier label`, idLabel.includes('Employee ID or email'), idLabel);
     check(`login real form ${width}: identifier placeholder`, idPlaceholder.includes('2025019 or name@shantalife.com'), idPlaceholder);
     check(`login real form ${width}: forgot link to LH`, forgotHref.includes('shanta-life-learning-hub.vercel.app/login/forgot'), forgotHref);
-    check(`login real form ${width}: demo notice still shown (QA build)`, demoNotice);
+    check(`login real form ${width}: NO demo notice (demo accounts removed)`, !demoNotice);
     // Typing an email switches the credential field to a password field.
     await page.type('#employee-id', 'staff@shantalife.com');
     await new Promise((r) => setTimeout(r, 200));
@@ -2135,7 +2296,9 @@ try {
     await ctx.close();
   }
 
-  // Error state: one wrong PIN shows the message + attempts left.
+  // Error state: a 999xxxx attempt shows the not-configured message
+  // (no demo route any more) — never a wrong-PIN message with
+  // attempts left, which was the old demo-provider behaviour.
   {
     const { ctx, page } = await newPage(browser, 375);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -2146,8 +2309,8 @@ try {
     await page.waitForSelector('[role="alert"]', { timeout: 5000 });
     const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
     check(
-      'login error state: wrong PIN message + attempts left',
-      /Wrong PIN or password/.test(alert) && /4 attempts left/.test(alert),
+      'login error state: 999xxxx attempt shows not-configured, no attempts-left',
+      /not configured|কনফিগার করা হয়নি/i.test(alert) && !/attempts left|চেষ্টা বাকি/i.test(alert),
       alert,
     );
     const ov = await overflowCheck(page);
@@ -2156,7 +2319,9 @@ try {
     await ctx.close();
   }
 
-  // Lockout state: 5 wrong PINs at 375 px (same flow as §3, phone width).
+  // Repeated-error state: 5 wrong submissions at 375 px (same flow as
+  // §3, phone width) — the message stays not-configured, never a
+  // lock message (there is no client-side lockout any more).
   {
     const { ctx, page } = await newPage(browser, 375);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -2172,20 +2337,25 @@ try {
       await new Promise((r) => setTimeout(r, 400));
     }
     const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
-    check('login lockout state 375: 5 wrong PINs locks account', /লক|lock/i.test(alert), alert);
+    check('login error-repeat state 375: still not-configured, never a lock message', /not configured|কনফিগার করা হয়নি/i.test(alert) && !/লক|lock/i.test(alert), alert);
     const ov = await overflowCheck(page);
-    check('login lockout state 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
-    await page.screenshot({ path: path.join(QA_DIR, 'login-locked-375.png'), fullPage: true });
+    check('login error-repeat state 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'login-error-repeat-375.png'), fullPage: true });
     await ctx.close();
   }
-  // ---- 23. Time-frame filter: selector states (Dashboard + Leads + Learning) ----
-  // Each data page at 375/768/1440: seed BOTH the :all and :3m caches
-  // (live mode), open the page, confirm the 'all' figures, click the
-  // 'Last 3 months' pill, and confirm the figures change to the 3m
-  // values while the snapshots stay put. The background refresh fails
-  // under file:// (no proxy) — the pages fall back to the seeded
-  // cache, which is exactly the path under test. Expected 3m values
-  // are the hand-computed fixture values (qa-*-live §2b/§5b).
+  // ---- 23. Time-frame filter: dropdown + Today default + Custom range ----
+  // Each data page at 375/768/1440: seed the :today and :3m caches
+  // (live mode), open the page, confirm the Today figures (the new
+  // default), select 'Last 3 months' from the dropdown, and confirm
+  // the figures change to the 3m values while the snapshots stay put.
+  // The Dashboard also exercises the Custom range: selecting Custom
+  // reveals the date inputs; filling 2026-11-01..2026-11-20 returns
+  // exactly the rows inside it (the this-month values); an invalid
+  // range (to before from) shows the inline error and keeps the last
+  // figures. The background refresh fails under file:// (no proxy) —
+  // the pages fall back to the seeded cache, which is exactly the path
+  // under test. Expected values are the hand-computed fixture values
+  // (qa-*-live §2b/§5b).
   const readKpis = (page) =>
     page.evaluate(() => {
       const out = {};
@@ -2206,22 +2376,43 @@ try {
       }
       return out;
     }, label);
+  const readSummaryStatsWhere = (page, label, want) =>
+    page.waitForFunction(
+      (lbl, wanted) => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        if (!section) return false;
+        const vals = [];
+        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+          const labelEl = valueEl.previousElementSibling;
+          if (labelEl && labelEl.textContent.trim() === lbl) vals.push(valueEl.textContent.trim());
+        }
+        return JSON.stringify(vals) === JSON.stringify(wanted);
+      },
+      { timeout: 5000 },
+      label,
+      want,
+    );
   for (const width of [375, 768, 1440]) {
-    // Dashboard (Team Lead 9990002): total ৳1,64,000 -> ৳1,08,000,
-    // FYCP ৳1,56,000 -> ৳1,00,000, policies 7 -> 3; due ৳34,000 and
-    // persistency 83.3% stay put.
+    // Dashboard (Team Lead 9990002): today total ৳35,000, FYCP
+    // ৳35,000, policies 1; 3m total ৳1,08,000, FYCP ৳1,00,000,
+    // policies 3; due ৳34,000 and persistency 83.3% stay put.
+    // Custom 2026-11-01..2026-11-20 = this-month: total ৳43,000,
+    // FYCP ৳35,000, policies 1.
     {
       const { ctx, page } = await newPage(browser, width);
-      await login(page, '9990002', '123456');
+      await login(page, '9990002');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'today'), demo: false } }, 'today');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', '3m'), demo: false } }, '3m');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'custom', { start: '2026-11-01', end: '2026-11-20' }), demo: false } }, 'custom:2026-11-01:2026-11-20');
       await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
       const dashPath = await waitForDashboardTerminal(page);
       check(`period dashboard ${width}: ready state renders`, dashPath === 'live', `path=${dashPath}`);
-      const kpisAll = await readKpis(page);
-      check(`period dashboard ${width}: all-time total ৳1,64,000`, kpisAll['Total premium received'] === '৳1,64,000', JSON.stringify(kpisAll));
-      await page.click('button[data-period="3m"]');
+      const selectValue = () => page.$eval('#period-select', (el) => el.value);
+      check(`period dashboard ${width}: dropdown defaults to Today`, (await selectValue()) === 'today');
+      const kpisToday = await readKpis(page);
+      check(`period dashboard ${width}: today total ৳35,000 + FYCP ৳35,000 + policies 1`, kpisToday['Total premium received'] === '৳35,000' && kpisToday.FYCP === '৳35,000' && kpisToday.Policies === '1', JSON.stringify(kpisToday));
+      await page.select('#period-select', '3m');
       await page.waitForFunction(
         () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,08,000'),
         { timeout: 5000 },
@@ -2229,38 +2420,53 @@ try {
       const kpis3m = await readKpis(page);
       check(`period dashboard ${width}: 3m total ৳1,08,000 + FYCP ৳1,00,000 + policies 3`, kpis3m['Total premium received'] === '৳1,08,000' && kpis3m.FYCP === '৳1,00,000' && kpis3m.Policies === '3', JSON.stringify(kpis3m));
       check(`period dashboard ${width}: due ৳34,000 + persistency 83.3% unchanged`, kpis3m['Due premium — this month'] === '৳34,000' && kpis3m.Persistency === '83.3%', JSON.stringify(kpis3m));
-      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
-      check(`period dashboard ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      check(`period dashboard ${width}: dropdown value tracks 3m`, (await selectValue()) === '3m');
       const ov = await overflowCheck(page);
       check(`period dashboard ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
       await page.screenshot({ path: path.join(QA_DIR, `dashboard-period-3m-${width}.png`), fullPage: true });
-      await ctx.close();
-    }
-    // Leads (Team Lead 9990002): new leads own 9 -> 5, team 24 -> 11;
-    // overdue 1, open 8/20, converted 1 stay put.
-    {
-      const { ctx, page } = await newPage(browser, width);
-      await login(page, '9990002', '123456');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true), learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
-      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, '3m'), learning: null, retail: null }, '3m');
-      await clickNav(page, 'লিডস', 'Leads');
-      await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
-      check(`period leads ${width}: all-time new leads 9 own + 24 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['9', '24']));
-      await page.click('button[data-period="3m"]');
+      // Custom range: reveal the date inputs, fill the range, and
+      // confirm exactly the rows inside it come back.
+      await page.select('#period-select', 'custom');
+      await page.waitForSelector('#period-custom-from', { timeout: 5000 });
+      await setDateInput(page, '#period-custom-from', '2026-11-01');
+      await setDateInput(page, '#period-custom-to', '2026-11-20');
       await page.waitForFunction(
-        () => {
-          const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
-          if (!section) return false;
-          const vals = [];
-          for (const valueEl of section.querySelectorAll('p.text-2xl')) {
-            const labelEl = valueEl.previousElementSibling;
-            if (labelEl && labelEl.textContent.trim() === 'New leads') vals.push(valueEl.textContent.trim());
-          }
-          return JSON.stringify(vals) === JSON.stringify(['5', '11']);
-        },
+        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳43,000'),
         { timeout: 5000 },
       );
+      const kpisCustom = await readKpis(page);
+      check(`period dashboard ${width}: custom 11-01..11-20 total ৳43,000 + FYCP ৳35,000 + policies 1`, kpisCustom['Total premium received'] === '৳43,000' && kpisCustom.FYCP === '৳35,000' && kpisCustom.Policies === '1', JSON.stringify(kpisCustom));
+      const customLabel = await page.evaluate(() => document.body.textContent.includes('2026-11-01 – 2026-11-20'));
+      check(`period dashboard ${width}: custom range label shown`, customLabel);
+      // Invalid range: to before from — the inline error shows and
+      // the figures stay at the last valid values.
+      await setDateInput(page, '#period-custom-to', '2026-10-01');
+      await page.waitForFunction(
+        () => [...document.querySelectorAll('p[role="alert"]')].some((el) => el.textContent.includes('valid date range')),
+        { timeout: 5000 },
+      );
+      const kpisInvalid = await readKpis(page);
+      check(`period dashboard ${width}: invalid range shows the error and keeps the figures`, kpisInvalid['Total premium received'] === '৳43,000', JSON.stringify(kpisInvalid));
+      if (width === 375) {
+        await page.screenshot({ path: path.join(QA_DIR, 'dashboard-period-custom-375.png'), fullPage: true });
+      }
+      await ctx.close();
+    }
+    // Leads (Team Lead 9990002): today new leads own 2 + team 1;
+    // 3m own 5 + team 11; overdue 1, open 8/20, converted 1 stay put.
+    {
+      const { ctx, page } = await newPage(browser, width);
+      await login(page, '9990002');
+      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, 'today'), learning: null, retail: null }, 'today');
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, '3m'), learning: null, retail: null }, '3m');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
+      await clickNav(page, 'লিডস', 'Leads');
+      await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+      check(`period leads ${width}: dropdown defaults to Today`, (await page.$eval('#period-select', (el) => el.value)) === 'today');
+      check(`period leads ${width}: today new leads 2 own + 1 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['2', '1']));
+      await page.select('#period-select', '3m');
+      await readSummaryStatsWhere(page, 'New leads', ['5', '11']);
       check(`period leads ${width}: 3m new leads 5 own + 11 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['5', '11']));
       check(
         `period leads ${width}: overdue 1, open 8/20, converted 1 unchanged`,
@@ -2268,38 +2474,27 @@ try {
           JSON.stringify(await readSummaryStats(page, 'Open leads')) === JSON.stringify(['8', '20']) &&
           JSON.stringify(await readSummaryStats(page, 'Converted')) === JSON.stringify(['1']),
       );
-      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
-      check(`period leads ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      check(`period leads ${width}: dropdown value tracks 3m`, (await page.$eval('#period-select', (el) => el.value)) === '3m');
       const ov = await overflowCheck(page);
       check(`period leads ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
       await page.screenshot({ path: path.join(QA_DIR, `leads-period-3m-${width}.png`), fullPage: true });
       await ctx.close();
     }
-    // Learning (Admin 9990004, org-wide): enrolled 30 -> 12, completed
-    // 1 -> 0, credits 690 -> 290; certificates 1 stays put.
+    // Learning (Admin 9990004, org-wide): today enrolled 6,
+    // completed 0, credits 140; 3m enrolled 12, completed 0, credits
+    // 290; certificates 1 stays put.
     {
       const { ctx, page } = await newPage(browser, width);
-      await login(page, '9990004', '123456');
+      await login(page, '9990004');
       await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true), retail: null }, 'all');
+      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true, 'today'), retail: null }, 'today');
       await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true, '3m'), retail: null }, '3m');
       await clickNav(page, 'লার্নিং', 'Learning');
       await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
-      check(`period learning ${width}: all-time enrolled 30, credits 690`, JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['30']) && JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['690']));
-      await page.click('button[data-period="3m"]');
-      await page.waitForFunction(
-        () => {
-          const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
-          if (!section) return false;
-          const vals = [];
-          for (const valueEl of section.querySelectorAll('p.text-2xl')) {
-            const labelEl = valueEl.previousElementSibling;
-            if (labelEl && labelEl.textContent.trim() === 'Courses enrolled') vals.push(valueEl.textContent.trim());
-          }
-          return JSON.stringify(vals) === JSON.stringify(['12']);
-        },
-        { timeout: 5000 },
-      );
+      check(`period learning ${width}: dropdown defaults to Today`, (await page.$eval('#period-select', (el) => el.value)) === 'today');
+      check(`period learning ${width}: today enrolled 6, completed 0, credits 140`, JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['6']) && JSON.stringify(await readSummaryStats(page, 'Courses completed')) === JSON.stringify(['0']) && JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['140']));
+      await page.select('#period-select', '3m');
+      await readSummaryStatsWhere(page, 'Courses enrolled', ['12']);
       check(
         `period learning ${width}: 3m enrolled 12, completed 0, credits 290, certs 1`,
         JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['12']) &&
@@ -2307,13 +2502,75 @@ try {
           JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['290']) &&
           JSON.stringify(await readSummaryStats(page, 'Certificates')) === JSON.stringify(['1']),
       );
-      const pressed = await page.$eval('button[data-period="3m"]', (el) => el.getAttribute('aria-pressed'));
-      check(`period learning ${width}: 3m pill pressed`, pressed === 'true', String(pressed));
+      check(`period learning ${width}: dropdown value tracks 3m`, (await page.$eval('#period-select', (el) => el.value)) === '3m');
       const ov = await overflowCheck(page);
       check(`period learning ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
       await page.screenshot({ path: path.join(QA_DIR, `learning-period-3m-${width}.png`), fullPage: true });
       await ctx.close();
     }
+  }
+
+  // ---- 24. Demo removal: no DEMO badge in the header, for ANY session ----
+  // The header badge is gone entirely (Mahadi 2026-11-20) — check the
+  // <header> element's text specifically, because the Due widget's
+  // DEMO badge and the Dashboard's DEMO badge still exist elsewhere
+  // on the page (those are correct: they mark fixture data, not the
+  // session). Both a 999xxxx session and a real-user session
+  // (2025019, admin) must show no badge in the header.
+  for (const [id, role, name] of [
+    ['9990002', 'team_lead', 'Demo Team Lead'],
+    ['2025019', 'admin', 'Mahadi Hasan'],
+  ]) {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, id, role, name);
+    await page.waitForFunction((n) => document.body.textContent.includes(n), { timeout: 5000 }, name);
+    const headerText = await page.evaluate(() => document.querySelector('header')?.textContent ?? '');
+    check(`header ${id}: no DEMO badge`, !headerText.includes('DEMO DATA') && !headerText.includes('ডেমো ডেটা'), headerText.slice(0, 120));
+    await ctx.close();
+  }
+
+  // ---- 25. Splash screen + Learning Hub-style login visuals ----
+  // The splash shows on first load (branded: logo + Agent Hub) and
+  // fades within ~1.5s; the login page has the LH-style photo panel
+  // (1440), wave band (375) and animated card, with logo fallbacks
+  // when the live assets cannot load (no external network here).
+  for (const width of [375, 1440]) {
+    const { ctx, page } = await newPage(browser, width);
+    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('[data-splash]', { timeout: 5000 });
+    const splashSeenAt = Date.now();
+    check(`splash ${width}: present on first load`, true);
+    await page.screenshot({ path: path.join(QA_DIR, `splash-${width}.png`), fullPage: true });
+    await page.waitForFunction(() => !document.querySelector('[data-splash]'), { timeout: 5000 });
+    const splashMs = Date.now() - splashSeenAt;
+    // ~1s by design (700ms minimum + 300ms fade); 3s allows for the
+    // screenshot time in between.
+    check(`splash ${width}: gone shortly after appearing`, splashMs < 3000, `${splashMs}ms`);
+    await page.waitForSelector('#employee-id', { timeout: 5000 });
+    const cardAnimated = await page.evaluate(() => !!document.querySelector('.animate-hub-page'));
+    check(`login visuals ${width}: card entrance animation class present`, cardAnimated);
+    const accentPresent = await page.evaluate(() => !!document.querySelector('.animate-hub-accent'));
+    check(`login visuals ${width}: accent bar present`, accentPresent);
+    if (width === 1440) {
+      const panelImg = await page.evaluate(() => !!document.querySelector('img[src*="field-training-1.jpg"]'));
+      check('login visuals 1440: photo panel image element present', panelImg);
+      // The live white logo cannot load here — the fallback mark must
+      // take its place (the <img> unmounts on error).
+      await page.waitForFunction(() => !document.querySelector('img[src*="logo-white.png"]'), { timeout: 5000 }).catch(() => {});
+      const whiteLogoGone = await page.evaluate(() => !document.querySelector('img[src*="logo-white.png"]'));
+      check('login visuals 1440: white logo falls back when it cannot load', whiteLogoGone);
+      const panelHeadline = await page.evaluate(() => document.body.textContent.includes('One login. Every field tool.'));
+      check('login visuals 1440: panel headline present', panelHeadline);
+    } else {
+      const wave = await page.evaluate(() => !!document.querySelector('svg[data-wave]'));
+      check('login visuals 375: wave band present', wave);
+      await page.waitForFunction(() => !document.querySelector('img[src*="logo-color.png"]'), { timeout: 5000 }).catch(() => {});
+      const colorLogoGone = await page.evaluate(() => !document.querySelector('img[src*="logo-color.png"]'));
+      check('login visuals 375: color logo falls back when it cannot load', colorLogoGone);
+    }
+    const ov = await overflowCheck(page);
+    check(`login visuals ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await ctx.close();
   }
 } finally {
   await browser.close();

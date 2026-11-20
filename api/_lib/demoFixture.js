@@ -38,9 +38,14 @@
  *
  * Period spread (pinned to 2026-11-20 in the QA): D1002 sits 100 days
  * back (in 6m, out of 3m) so the periods differ visibly — org totals:
- * this-month 83,000 (1 pol) · 3m 185,000 (5 pol) · 6m 205,000 (6 pol) ·
- * this-year 241,000 (9 pol, = all time). Due / persistency / active
- * FAs are window-fixed and never move with the period.
+ * today 35,000 (1 pol) · this-month 113,000 (2 pol) · 3m 185,000 (5
+ * pol) · 6m 205,000 (6 pol) · this-year 241,000 (9 pol, = all time).
+ * Due / persistency / active FAs are window-fixed and never move with
+ * the period. D1001's two receipts are dated TODAY (the New was 30
+ * days back, the Deferred 10 days back) so the Today default shows
+ * non-zero business for every demo role (9990001 sits in every
+ * scope); both records stay inside 3m/6m/this-year/all, so only
+ * this-month moved (83,000 → 113,000, 1 → 2 pol).
  */
 import { addMonthsIso } from './retailSummary.js';
 
@@ -170,8 +175,11 @@ export function buildDemoPayload(todayIso) {
 
   const records = [
     // 9990001: 30,000 + 5,000 + 20,000 + T9001 12,000 = 67,000 (3 pol)
-    record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 30), type: 'New', amount: 30000 }),
-    record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 10), type: 'Deferred', amount: 5000 }),
+    // D1001's receipts are dated TODAY so the Today default is
+    // non-zero for every role (see the header comment). D1001 is
+    // sheet-covered, so moving them cannot touch the ledger fallback.
+    record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 0), type: 'New', amount: 30000 }),
+    record({ policy: 'D1001', faCode: '9990001', date: daysAgo(today, 0), type: 'Deferred', amount: 5000 }),
     // D1002 sits 100 days back: inside the 6m window, outside 3m, so
     // the two periods differ (see the header comment). It is
     // sheet-covered, so moving it cannot touch the ledger fallback.

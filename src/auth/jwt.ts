@@ -8,12 +8,16 @@
  *   would be public by definition. RS256 fixes that: only the issuer holds
  *   the private key; modules verify with the PUBLIC key bundled in code
  *   (see ./keys.ts). See docs/SSO_TOKEN.md.
- * - `signSsoToken` exists ONLY for dev/QA builds, where the Hub signs demo
- *   tokens locally with a dev-only private key from VITE_JWT_PRIVATE_KEY_B64.
- *   Production tokens MUST be issued server-side (Supabase Edge Function)
- *   with a production key the browser never sees. The build-target guard in
- *   vite.config.ts refuses a production-target build with any VITE_JWT_*
- *   signing variable set.
+ * - `signSsoToken` is used ONLY by the QA harness (Node): the harness
+ *   bundles this file and signs test tokens with the dev key from
+ *   `.env` to seed sessions and call the proxies directly. The APP
+ *   bundle never signs — tokens come from the server
+ *   (`api/hub-auth.js`); the dev signing path in the browser was
+ *   removed with the demo accounts (Mahadi 2026-11-20). Production
+ *   tokens MUST be issued server-side with a production key the
+ *   browser never sees. The build-target guard in vite.config.ts
+ *   refuses a production-target build with any VITE_JWT_* signing
+ *   variable set.
  * - `verifySsoToken` is the shared verification logic: the Hub uses it on
  *   session restore and on its expiry timer, and joined modules implement
  *   the same checks (see the Milestone 2 protocol). It fails closed — any
@@ -105,8 +109,9 @@ function importPublicKey(publicKeyPem: string): Promise<CryptoKey> {
 }
 
 /**
- * Sign an SSO token (RS256). DEV/QA ONLY — see the file header.
- * `privateKeyB64` is the PKCS#8 DER private key, base64-encoded.
+ * Sign an SSO token (RS256). QA-HARNESS ONLY (Node) — see the file
+ * header. The app bundle never calls this. `privateKeyB64` is the
+ * PKCS#8 DER private key, base64-encoded.
  */
 export async function signSsoToken(
   claims: Omit<SsoClaims, 'iat' | 'exp' | 'iss'>,

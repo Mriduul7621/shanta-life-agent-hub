@@ -16,15 +16,20 @@
  * leaves the server (stricter than spec §9.1, which allows returning the
  * visible slice).
  *
- * Time-frame filter: buildRetailIndex takes a period ('this-month' /
- * '3m' / '6m' / 'this-year' / 'all', default 'all'). The BUSINESS
- * buckets (FA / direct / residual / BE totals / org) are built from the
+ * Time-frame filter: buildRetailIndex takes a period ('today' /
+ * 'this-month' / '3m' / '6m' / 'this-year' / 'all' / 'custom',
+ * default 'all' — the summarizer default stays 'all'; only the
+ * proxy/client default is 'today', see api/_lib/periods.js) and, for
+ * 'custom', a validated { start, end } range. The BUSINESS buckets
+ * (FA / direct / residual / BE totals / org) are built from the
  * PR rows whose `date` falls in the window, so Total Premium / FYCP /
  * Policies / the leaderboard / the Unassigned line all follow the
  * period. Due Premium (this calendar month), Persistency (cumulative)
  * and Active FAs (last 6 months) keep their OWN windows — they are
  * computed from the unfiltered records / due sheet, so they never move
- * with the period selector.
+ * with the period selector. The summary also exposes the raw
+ * newPremium / deferredPremium sums (FYCP = new + deferred) for the
+ * Home FYCP card's sub-text.
  */
 import { periodDateWindow } from './periods.js';
 
@@ -204,7 +209,7 @@ function buildLedgers(records, asOf) {
 }
 
 // ---- Index: everything the summary needs, built once per payload+today ----
-export function buildRetailIndex(payload, todayIso, period = 'all') {
+export function buildRetailIndex(payload, todayIso, period = 'all', customRange = null) {
   const today = todayIso || dhakaToday();
   const monthStart = `${today.slice(0, 7)}-01`;
   const monthEnd = monthEndIso(today);
@@ -218,7 +223,7 @@ export function buildRetailIndex(payload, todayIso, period = 'all') {
   // strings — string compare is exact). 'all' = no filtering, the
   // index is identical to the pre-filter build. Due / persistency /
   // active-FA computation below always uses the full `records`.
-  const periodWindow = periodDateWindow(period, today);
+  const periodWindow = periodDateWindow(period, today, customRange);
   const businessRecords = periodWindow
     ? records.filter((r) => r.date >= periodWindow.start && r.date <= periodWindow.end)
     : records;
@@ -777,10 +782,11 @@ function scopeUnassigned(index, scope) {
 /**
  * The Dashboard summary for one user. `todayIso` is the Dhaka date
  * (YYYY-MM-DD); pass it explicitly in tests for determinism. `period`
- * filters the business aggregates (default 'all' = no filtering).
+ * filters the business aggregates (default 'all' = no filtering);
+ * for 'custom', pass the validated { start, end } range.
  */
-export function summarizeRetail(payload, user, todayIso, period = 'all') {
-  const index = buildRetailIndex(payload, todayIso, period);
+export function summarizeRetail(payload, user, todayIso, period = 'all', customRange = null) {
+  const index = buildRetailIndex(payload, todayIso, period, customRange);
   return summarizeWithIndex(index, user);
 }
 
@@ -831,6 +837,10 @@ export function summarizeWithIndex(index, user) {
     deferredRatio: business.total > 0 ? (business.deferred / business.total) * 100 : null,
     renewalRatio: business.total > 0 ? (business.renewal / business.total) * 100 : null,
     fycp: business.fycp,
+    // Raw New / Deferred sums (FYCP = new + deferred) — the Home FYCP
+    // card's sub-text. Same columns the ratios above are computed from.
+    newPremium: business.new,
+    deferredPremium: business.deferred,
     policies: business.policies,
     duePremium: due.total,
     duePolicies: due.policies,
