@@ -23,7 +23,7 @@
  *     Without the vars this section SKIPs gracefully (exit 0) — live
  *     verification then runs post-push against the deployed preview,
  *     where the vars exist.
- *  2. Demo fixture: the synthetic slice's hand-computed values, exact.
+ *  2. Test fixture: the synthetic slice's hand-computed values, exact.
  *     Pinned to 2026-11-20 (FIXTURE_TODAY) so the bucket expectations
  *     are deterministic.
  *  2b. Time-frame filter (fixture, pinned date): createdInPeriod per
@@ -38,13 +38,14 @@
  *     (src/auth/keys.ts).
  *  4. Proxy handler: the real handler with a PostgREST stub serving
  *     the fixture rows (plus one stub-only real user) and ephemeral-key
- *     JWTs — 401s, 405, demo fixture gating (flag on/off, production
- *     env), live-path scoping, no-PII canaries in the stub rows, the
- *     terminal-status fallback, the subordinates-missing retry (BFS),
- *     and the custom_fields-missing retry. Period handling: invalid
- *     period -> 400, demo + live (count-query) paths honour ?period=;
- *     the default period is Today; custom ranges return exactly the
- *     rows inside them and invalid custom ranges -> 400.
+ *     JWTs — 401s, 405, a 999xxxx test caller down the live path (the
+ *     demo fixture gate is gone, Mahadi 2026-11-20), live-path
+ *     scoping, no-PII canaries in the stub rows, the terminal-status
+ *     fallback, the subordinates-missing retry (BFS), and the
+ *     custom_fields-missing retry. Period handling: invalid period
+ *     -> 400, the live (count-query) path honours ?period=; the
+ *     default period is Today; custom ranges return exactly the rows
+ *     inside them and invalid custom ranges -> 400.
  *
  * Read-only: SELECTs only against LeadFlow Supabase, no writes. The
  * proxy section never touches the network (stubbed fetch). Exits
@@ -59,7 +60,7 @@ import {
   aggregateLeadCounts,
   scopeSetsFor,
 } from '../api/_lib/leadflowSummary.js';
-import { buildLeadflowFixture } from '../api/_lib/demoFixtureLeadflow.js';
+import { buildLeadflowTestFixture } from './test-fixtures/testFixtureLeadflow.js';
 import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -210,7 +211,6 @@ if (!hasLive) {
   }
   console.log(`INFO  PII canaries collected: ${canaries.length} values (not shown)`);
 
-  delete process.env.HUB_DEMO_FIXTURE;
   const { default: liveHandler } = await import('../api/leadflow-data.js?live=1');
   const bodies = [];
   if (leadUser) {
@@ -218,7 +218,7 @@ if (!hasLive) {
     const { res, json } = await callHandler(liveHandler, mockReq({ token: t }));
     liveAdmin = json;
     bodies.push(res.body);
-    check('live admin: 200, org scope, demo:false', res.statusCode === 200 && json?.scope === 'org' && json?.demo === false, `status=${res.statusCode} scope=${json?.scope}`);
+    check('live admin: 200, org scope', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
     // NOTE: org lead volume is data, not an invariant — a young
     // LeadFlow may genuinely hold zero leads. Check well-formedness;
     // the INFO line below reports the live count.
@@ -262,9 +262,9 @@ if (!hasLive) {
   }
 }
 
-// ---- 2. Demo fixture exact values (pinned date) ----
+// ---- 2. Test fixture exact values (pinned date) ----
 function summarizeFixture(employeeId, role) {
-  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const fixture = buildLeadflowTestFixture(FIXTURE_TODAY);
   const scopes = scopeSetsFor(fixture.users, employeeId, role);
   if (!scopes) {
     return summarizeLeadflow(
@@ -349,7 +349,7 @@ function summarizeFixture(employeeId, role) {
   // overdue and upcoming are separate buckets, never mixed in.
   // Recomputed straight from the raw fixture rows.
   {
-    const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+    const fixture = buildLeadflowTestFixture(FIXTURE_TODAY);
     const { startMs, endMs } = dhakaDayBounds(FIXTURE_TODAY);
     const terminal = new Set([...(fixture.terminalStatuses || [])].map((s) => String(s).trim().toLowerCase()));
     const inToday = fixture.leads.filter((row) => {
@@ -370,7 +370,7 @@ function summarizeFixture(employeeId, role) {
 
 // ---- 2b. Time-frame filter (fixture, pinned date) ----
 function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
-  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const fixture = buildLeadflowTestFixture(FIXTURE_TODAY);
   const scopes = scopeSetsFor(fixture.users, employeeId, role);
   const periodMs = periodMsWindow(period, FIXTURE_TODAY, customRange);
   const periodWindow = periodDateWindow(period, FIXTURE_TODAY, customRange);
@@ -412,7 +412,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // Independent recomputation from the raw fixture rows for the
   // team-lead scopes (own + team): count rows whose assignee is in
   // scope and whose created_at falls in the window.
-  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const fixture = buildLeadflowTestFixture(FIXTURE_TODAY);
   const uuidToEmp = new Map(fixture.users.map((u) => [String(u.id), String(u.employee_id)]));
   const leadScopes = scopeSetsFor(fixture.users, '9990002', 'team_lead');
   const ownEmps = new Set([...leadScopes.ownUuids].map((id) => uuidToEmp.get(id)));
@@ -458,7 +458,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // 3m window pinned 2026-11-20: [2026-08-20T00:00 Dhaka,
   // 2026-11-21T00:00 Dhaka) = [2026-08-19T18:00Z, 2026-11-20T18:00Z).
   {
-    const fx = buildLeadflowFixture(FIXTURE_TODAY);
+    const fx = buildLeadflowTestFixture(FIXTURE_TODAY);
     const byUuid = new Map(fx.users.map((u) => [String(u.id), u]));
     const byEmp = new Map(fx.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
     const ownUuid = new Set([String(fx.users.find((u) => u.employee_id === '9990001').id)]);
@@ -512,7 +512,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // the subordinates-primary rule and the BFS fallback disagree about
   // the team, which is exactly what the drift tests assert).
   const STUB_TODAY = dhakaTodayIso();
-  const stubFixture = buildLeadflowFixture(STUB_TODAY);
+  const stubFixture = buildLeadflowTestFixture(STUB_TODAY);
   // The stub user's UUID follows the fixture's padding (padStart 12);
   // the manager link is derived from the fixture row (never hand-typed).
   const stubUserId = `00000000-0000-0000-0000-${'2025001'.padStart(12, '0')}`;
@@ -690,7 +690,6 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
 
   process.env.LEADFLOW_SUPABASE_URL = 'https://stub.supabase.co';
   process.env.LEADFLOW_SERVICE_ROLE_KEY = 'stub-key';
-  process.env.HUB_DEMO_FIXTURE = 'true';
   process.env.VERCEL_ENV = 'preview';
 
   const realFetch = globalThis.fetch;
@@ -727,34 +726,36 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     check('proxy: POST -> 405', res.statusCode === 405, String(res.statusCode));
   }
   {
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // A 999xxxx admin goes down the LIVE path (the demo fixture gate
+    // is gone, Mahadi 2026-11-20): admin sees the stub org — 83
+    // fixture leads + 3 stub leads, today 49 + 1.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo admin -> 200, fixture (demo:true)', res.statusCode === 200 && json?.demo === true, `status=${res.statusCode} demo=${json?.demo}`);
-    check('proxy: demo admin fixture total 83, today 49', json?.leads?.total === 83 && json?.followups?.today === 49, `total=${json?.leads?.total} today=${json?.followups?.today}`);
+    check('proxy: 999 admin -> 200, live stub org', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
+    check('proxy: 999 admin stub org total 86, today 50', json?.leads?.total === 86 && json?.followups?.today === 50, `total=${json?.leads?.total} today=${json?.followups?.today}`);
+    check('proxy: 999 admin summary carries no demo field', !('demo' in (json ?? {})), '');
     check('proxy: Cache-Control private, no-store', res.headers['Cache-Control'] === 'private, no-store', res.headers['Cache-Control']);
-    check('proxy: fixture response has no canary PII', !res.body.includes('CANARY') && !res.body.includes('01700000001'), '');
+    check('proxy: response has no canary PII', !res.body.includes('CANARY') && !res.body.includes('01700000001'), '');
   }
   {
-    // Live path through the stub (non-demo caller): exact counts from
+    // Live path through the stub (a real-ID caller): exact counts from
     // the PostgREST count queries, not the fixture aggregator.
     const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: stub user live -> 200, demo:false', res.statusCode === 200 && json?.demo === false, `status=${res.statusCode} demo=${json?.demo}`);
+    check('proxy: stub user live -> 200', res.statusCode === 200, `status=${res.statusCode}`);
     check('proxy: stub user followups 1/1/1 (all 3)', json?.followups?.today === 1 && json?.followups?.overdue === 1 && json?.followups?.upcoming === 1 && json?.followups?.all === 3, JSON.stringify(json?.followups));
     check('proxy: stub user total 3 open 3 collected 1', json?.leads?.total === 3 && json?.leads?.open === 3 && json?.leads?.todayCollection === 1, JSON.stringify(json?.leads));
     check('proxy: live response has no canary PII', !res.body.includes('CANARY') && !res.body.includes('01700000001') && !res.body.includes('customer_name'), '');
   }
   {
-    // Flag off: a demo caller goes down the LIVE path (subordinates
+    // A 999xxxx team_lead goes down the LIVE path (subordinates
     // primary — 2025001 is not in 9990002's subordinates, so the team
-    // is the 3 FAs, today 12).
-    delete process.env.HUB_DEMO_FIXTURE;
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    // is the 3 FAs, today 12). No flag exists any more.
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo w/o flag -> live path, demo:false', res.statusCode === 200 && json?.demo === false, `demo=${json?.demo}`);
+    check('proxy: 999 team_lead -> live path', res.statusCode === 200 && json?.scope === 'team', `status=${res.statusCode} scope=${json?.scope}`);
     check('proxy: live team_lead own 4 / team 12 (subordinates primary)', json?.followups?.today === 4 && json?.team?.followups?.today === 12, `own=${json?.followups?.today} team=${json?.team?.followups?.today}`);
     check('proxy: live team_lead teamSize 3', json?.team?.teamSize === 3, String(json?.team?.teamSize));
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   {
     const t = signToken({ sub: '2025999', name: 'Nobody', role: 'employee' });
@@ -768,52 +769,53 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     // total = 83 fixture leads + 3 extra stub leads.
     const t = signToken({ sub: '2025999', name: 'Nobody', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: admin w/o account -> org-wide, not empty', res.statusCode === 200 && json?.scope === 'org' && json?.demo === false && json?.empty === false, `status=${res.statusCode} scope=${json?.scope} empty=${json?.empty}`);
+    check('proxy: admin w/o account -> org-wide, not empty', res.statusCode === 200 && json?.scope === 'org' && json?.empty === false, `status=${res.statusCode} scope=${json?.scope} empty=${json?.empty}`);
     check('proxy: admin w/o account -> org total 86', json?.leads?.total === 86, `total=${json?.leads?.total}`);
   }
   {
-    // VERCEL_ENV is 'production' on this project's deployments — the
-    // fixture must serve with the flag set regardless (live bug
-    // 2026-11-20).
+    // VERCEL_ENV is 'production' on this project's deployments — a
+    // 999xxxx caller is still on the live path there: no fixture
+    // gate exists in any env.
     process.env.VERCEL_ENV = 'production';
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
+    check('proxy: 999 team_lead in production env -> live path, team scope', res.statusCode === 200 && json?.scope === 'team' && json?.followups?.today === 4 && json?.team?.followups?.today === 12, `scope=${json?.scope} own=${json?.followups?.today} team=${json?.team?.followups?.today}`);
     process.env.VERCEL_ENV = 'preview';
   }
   {
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=bogus' }));
     check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
   }
   {
-    // Demo path honours ?period= — the fixture is relative-dated, so
-    // its 3m createdInPeriod (36 of 83) holds on any day (§2b).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Live path honours ?period= — the stub org is 83 fixture leads
+    // + 3 stub leads (created today / 5 days ago — always inside
+    // 3m), so 3m createdInPeriod is 36 + 3 = 39 of 86.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=3m' }));
-    check('proxy: demo ?period=3m -> createdInPeriod 36 of 83', res.statusCode === 200 && json?.demo === true && json?.leads?.createdInPeriod === 36 && json?.leads?.total === 83, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
-    check('proxy: demo ?period=3m echoes period', json?.period === '3m', String(json?.period));
+    check('proxy: 999 admin ?period=3m -> createdInPeriod 39 of 86', res.statusCode === 200 && json?.leads?.createdInPeriod === 39 && json?.leads?.total === 86, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
+    check('proxy: 999 admin ?period=3m echoes period', json?.period === '3m', String(json?.period));
   }
   {
-    // Default period is Today now: a bare demo call returns the
-    // today window (fixture: 4 leads created today).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Default period is Today now: a bare call returns the today
+    // window (stub org: 4 fixture leads + 1 stub lead created today).
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: default period is today (createdInPeriod 4)', res.statusCode === 200 && json?.period === 'today' && json?.leads?.createdInPeriod === 4, `period=${json?.period} createdInPeriod=${json?.leads?.createdInPeriod}`);
+    check('proxy: default period is today (createdInPeriod 5)', res.statusCode === 200 && json?.period === 'today' && json?.leads?.createdInPeriod === 5, `period=${json?.period} createdInPeriod=${json?.leads?.createdInPeriod}`);
   }
   {
-    // Custom ranges through the handler, demo + live paths. The
-    // fixture is relative-dated, so [today, today] is 4 (demo org)
-    // and [3m start, today] is 36; the live stub org adds the 1 stub
-    // lead created today (5) and all 3 stub leads inside 3m (39).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Custom ranges through the handler: the stub org is 83 fixture
+    // leads + 3 stub leads, so [today, today] is 4 + 1 = 5 and [3m
+    // start, today] is 36 + 3 = 39, for a 999 admin and for an
+    // unknown-ID admin alike (both see the org).
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const todayIso = STUB_TODAY;
     const start3m = periodDateWindow('3m', todayIso).start;
     const { res: resD1, json: jsonD1 } = await callHandler(handler, mockReq({ token: t, url: `/api/leadflow-data?period=custom&from=${todayIso}&to=${todayIso}` }));
-    check('proxy: demo custom [today, today] -> createdInPeriod 4', resD1.statusCode === 200 && jsonD1?.leads?.createdInPeriod === 4, `createdInPeriod=${jsonD1?.leads?.createdInPeriod}`);
-    check('proxy: demo custom echoes period + window', jsonD1?.period === 'custom' && jsonD1?.periodWindow?.start === todayIso && jsonD1?.periodWindow?.end === todayIso, `${jsonD1?.period} ${JSON.stringify(jsonD1?.periodWindow)}`);
+    check('proxy: 999 admin custom [today, today] -> createdInPeriod 5', resD1.statusCode === 200 && jsonD1?.leads?.createdInPeriod === 5, `createdInPeriod=${jsonD1?.leads?.createdInPeriod}`);
+    check('proxy: 999 admin custom echoes period + window', jsonD1?.period === 'custom' && jsonD1?.periodWindow?.start === todayIso && jsonD1?.periodWindow?.end === todayIso, `${jsonD1?.period} ${JSON.stringify(jsonD1?.periodWindow)}`);
     const { res: resD2, json: jsonD2 } = await callHandler(handler, mockReq({ token: t, url: `/api/leadflow-data?period=custom&from=${start3m}&to=${todayIso}` }));
-    check('proxy: demo custom [3m start, today] -> createdInPeriod 36', resD2.statusCode === 200 && jsonD2?.leads?.createdInPeriod === 36, `createdInPeriod=${jsonD2?.leads?.createdInPeriod}`);
+    check('proxy: 999 admin custom [3m start, today] -> createdInPeriod 39', resD2.statusCode === 200 && jsonD2?.leads?.createdInPeriod === 39, `createdInPeriod=${jsonD2?.leads?.createdInPeriod}`);
     const tLive = signToken({ sub: '2025999', name: 'Nobody', role: 'admin' });
     const { res: resL1, json: jsonL1 } = await callHandler(handler, mockReq({ token: tLive, url: `/api/leadflow-data?period=custom&from=${todayIso}&to=${todayIso}` }));
     check('proxy: live custom [today, today] -> createdInPeriod 5 (4 + 1 stub)', resL1.statusCode === 200 && jsonL1?.leads?.createdInPeriod === 5, `createdInPeriod=${jsonL1?.leads?.createdInPeriod}`);
@@ -822,7 +824,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   }
   {
     // Invalid custom ranges are 400s, never silent fallbacks.
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const cases = [
       ['custom without a range', '/api/leadflow-data?period=custom'],
       ['custom from > to', '/api/leadflow-data?period=custom&from=2026-11-20&to=2026-11-01'],
@@ -841,7 +843,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     // ago — always inside 3m), so 3m createdInPeriod is 36 + 3 = 39.
     const t = signToken({ sub: '2025999', name: 'Nobody', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/leadflow-data?period=3m' }));
-    check('proxy: live org ?period=3m -> createdInPeriod 39 of 86', res.statusCode === 200 && json?.demo === false && json?.leads?.createdInPeriod === 39 && json?.leads?.total === 86, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
+    check('proxy: live org ?period=3m -> createdInPeriod 39 of 86', res.statusCode === 200 && json?.leads?.createdInPeriod === 39 && json?.leads?.total === 86, `createdInPeriod=${json?.leads?.createdInPeriod} total=${json?.leads?.total}`);
     check('proxy: live ?period=3m echoes period + window', json?.period === '3m' && json?.periodWindow?.start != null, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
   }
   {
@@ -859,35 +861,29 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // Drift: options unreadable -> terminal fallback, same numbers
   // (the fallback set equals the fixture's terminal set).
   {
-    delete process.env.HUB_DEMO_FIXTURE;
     globalThis.fetch = makeStub('no-options');
     const { default: h2 } = await import('../api/leadflow-data.js?stub=no-options');
     const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res, json } = await callHandler(h2, mockReq({ token: t }));
     check('proxy: options down -> terminalFallback true, counts intact', res.statusCode === 200 && json?.terminalFallback === true && json?.leads?.total === 3, `fallback=${json?.terminalFallback} total=${json?.leads?.total}`);
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   // Drift: users.subordinates missing -> retry without it, BFS over
   // manager_id finds 2025001 too (team today 13, not 12).
   {
-    delete process.env.HUB_DEMO_FIXTURE;
     globalThis.fetch = makeStub('no-subordinates');
     const { default: h3 } = await import('../api/leadflow-data.js?stub=no-subordinates');
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(h3, mockReq({ token: t }));
     check('proxy: subordinates missing -> BFS fallback, team today 13', res.statusCode === 200 && json?.team?.followups?.today === 13 && json?.team?.teamSize === 4, `team today=${json?.team?.followups?.today} teamSize=${json?.team?.teamSize}`);
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   // Drift: leads.custom_fields missing -> retry without the fallback
   // arm; assigned_to counts stay exact.
   {
-    delete process.env.HUB_DEMO_FIXTURE;
     globalThis.fetch = makeStub('no-custom-fields');
     const { default: h4 } = await import('../api/leadflow-data.js?stub=no-custom-fields');
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(h4, mockReq({ token: t }));
     check('proxy: custom_fields missing -> counts intact (team 12)', res.statusCode === 200 && json?.team?.followups?.today === 12, `team today=${json?.team?.followups?.today}`);
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   globalThis.fetch = realFetch;
 }

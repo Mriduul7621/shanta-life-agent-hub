@@ -35,14 +35,12 @@
  * statuses fall back to Converted + Not Interested and
  * `terminalFallback: true` is reported.
  *
- * Demo: when HUB_DEMO_FIXTURE=true AND the caller is a 999xxxx demo
- * user, a synthetic fixture slice is summarized instead (same
- * summarizer as live data). NO VERCEL_ENV check — this project's
- * deployments run on the production target, so VERCEL_ENV is always
- * 'production' here and such a check silently disables the fixture
- * (live bug 2026-11-20). The real production lock is the
- * vite.config build guard: a HUB_BUILD_TARGET=production build FAILS
- * with the flag set.
+ * NO DEMO ANYWHERE (Mahadi 2026-11-20): the synthetic demo slice
+ * and its fixture gate (HUB_DEMO_FIXTURE + 999 sub) were removed
+ * entirely. A 999xxxx caller is treated like any unknown ID — it
+ * matches no LeadFlow row and gets the empty summary (emptyReason
+ * 'no-leadflow-account'). The test fixtures now live under
+ * scripts/test-fixtures/ and are imported ONLY by the QA scripts.
  *
  * Time-frame filter: `?period=today|this-month|3m|6m|this-year|all|custom`
  * (default 'today'). For 'custom', `?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -65,12 +63,10 @@ import {
 import { parsePeriodQuery, periodDateWindow, periodMsWindow } from './_lib/periods.js';
 import {
   summarizeLeadflow,
-  aggregateLeadCounts,
   scopeSetsFor,
   LEADFLOW_FETCH_CAP,
   DEFAULT_TERMINAL,
 } from './_lib/leadflowSummary.js';
-import { buildLeadflowFixture } from './_lib/demoFixtureLeadflow.js';
 
 export const config = { maxDuration: 30 };
 
@@ -83,11 +79,6 @@ const USERS_FETCH_CAP = 5000;
 // TIMESTAMP (naive, stored as UTC wall time), so a naive literal
 // compares wall-to-wall with no session-timezone involvement.
 const naiveIso = (ms) => new Date(ms).toISOString().slice(0, 19);
-
-const demoFixtureEnabled = () =>
-  String(process.env.HUB_DEMO_FIXTURE || '').trim().toLowerCase() === 'true';
-
-const isDemoUser = (employeeId) => String(employeeId || '').startsWith('999');
 
 let usersCache = { users: null, fetchedAtMs: 0, hasSubordinates: true };
 let terminalCache = { set: null, fetchedAtMs: 0, fallback: false };
@@ -351,70 +342,6 @@ export default async function handler(req, res) {
   const periodWindow = periodDateWindow(period, todayIso, customRange);
   const periodMs = periodMsWindow(period, todayIso, customRange);
 
-  // Demo fixture: synthetic slice through the SAME summarizer.
-  if (demoFixtureEnabled() && isDemoUser(user.employeeId)) {
-    const fixture = buildLeadflowFixture(todayIso);
-    const scopes = scopeSetsFor(fixture.users, user.employeeId, user.role);
-    if (!scopes) {
-      return send(res, 200, {
-        demo: true,
-        scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
-        role: user.role,
-        period,
-        periodWindow,
-        userEmployeeId: user.employeeId,
-        userName: null,
-        empty: true,
-        emptyReason: 'no-leadflow-account',
-        followups: { overdue: 0, today: 0, upcoming: 0, all: 0 },
-        leads: { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} },
-        team: null,
-        terminalFallback: false,
-        truncated: false,
-        syncedAt: Date.now(),
-      });
-    }
-    const byUuid = new Map(fixture.users.map((u) => [String(u.id), u]));
-    const byEmp = new Map(fixture.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
-    const ownCounts = aggregateLeadCounts(
-      fixture.leads,
-      byUuid,
-      byEmp,
-      scopes.ownUuids,
-      scopes.ownEmpIds,
-      fixture.terminalStatuses,
-      todayIso,
-      periodMs,
-    );
-    const teamCounts = aggregateLeadCounts(
-      fixture.leads,
-      byUuid,
-      byEmp,
-      scopes.teamUuids,
-      scopes.teamEmpIds,
-      fixture.terminalStatuses,
-      todayIso,
-      periodMs,
-    );
-    const summary = summarizeLeadflow(
-      {
-        users: fixture.users,
-        ownCounts,
-        teamCounts,
-        rows: fixture.leads,
-        terminalStatuses: fixture.terminalStatuses,
-        terminalFallback: false,
-        truncated: false,
-        period,
-        periodWindow,
-      },
-      user,
-      todayIso,
-    );
-    summary.demo = true;
-    return send(res, 200, summary);
-  }
-
   const cfg = supabaseConfig(process.env, 'LEADFLOW_SUPABASE_URL', 'LEADFLOW_SERVICE_ROLE_KEY');
   if (!cfg) {
     return send(res, 500, { error: 'lead data is not configured' });
@@ -426,7 +353,6 @@ export default async function handler(req, res) {
     const scopes = scopeSetsFor(users, user.employeeId, user.role);
     if (!scopes) {
       return send(res, 200, {
-        demo: false,
         scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
         role: user.role,
         period,
@@ -476,7 +402,6 @@ export default async function handler(req, res) {
       user,
       todayIso,
     );
-    summary.demo = false;
     return send(res, 200, summary);
   } catch (err) {
     // eslint-disable-next-line no-console

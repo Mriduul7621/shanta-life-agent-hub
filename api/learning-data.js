@@ -21,14 +21,12 @@
  * supervisor_id fallback (spec §6.2) — an RPC failure degrades to
  * the BFS, never to an error.
  *
- * Demo: when HUB_DEMO_FIXTURE=true AND the caller is a 999xxxx demo
- * user, a synthetic fixture slice is summarized instead (same
- * summarizer as live data). NO VERCEL_ENV check — this project's
- * deployments run on the production target, so VERCEL_ENV is always
- * 'production' here and such a check silently disables the fixture
- * (live bug 2026-11-20). The real production lock is the
- * vite.config build guard: a HUB_BUILD_TARGET=production build FAILS
- * with the flag set.
+ * NO DEMO ANYWHERE (Mahadi 2026-11-20): the synthetic demo slice
+ * and its fixture gate (HUB_DEMO_FIXTURE + 999 sub) were removed
+ * entirely. A 999xxxx caller is treated like any unknown ID — it
+ * matches no Learning Hub row and gets the empty summary
+ * (emptyReason 'no-lms-record'). The test fixtures now live under
+ * scripts/test-fixtures/ and are imported ONLY by the QA scripts.
  *
  * Time-frame filter: `?period=today|this-month|3m|6m|this-year|all|custom`
  * (default 'today'). For 'custom', `?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -55,7 +53,6 @@ import {
   summarizeLearning,
   resolveLearningDownline,
 } from './_lib/learningSummary.js';
-import { buildLearningFixture } from './_lib/demoFixtureLearning.js';
 
 export const config = { maxDuration: 30 };
 
@@ -63,11 +60,6 @@ const STATIC_CACHE_MS = 5 * 60 * 1000;
 const CHUNK = 50; // employee IDs per PostgREST .in filter
 const EMPLOYEES_FETCH_CAP = 5000;
 const LEARNING_FETCH_CAP = 5000; // spec §8.1 step 4
-
-const demoFixtureEnabled = () =>
-  String(process.env.HUB_DEMO_FIXTURE || '').trim().toLowerCase() === 'true';
-
-const isDemoUser = (employeeId) => String(employeeId || '').startsWith('999');
 
 let employeesCache = { rows: null, fetchedAtMs: 0 };
 let modulesCache = { rows: null, fetchedAtMs: 0 };
@@ -216,17 +208,6 @@ export default async function handler(req, res) {
   const periodWindow = periodDateWindow(period, todayIso, customRange);
   const periodMs = periodMsWindow(period, todayIso, customRange);
 
-  // Demo fixture: synthetic slice through the SAME summarizer.
-  if (demoFixtureEnabled() && isDemoUser(user.employeeId)) {
-    const fixture = buildLearningFixture(todayIso);
-    const summary = summarizeLearning(
-      { ...fixture, creditLedger: fixture.creditLedger || [], downlineIds: null, truncated: false, period, periodWindow, periodWindowMs: periodMs },
-      user,
-    );
-    summary.demo = true;
-    return send(res, 200, summary);
-  }
-
   const cfg = supabaseConfig(process.env, 'LEARNINGHUB_SUPABASE_URL', 'LEARNINGHUB_SERVICE_ROLE_KEY');
   if (!cfg) {
     return send(res, 500, { error: 'learning data is not configured' });
@@ -239,7 +220,6 @@ export default async function handler(req, res) {
     );
     if (!caller || caller.is_active === false) {
       return send(res, 200, {
-        demo: false,
         scope: user.role === 'admin' ? 'org' : user.role === 'manager' ? 'subtree' : user.role === 'team_lead' ? 'team' : 'own',
         role: user.role,
         period,
@@ -301,7 +281,6 @@ export default async function handler(req, res) {
       },
       user,
     );
-    summary.demo = false;
     return send(res, 200, summary);
   } catch (err) {
     // eslint-disable-next-line no-console

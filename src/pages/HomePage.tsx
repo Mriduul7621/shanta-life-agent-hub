@@ -3,13 +3,19 @@
  * actions (Phase 2: live feeds).
  *
  * Each feed loads independently (stale-while-revalidate from the
- * session cache, then a fresh fetch): LeadFlow follow-ups, retail
- * dues, Learning Hub progress. While a feed is loading or unreachable,
- * its cards fall back to the DEMO figures from demoData.ts — the page
- * never blocks on a feed and never shows an error state for a feed
- * failure. A feed's figures replace the demo figures only when that
- * feed has loaded; a chips row under the greeting shows each feed's
- * Live/Demo state.
+ * session cache, then a fresh fetch with one retry): LeadFlow
+ * follow-ups, retail dues, Learning Hub progress.
+ *
+ * NO DEMO ANYWHERE (Mahadi 2026-11-20): the demo data, the demo
+ * fallback branches and the feed chips are all gone — removed
+ * entirely, not gated. Every user sees the same three states per
+ * feed: loading skeletons (pulsing placeholders, no fake numbers)
+ * while a feed loads, honest empty states when a feed returns
+ * empty:true (zeros + the existing emptyText strings), and an error
+ * state with a retry action when a fresh fetch fails. (2026-11-20:
+ * a real employee's retail fetch failed transiently and Home showed
+ * her the old employee fixture — dues 2 / ৳48,500, business
+ * ৳1,85,000 — as if it were her data. That path no longer exists.)
  *
  * Home periods (Mahadi 2026-11-20): the retail and learning feeds
  * load with THIS_MONTH_SELECTION — business, FYCP, policy sales and
@@ -22,10 +28,6 @@
  * dues, and the Learning card shows THIS MONTH (credits earned this
  * month + courses in progress + courses completed this month).
  *
- * Business (FYCP this month) is LIVE when the retail feed is live —
- * the retail summary's this-month FYCP. The DEMO marker shows only
- * while the retail feed is demo or absent.
- *
  * Sales overview (Mahadi 2026-11-20): two THIS-MONTH retail cards —
  * Total policy sales (distinct New policies, same definition as the
  * Dashboard Policies KPI) and Total FYCP with New / Deferred premium
@@ -33,29 +35,31 @@
  *
  * The retail summary is ONE scoped slice (own for employee, own+team
  * for team_lead, own+subtree for manager, org for admin) — it cannot
- * be split into own vs team, so in live mode the own grid's dues card
- * shows the scoped slice (labelled with scope + week range) and the
- * team section drops the dues and business cards (2-card grid:
- * follow-ups + learning) and the team Due widget.
+ * be split into own vs team, so the own grid's dues card shows the
+ * scoped slice (labelled with scope + week range) and the team
+ * section is a 2-card grid (follow-ups + learning), with no team
+ * Due widget.
  *
- * No subtitle under the page title (Mahadi 2026-11-20): the greeting
- * line + title stand alone, with the feed chips below.
+ * No sentence under any title (Mahadi 2026-11-20): page and section
+ * titles stand alone — no subtitles, no live/demo notes, no feed
+ * chips. The scope label (Own / Own + team / Org-wide) stays: it
+ * tells the user whose data the figures are.
  */
-import { useEffect, useState } from 'react';
-import { useAuth } from '../auth/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
+import { useAuth } from '../auth/AuthContext';
 import type { Lang } from '../i18n/dictionary';
-import { DEMO_DASHBOARDS, formatBdt } from '../data/demoData';
-import type { WidgetData } from '../data/demoData';
+import { formatBdt } from '../data/format';
 import { loadLeadflowCached, loadLeadflowFresh } from '../data/leadflowData';
 import type { LeadflowSummary } from '../data/leadflowData';
 import { loadLearningCached, loadLearningFresh } from '../data/learningData';
 import type { LearningSummary } from '../data/learningData';
 import { loadRetailCached, loadRetailFresh } from '../data/retailData';
-import type { RetailScope, RetailSummary } from '../data/retailData';
+import type { RetailSummary } from '../data/retailData';
+import { useFeed } from '../data/useFeed';
+import type { FeedStatus } from '../data/useFeed';
 import { ALL_TIME_SELECTION, THIS_MONTH_SELECTION } from '../data/period';
 import { MODULES } from '../data/modules';
-import { WidgetCard } from '../components/WidgetCard';
+import { FeedErrorCard, WidgetCard, WidgetSkeleton } from '../components/WidgetCard';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
 import { QuickActionTile } from '../components/QuickActionTile';
 import { IconCheck, IconCoin, IconLearning, IconPhone } from '../components/icons';
@@ -96,216 +100,37 @@ const SCOPE_KEY = {
   org: 'dashboardScopeOrg',
 } as const;
 
-type CardId = 'followups' | 'dues' | 'learning' | 'business';
-
+/**
+ * Own widget grid: every card renders from its own feed's state —
+ * live figures when loaded (an empty feed shows the plain empty
+ * text, never a placeholder figure), a loading skeleton while the
+ * feed loads, an error card with retry when the fetch failed.
+ */
 function WidgetGrid({
-  data,
-  duesLiveScope,
-  duesWeek,
-  learningMonthly,
-  businessDemo,
-  hide,
-}: {
-  data: WidgetData;
-  /** Set when the dues card shows the live retail slice (month + scope). */
-  duesLiveScope?: RetailScope | null;
-  /** The live week figures for the dues card (undefined = older proxy
-   *  response without duesThisWeek → month figures instead). */
-  duesWeek?: { count: number; amount: number; weekStart: string; weekEnd: string } | null;
-  /** The live monthly learning figures for the own grid (undefined =
-   *  demo or team grid → the course/team view instead). */
-  learningMonthly?: { credits: number; inProgress: number; completed: number } | null;
-  /** Set when the business card is still demo while other cards are live. */
-  businessDemo?: boolean;
-  hide?: CardId[];
-}) {
-  const { t, lang } = useI18n();
-  const hidden = new Set(hide ?? []);
-  const learningActive = data.learningCourse !== null || data.learningMembersCount != null;
-  const learningSub =
-    data.learningMembersCount != null
-      ? t('teamLearningInProgress', { count: data.learningMembersCount })
-      : (data.learningCourse ?? '');
-  const duesLive = duesLiveScope != null;
-  const learningMonthActive =
-    learningMonthly !== null &&
-    learningMonthly !== undefined &&
-    (learningMonthly.credits > 0 || learningMonthly.inProgress > 0 || learningMonthly.completed > 0);
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
-      {!hidden.has('followups') && (
-        <WidgetCard
-          title={t('widgetFollowups')}
-          value={data.followups > 0 ? String(data.followups) : null}
-          sub={`${data.followups} ${t('followupsDue')}`}
-          emptyText={t('widgetFollowupsEmpty')}
-          accent="orange"
-          icon={<IconPhone />}
-        />
-      )}
-      {!hidden.has('dues') && (
-        <WidgetCard
-          title={t(duesLive ? (duesWeek ? 'widgetDues' : 'widgetDuesMonth') : 'widgetDues')}
-          value={data.dues > 0 ? String(data.dues) : null}
-          sub={
-            duesLive && duesWeek
-              ? `${t(SCOPE_KEY[duesLiveScope])} · ${formatWeekRange(duesWeek.weekStart, duesWeek.weekEnd, lang)} · ${data.dues} ${t('duesThisWeek')} · ${formatBdt(data.duesAmountBdt)}`
-              : duesLive
-                ? `${t(SCOPE_KEY[duesLiveScope])} · ${data.dues} ${t('duesThisMonth')} · ${formatBdt(data.duesAmountBdt)}`
-                : `${data.dues} ${t('duesThisWeek')} · ${formatBdt(data.duesAmountBdt)}`
-          }
-          emptyText={t(duesLive ? (duesWeek ? 'widgetDuesEmpty' : 'widgetDuesMonthEmpty') : 'widgetDuesEmpty')}
-          accent="olive"
-          icon={<IconCoin />}
-        />
-      )}
-      {!hidden.has('learning') && (
-        <WidgetCard
-          title={t(learningMonthly ? 'widgetLearningMonth' : 'widgetLearning')}
-          value={
-            learningMonthly
-              ? learningMonthActive
-                ? String(learningMonthly.credits)
-                : null
-              : learningActive
-                ? `${data.learningProgressPct}%`
-                : null
-          }
-          sub={
-            learningMonthly
-              ? t('learningMonthSub', {
-                  inProgress: learningMonthly.inProgress,
-                  completed: learningMonthly.completed,
-                })
-              : learningSub
-          }
-          emptyText={t(learningMonthly ? 'widgetLearningMonthEmpty' : 'widgetLearningEmpty')}
-          accent="charcoal"
-          icon={<IconLearning />}
-        />
-      )}
-      {!hidden.has('business') && (
-        <WidgetCard
-          title={t('widgetBusiness')}
-          value={data.businessFycpBdt > 0 ? formatBdt(data.businessFycpBdt) : null}
-          sub={businessDemo ? `${t('businessThisMonth')} · ${t('demoBadge')}` : t('businessThisMonth')}
-          emptyText={t('widgetBusinessEmpty')}
-          accent="orange"
-          icon={<IconCheck />}
-        />
-      )}
-    </div>
-  );
-}
-
-function FeedChips({
   leadflow,
+  leadflowStatus,
+  onRetryLeadflow,
   learning,
+  learningStatus,
+  onRetryLearning,
   retail,
+  retailStatus,
+  onRetryRetail,
 }: {
   leadflow: LeadflowSummary | null;
+  leadflowStatus: FeedStatus;
+  onRetryLeadflow: () => void;
   learning: LearningSummary | null;
+  learningStatus: FeedStatus;
+  onRetryLearning: () => void;
   retail: RetailSummary | null;
+  retailStatus: FeedStatus;
+  onRetryRetail: () => void;
 }) {
-  const { t } = useI18n();
-  const chips: { name: string; live: boolean }[] = [
-    { name: t('feedNameLeadflow'), live: leadflow !== null && !leadflow.demo },
-    { name: t('feedNameLearning'), live: learning !== null && !learning.demo },
-    { name: t('feedNameRetail'), live: retail !== null && !retail.demo },
-  ];
-  return (
-    <div className="mt-3 flex flex-wrap gap-2" aria-label={t('feedChipsLabel')}>
-      {chips.map((chip) => (
-        <span
-          key={chip.name}
-          className={
-            chip.live
-              ? 'rounded-full border border-olive/40 bg-olive/10 px-2.5 py-1 text-xs font-semibold text-olive'
-              : 'rounded-full border border-sunset/40 bg-sunset/10 px-2.5 py-1 text-xs font-semibold text-sunset-dark'
-          }
-        >
-          {chip.name} · {t(chip.live ? 'feedChipLive' : 'feedChipDemo')}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export function HomePage() {
-  const { t } = useI18n();
-  const { user, token } = useAuth();
-  const [leadflow, setLeadflow] = useState<LeadflowSummary | null>(null);
-  const [learning, setLearning] = useState<LearningSummary | null>(null);
-  const [retail, setRetail] = useState<RetailSummary | null>(null);
-  const employeeId = user?.employeeId ?? '';
-
-  // Each feed loads independently: cached first, fresh in the
-  // background. A failed fetch leaves the demo fallback in place —
-  // the page never shows a feed error state. Home periods (Mahadi
-  // 2026-11-20): retail + learning load with THIS_MONTH_SELECTION
-  // (business, FYCP, policy sales and learning are monthly views);
-  // LeadFlow loads with ALL_TIME_SELECTION (follow-ups are
-  // day-bucketed, so the period does not change them).
-  useEffect(() => {
-    if (!token || !employeeId) return;
-    let cancelled = false;
-    const cachedLeadflow = loadLeadflowCached(employeeId, ALL_TIME_SELECTION);
-    if (cachedLeadflow) setLeadflow(cachedLeadflow.summary);
-    const cachedLearning = loadLearningCached(employeeId, THIS_MONTH_SELECTION);
-    if (cachedLearning) setLearning(cachedLearning.summary);
-    const cachedRetail = loadRetailCached(employeeId, THIS_MONTH_SELECTION);
-    if (cachedRetail) setRetail(cachedRetail.summary);
-    void loadLeadflowFresh(token, employeeId, ALL_TIME_SELECTION)
-      .then((r) => {
-        if (!cancelled) setLeadflow(r.summary);
-      })
-      .catch(() => {});
-    void loadLearningFresh(token, employeeId, THIS_MONTH_SELECTION)
-      .then((r) => {
-        if (!cancelled) setLearning(r.summary);
-      })
-      .catch(() => {});
-    void loadRetailFresh(token, employeeId, THIS_MONTH_SELECTION)
-      .then((r) => {
-        if (!cancelled) setRetail(r.summary);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [token, employeeId]);
-
-  if (!user) return null;
-
-  const dashboard = DEMO_DASHBOARDS[user.role];
-  const hour = new Date().getHours();
-
-  const anyLive =
-    (leadflow !== null && !leadflow.demo) ||
-    (learning !== null && !learning.demo) ||
-    (retail !== null && !retail.demo);
-  const feedsLoaded = leadflow !== null || learning !== null || retail !== null;
-
-  // Own grid: demo figures, overridden per feed as it loads.
-  // Follow-ups are today-only (the LeadFlow summary buckets them by
-  // Dhaka day). Dues are this week's when the proxy sends
-  // duesThisWeek, else the month figures (older proxy). Business is
-  // the live this-month FYCP when the retail feed has loaded.
-  const own: WidgetData = { ...dashboard.own };
-  if (leadflow) own.followups = leadflow.followups.today;
+  const { t, lang } = useI18n();
   const duesWeek = retail?.duesThisWeek ?? null;
-  if (retail) {
-    if (duesWeek) {
-      own.dues = duesWeek.count;
-      own.duesAmountBdt = duesWeek.amount;
-    } else {
-      own.dues = retail.duePolicies;
-      own.duesAmountBdt = retail.duePremium;
-    }
-    own.businessFycpBdt = retail.fycp;
-  }
-  // Monthly learning (this-month period fields); coursesInProgress
-  // is absent from older proxy responses — read defensively.
+  const dues = retail ? (duesWeek ? duesWeek.count : retail.duePolicies) : 0;
+  const duesAmount = retail ? (duesWeek ? duesWeek.amount : retail.duePremium) : 0;
   const learningMonthly = learning
     ? {
         credits: learning.learning.creditsInPeriod,
@@ -313,25 +138,171 @@ export function HomePage() {
         completed: learning.learning.completedInPeriod,
       }
     : null;
-  // The business card is DEMO-labelled only while the retail feed is
-  // demo or absent; with a live retail feed the FYCP is real.
-  const businessDemo = anyLive && !(retail && !retail.demo);
+  const learningMonthActive =
+    learningMonthly !== null &&
+    (learningMonthly.credits > 0 || learningMonthly.inProgress > 0 || learningMonthly.completed > 0);
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      {leadflow ? (
+        <WidgetCard
+          title={t('widgetFollowups')}
+          value={leadflow.followups.today > 0 ? String(leadflow.followups.today) : null}
+          sub={`${leadflow.followups.today} ${t('followupsDue')}`}
+          emptyText={t('widgetFollowupsEmpty')}
+          accent="orange"
+          icon={<IconPhone />}
+        />
+      ) : leadflowStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} />
+      ) : (
+        <FeedErrorCard title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} onRetry={onRetryLeadflow} />
+      )}
+      {retail ? (
+        <WidgetCard
+          title={t(duesWeek ? 'widgetDues' : 'widgetDuesMonth')}
+          value={dues > 0 ? String(dues) : null}
+          sub={
+            duesWeek
+              ? `${t(SCOPE_KEY[retail.scope])} · ${formatWeekRange(duesWeek.weekStart, duesWeek.weekEnd, lang)} · ${dues} ${t('duesThisWeek')} · ${formatBdt(duesAmount)}`
+              : `${t(SCOPE_KEY[retail.scope])} · ${dues} ${t('duesThisMonth')} · ${formatBdt(duesAmount)}`
+          }
+          emptyText={t(duesWeek ? 'widgetDuesEmpty' : 'widgetDuesMonthEmpty')}
+          accent="olive"
+          icon={<IconCoin />}
+        />
+      ) : retailStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetDues')} accent="olive" icon={<IconCoin />} />
+      ) : (
+        <FeedErrorCard title={t('widgetDues')} accent="olive" icon={<IconCoin />} onRetry={onRetryRetail} />
+      )}
+      {learning ? (
+        <WidgetCard
+          title={t('widgetLearningMonth')}
+          value={learningMonthActive && learningMonthly ? String(learningMonthly.credits) : null}
+          sub={
+            learningMonthly
+              ? t('learningMonthSub', {
+                  inProgress: learningMonthly.inProgress,
+                  completed: learningMonthly.completed,
+                })
+              : ''
+          }
+          emptyText={t('widgetLearningMonthEmpty')}
+          accent="charcoal"
+          icon={<IconLearning />}
+        />
+      ) : learningStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetLearningMonth')} accent="charcoal" icon={<IconLearning />} />
+      ) : (
+        <FeedErrorCard title={t('widgetLearningMonth')} accent="charcoal" icon={<IconLearning />} onRetry={onRetryLearning} />
+      )}
+      {retail ? (
+        <WidgetCard
+          title={t('widgetBusiness')}
+          value={retail.fycp > 0 ? formatBdt(retail.fycp) : null}
+          sub={t('businessThisMonth')}
+          emptyText={t('widgetBusinessEmpty')}
+          accent="orange"
+          icon={<IconCheck />}
+        />
+      ) : retailStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetBusiness')} accent="orange" icon={<IconCheck />} />
+      ) : (
+        <FeedErrorCard title={t('widgetBusiness')} accent="orange" icon={<IconCheck />} onRetry={onRetryRetail} />
+      )}
+    </div>
+  );
+}
 
-  // Team grid: demo figures, overridden per feed. In live mode the
-  // team section is a 2-card grid (follow-ups + learning): dues live
-  // in the own grid's scoped retail slice and business is pending.
-  const team: WidgetData | null = dashboard.team ? { ...dashboard.team } : null;
-  if (team && leadflow?.team) team.followups = leadflow.team.followups.today;
-  if (team && learning?.team) {
-    team.learningProgressPct = learning.team.avgProgress;
-    team.learningMembersCount = learning.team.learningMembersCount;
-  }
-  const teamSize =
-    leadflow?.team?.teamSize ?? learning?.team?.teamSize ?? dashboard.teamSize;
+/**
+ * Team grid for Team Leads / Managers: the 2-card grid (follow-ups
+ * + learning) with the same per-feed states as the own grid. A
+ * loaded feed with no team data shows the plain empty text for that
+ * card — never a placeholder figure.
+ */
+function TeamGrid({
+  leadflow,
+  leadflowStatus,
+  onRetryLeadflow,
+  learning,
+  learningStatus,
+  onRetryLearning,
+}: {
+  leadflow: LeadflowSummary | null;
+  leadflowStatus: FeedStatus;
+  onRetryLeadflow: () => void;
+  learning: LearningSummary | null;
+  learningStatus: FeedStatus;
+  onRetryLearning: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      {leadflow ? (
+        <WidgetCard
+          title={t('widgetFollowups')}
+          value={
+            leadflow.team && leadflow.team.followups.today > 0
+              ? String(leadflow.team.followups.today)
+              : null
+          }
+          sub={`${leadflow.team?.followups.today ?? 0} ${t('followupsDue')}`}
+          emptyText={t('widgetFollowupsEmpty')}
+          accent="orange"
+          icon={<IconPhone />}
+        />
+      ) : leadflowStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} />
+      ) : (
+        <FeedErrorCard title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} onRetry={onRetryLeadflow} />
+      )}
+      {learning ? (
+        <WidgetCard
+          title={t('widgetLearning')}
+          value={learning.team ? `${learning.team.avgProgress}%` : null}
+          sub={t('teamLearningInProgress', { count: learning.team?.learningMembersCount ?? 0 })}
+          emptyText={t('widgetLearningEmpty')}
+          accent="charcoal"
+          icon={<IconLearning />}
+        />
+      ) : learningStatus === 'loading' ? (
+        <WidgetSkeleton title={t('widgetLearning')} accent="charcoal" icon={<IconLearning />} />
+      ) : (
+        <FeedErrorCard title={t('widgetLearning')} accent="charcoal" icon={<IconLearning />} onRetry={onRetryLearning} />
+      )}
+    </div>
+  );
+}
+
+export function HomePage() {
+  const { t } = useI18n();
+  const { user, token } = useAuth();
+  const employeeId = user?.employeeId ?? '';
+
+  // Each feed loads independently (cached first, fresh in the
+  // background with one retry). Home periods (Mahadi 2026-11-20):
+  // retail + learning load with THIS_MONTH_SELECTION (business,
+  // FYCP, policy sales and learning are monthly views); LeadFlow
+  // loads with ALL_TIME_SELECTION (follow-ups are day-bucketed, so
+  // the period does not change them).
+  const leadflowFeed = useFeed(loadLeadflowCached, loadLeadflowFresh, token, employeeId, ALL_TIME_SELECTION);
+  const learningFeed = useFeed(loadLearningCached, loadLearningFresh, token, employeeId, THIS_MONTH_SELECTION);
+  const retailFeed = useFeed(loadRetailCached, loadRetailFresh, token, employeeId, THIS_MONTH_SELECTION);
+
+  if (!user) return null;
+
+  const leadflow = leadflowFeed.summary;
+  const learning = learningFeed.summary;
+  const retail = retailFeed.summary;
+  const hour = new Date().getHours();
+
+  // The team size shows only once a feed has reported it.
+  const teamSize = leadflow?.team?.teamSize ?? learning?.team?.teamSize ?? null;
+  const hasTeamRole = user.role === 'team_lead' || user.role === 'manager';
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      {/* Greeting — no subtitle under the title (Mahadi 2026-11-20). */}
+      {/* Greeting — no sentence under the title (Mahadi 2026-11-20). */}
       <section>
         <p className="text-sm font-semibold text-sunset">
           {t(greetingKey(hour))}, {user.name}
@@ -339,21 +310,26 @@ export function HomePage() {
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-charcoal sm:text-3xl">
           {t('navHome')}
         </h1>
-        <FeedChips leadflow={leadflow} learning={learning} retail={retail} />
       </section>
 
-      {/* Own widgets — every role */}
+      {/* Own widgets — every role. */}
       <WidgetGrid
-        data={own}
-        duesLiveScope={retail ? retail.scope : null}
-        duesWeek={duesWeek}
-        learningMonthly={learningMonthly}
-        businessDemo={businessDemo}
+        leadflow={leadflow}
+        leadflowStatus={leadflowFeed.status}
+        onRetryLeadflow={leadflowFeed.retry}
+        learning={learning}
+        learningStatus={learningFeed.status}
+        onRetryLearning={learningFeed.retry}
+        retail={retail}
+        retailStatus={retailFeed.status}
+        onRetryRetail={retailFeed.retry}
       />
 
-      {/* Due premiums — own dues: live retail summary when the feed has
-          loaded, demo rows otherwise. The live widget shows the 3
-          most recent dues above the month-to-date totals. */}
+      {/* Due premiums — own dues. A loaded retail feed shows the
+          summary widget (the 3 most recent dues above the
+          month-to-date totals, or the plain empty text when there
+          are none); a loading feed shows a skeleton, a failed fetch
+          an error state with retry. */}
       {retail ? (
         <DuePremiumsWidget
           live={{
@@ -361,33 +337,47 @@ export function HomePage() {
             duePremium: retail.duePremium,
             dueMonth: retail.dueMonth,
             scope: retail.scope,
-            demo: retail.demo,
             dueRows: retail.dueRows,
           }}
         />
+      ) : retailFeed.status === 'loading' ? (
+        <section
+          aria-label={t('dueWidgetTitle')}
+          aria-busy="true"
+          className="rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+        >
+          <h3 className="text-base font-bold text-charcoal">{t('dueWidgetTitle')}</h3>
+          <div aria-hidden className="mt-3 h-9 w-32 animate-pulse rounded-lg bg-cream-dark/70" />
+          <div aria-hidden className="mt-2 h-4 w-48 max-w-full animate-pulse rounded bg-cream-dark/50" />
+        </section>
       ) : (
-        <DuePremiumsWidget data={dashboard.own} />
+        <section
+          aria-label={t('dueWidgetTitle')}
+          className="rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+        >
+          <h3 className="text-base font-bold text-charcoal">{t('dueWidgetTitle')}</h3>
+          <p className="mt-3 text-base font-medium text-charcoal/70">{t('feedLoadError')}</p>
+          <button
+            type="button"
+            onClick={retailFeed.retry}
+            className="mt-3 min-h-10 rounded-xl bg-charcoal px-4 text-sm font-semibold text-white transition-colors hover:bg-charcoal/90"
+          >
+            {t('feedRetry')}
+          </button>
+        </section>
       )}
 
       {/* Sales overview — this-month retail figures (Total policy sales
           + Total FYCP with New / Deferred sub-text), scoped to the
-          caller. Shown once the retail feed has loaded (live or
-          fixture); no demo fallback — the figures are retail-only.
-          An empty retail scope shows no cards at all (same rule as
-          the Dashboard's empty state — never fixture figures). */}
+          caller. Shown once the retail feed has loaded; an empty
+          retail scope shows no cards at all (same rule as the
+          Dashboard's empty state). The scope + period chip stays:
+          it tells the user whose data and which month the figures
+          are. */}
       {retail && !retail.empty && (
         <section aria-label={t('homeSalesTitle')}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold text-charcoal">{t('homeSalesTitle')}</h2>
-            {retail.demo ? (
-              <span className="rounded-full bg-sunset/15 px-2.5 py-1 text-xs font-bold text-sunset-dark">
-                {t('dashboardDemoBadge')}
-              </span>
-            ) : (
-              <span className="rounded-full bg-olive/15 px-2.5 py-1 text-xs font-bold text-olive">
-                {t('dashboardLiveFrom')}
-              </span>
-            )}
             <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
               {t(SCOPE_KEY[retail.scope])} · {t('periodThisMonth')}
             </span>
@@ -416,28 +406,27 @@ export function HomePage() {
         </section>
       )}
 
-      {/* Team section — Team Lead and Manager only */}
-      {team && (
+      {/* Team section — Team Lead and Manager only. The 2-card grid
+          (follow-ups + learning) with per-feed states; team dues
+          live in the own grid's scoped retail slice. */}
+      {hasTeamRole && (
         <section aria-label={t('teamSectionTitle')}>
           <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="text-lg font-bold text-charcoal">{t('teamSectionTitle')}</h2>
-            <p className="text-sm text-charcoal/60">
-              {teamSize} {t('teamMembers')}
-            </p>
+            {teamSize !== null && (
+              <p className="text-sm text-charcoal/60">
+                {teamSize} {t('teamMembers')}
+              </p>
+            )}
           </div>
-          <p className="mb-3 text-sm text-charcoal/60">{t('teamSectionSubtitle')}</p>
-          <WidgetGrid
-            data={team}
-            businessDemo={anyLive}
-            hide={feedsLoaded ? ['dues', 'business'] : undefined}
+          <TeamGrid
+            leadflow={leadflow}
+            leadflowStatus={leadflowFeed.status}
+            onRetryLeadflow={leadflowFeed.retry}
+            learning={learning}
+            learningStatus={learningFeed.status}
+            onRetryLearning={learningFeed.retry}
           />
-          {/* Team dues widget only in demo mode — in live mode the team
-              dues are inside the own grid's scoped retail slice. */}
-          {!feedsLoaded && (
-            <div className="mt-3 sm:mt-4">
-              <DuePremiumsWidget data={team} />
-            </div>
-          )}
         </section>
       )}
 
@@ -446,7 +435,6 @@ export function HomePage() {
           launcher. Tapping opens the app same-tab (see QuickActionTile). */}
       <section aria-label={t('modulesTitle')}>
         <h2 className="text-lg font-bold text-charcoal">{t('modulesTitle')}</h2>
-        <p className="mt-1 text-sm text-charcoal/60">{t('modulesSubtitle')}</p>
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 sm:gap-4 xl:grid-cols-7">
           {MODULES.map((m) => (
             <QuickActionTile key={m.id} module={m} />

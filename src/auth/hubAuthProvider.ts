@@ -13,11 +13,11 @@
  * just sends { identifier, credential }.
  *
  * NO demo path: the demo accounts were removed entirely (Mahadi
- * 2026-11-20). A 999xxxx identifier goes to /api/hub-auth like any
- * other ID and fails there (no such LH row). The proxy fixture gates
- * (HUB_DEMO_FIXTURE + 999 sub) remain as QA-only scaffolding — the
- * QA harness signs test tokens in Node and calls the proxies
- * directly; no login path can reach them.
+ * 2026-11-20), and the proxy fixture gates went with them — a
+ * 999xxxx identifier goes to /api/hub-auth like any other ID and
+ * fails there (no such LH row), and the proxies treat a 999xxxx
+ * caller like any unknown ID. The QA harness signs test tokens in
+ * Node and seeds session caches directly (scripts/qa-screenshots.mjs).
  *
  * Error mapping (api/hub-auth.js error bodies → AuthError codes):
  * - 401 wrong_pin (+attemptsLeft) / locked (+lockedMinutesLeft) —

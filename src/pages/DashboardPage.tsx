@@ -18,11 +18,12 @@
  *
  * Failure behaviour: if the live fetch fails, the page shows an error
  * state with a Retry button and the link to the full Retail Sales
- * Dashboard — never a crash, never a silent substitution of demo numbers
- * for live ones. Cached data (this browser session only, bound to the
- * signed-in Employee ID) shows immediately while a fresh fetch runs in
- * the background; a failed refresh keeps the cached data and says so.
- * Demo accounts (999xxxx) see the synthetic demo slice, labelled DEMO.
+ * Dashboard — never a crash, never placeholder figures. Cached data
+ * (this browser session only, bound to the signed-in Employee ID)
+ * shows immediately while a fresh fetch runs in the background; a
+ * failed refresh keeps the cached data and says so.
+ * NO DEMO ANYWHERE (Mahadi 2026-11-20): the demo slice, the DEMO
+ * badge and the demo note were removed entirely.
  *
  * Time-frame filter: Total Premium / FYCP / Policies and the
  * leaderboard follow the selected period (PR row date); Due Premium
@@ -32,7 +33,10 @@
  * and Learning keep Today. The selector is a dropdown with a Custom
  * range (start/end dates).
  *
- * No subtitle under the page title (Mahadi 2026-11-20).
+ * No sentence under any title (Mahadi 2026-11-20): page and
+ * section titles stand alone — no subtitles, no live/demo notes,
+ * no last-synced line. The scope chip stays: it tells the user
+ * whose data the figures are.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
@@ -41,7 +45,7 @@ import { loadRetailCached, loadRetailFresh } from '../data/retailData';
 import type { RetailLoadResult, RetailScope } from '../data/retailData';
 import { DASHBOARD_DEFAULT_SELECTION, isCompleteSelection, periodLabelKey, type PeriodSelection } from '../data/period';
 import PeriodSelector from '../components/PeriodSelector';
-import { formatBdt } from '../data/demoData';
+import { formatBdt } from '../data/format';
 import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
 import { ModuleTile } from '../components/ModuleTile';
@@ -166,23 +170,9 @@ export function DashboardPage() {
           {t('dashboardPageTitle')}
         </h1>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {summary?.demo ? (
-            <span className="rounded-full bg-sunset/15 px-2.5 py-1 text-xs font-bold text-sunset-dark">
-              {t('dashboardDemoBadge')}
-            </span>
-          ) : (
-            <span className="rounded-full bg-olive/15 px-2.5 py-1 text-xs font-bold text-olive">
-              {t('dashboardLiveFrom')}
-            </span>
-          )}
           {summary && (
             <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
               {t(SCOPE_KEY[summary.scope])}
-            </span>
-          )}
-          {ready && (
-            <span className="text-xs text-charcoal/55">
-              {t('dashboardLastSynced', { time: fmtSynced(ready.syncedAt) })}
             </span>
           )}
           <button
@@ -197,11 +187,6 @@ export function DashboardPage() {
         <div className="mt-3">
           <PeriodSelector value={selection} onChange={setSelection} />
         </div>
-        {summary?.demo && (
-          <p className="mt-3 rounded-xl bg-sunset/10 px-4 py-3 text-sm font-medium text-charcoal">
-            {t('dashboardDemoNote')}
-          </p>
-        )}
         {state.status === 'ready' && state.refreshFailed && ready && (
           <p role="status" className="mt-3 rounded-xl bg-sunset/10 px-4 py-3 text-sm font-medium text-charcoal">
             {t('dashboardRefreshFailed', { time: fmtSynced(ready.syncedAt) })}
@@ -259,9 +244,6 @@ export function DashboardPage() {
           {/* Business KPIs — retail formulas, scoped to the caller */}
           <section aria-label={t('dashboardBusinessTitle')}>
             <h2 className="text-lg font-bold text-charcoal">{t('dashboardBusinessTitle')}</h2>
-            <p className="mt-1 text-sm text-charcoal/60">
-              {periodLabel} · {t('dashboardDueThisMonth')}
-            </p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
               <WidgetCard
                 title={t('kpiTotalPremium')}
@@ -346,13 +328,6 @@ export function DashboardPage() {
                   ? t('dashboardLeadersBeTitle')
                   : t('dashboardLeadersReportsTitle')}
               </h2>
-              <p className="mt-1 text-sm text-charcoal/60">
-                {summary.leaderboard.kind === 'bes'
-                  ? t('dashboardLeadersBeSubtitle')
-                  : t('dashboardLeadersReportsSubtitle')}
-                {' · '}
-                {periodLabel}
-              </p>
               <div className="mt-3 rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5">
                 {summary.leaderboard.entries.length === 0 ? (
                   <p className="text-base font-medium text-charcoal/70">{t('dashboardNoLeaders')}</p>

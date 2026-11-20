@@ -22,7 +22,7 @@
  *     and the bucket partition must reconcile to the org total.
  *  4. Scoping: real UM / FA / BE / GM codes, subtree <= org, the
  *     Employee role failing closed, staff IDs empty with 'no-code'.
- *  5. Demo fixture: the synthetic slice's hand-computed values, exact.
+ *  5. Test fixture: the synthetic slice's hand-computed values, exact.
  *     The fixture scenario is PINNED to 2026-11-20 (FIXTURE_TODAY) —
  *     its due expectations depend on instalment dates relative to the
  *     reference day, so pinning keeps them deterministic. The live
@@ -40,9 +40,10 @@
  *  7. Proxy handler: the real handler, with the retail fetch stubbed to
  *     the live payload and test JWTs signed with an ephemeral keypair —
  *     401 without/a bad token, 200 + correct summary for admin/UM,
- *     demo fixture gating (flag on/off, production env), no raw rows
- *     in any response, payload caching. Period handling: invalid
- *     period -> 400, demo + live paths honour ?period=, two periods
+ *     a 999xxxx test caller treated like any unknown ID (empty,
+ *     no-code — the demo fixture gate is gone, Mahadi 2026-11-20),
+ *     no raw rows in any response, payload caching. Period handling:
+ *     invalid period -> 400, live path honours ?period=, two periods
  *     cached separately (one payload fetch, two different summaries);
  *     the default period is Today; custom ranges return exactly the
  *     rows inside them and invalid custom ranges -> 400.
@@ -69,7 +70,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { summarizeRetail, summarizeWithIndex, buildRetailIndex, dhakaToday } from '../api/_lib/retailSummary.js';
-import { buildDemoPayload } from '../api/_lib/demoFixture.js';
+import { buildTestPayload } from './test-fixtures/testFixture.js';
 import { periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -249,9 +250,9 @@ check('scope GM KAMRUJJAMAN: 256 policies within 5%', withinPct(gm.policies, 256
 const staff = summarizeWithIndex(index, { employeeId: '2025019', role: 'employee' });
 check('scope staff ID as employee: empty, no-code', staff.empty === true && staff.emptyReason === 'no-code', `empty=${staff.empty} reason=${staff.emptyReason}`);
 
-// ---- 5. Demo fixture exact values (pinned date) ----
+// ---- 5. Test fixture exact values (pinned date) ----
 {
-  const fx = buildDemoPayload(FIXTURE_TODAY);
+  const fx = buildTestPayload(FIXTURE_TODAY);
   const adm = summarizeRetail(fx, { employeeId: '9990004', role: 'admin' }, FIXTURE_TODAY);
   check('fixture admin total 241000', adm.totalPremium === 241000, String(adm.totalPremium));
   check('fixture admin FYCP 233000', adm.fycp === 233000, String(adm.fycp));
@@ -327,11 +328,11 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
 
 // ---- 5b. Time-frame filter (fixture, pinned date) ----
 {
-  const fx = buildDemoPayload(FIXTURE_TODAY);
+  const fx = buildTestPayload(FIXTURE_TODAY);
   const adminUser = { employeeId: '9990004', role: 'admin' };
   const empUser = { employeeId: '9990001', role: 'employee' };
 
-  // Hand-computed org values per period (see api/_lib/demoFixture.js).
+  // Hand-computed org values per period (see scripts/test-fixtures/testFixture.js).
   // D1001's two records are dated today (2026-11-20), so 'today' is
   // non-zero and this-month includes them.
   const orgExpected = {
@@ -429,7 +430,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   // before is out; a record ON today is in; a future-dated record is
   // out of every windowed period (but 'all' has no date filter).
   {
-    const fxB = buildDemoPayload(FIXTURE_TODAY);
+    const fxB = buildTestPayload(FIXTURE_TODAY);
     const boundary = [
       { policy: 'B-START', faCode: '9990001', date: '2026-08-20', type: 'New', amount: 1000 },
       { policy: 'B-BEFORE', faCode: '9990001', date: '2026-08-19', type: 'New', amount: 2000 },
@@ -486,7 +487,6 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   const kid = crypto.createHash('sha256').update(publicKey.export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 16);
   process.env.HUB_PUBLIC_KEY_PEM = pem;
   process.env.HUB_KID = kid;
-  process.env.HUB_DEMO_FIXTURE = 'true';
   process.env.VERCEL_ENV = 'preview';
 
   const b64url = (buf) => Buffer.from(buf).toString('base64url');
@@ -573,15 +573,19 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     check('proxy: POST -> 405', res.statusCode === 405, String(res.statusCode));
   }
   {
-    // Bare call: the default period is Today now (fixture: D1001's
-    // two records, 35000). All-time needs an explicit ?period=all.
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // A 999xxxx admin goes down the LIVE path (the demo fixture gate
+    // is gone, Mahadi 2026-11-20): admin sees the org-wide live
+    // summary. Bare call: the default period is Today now. All-time
+    // needs an explicit ?period=all.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
+    const todayAdmin = summarizeWithIndex(buildRetailIndex(payload, dhakaToday(), 'today'), { employeeId: '2025019', role: 'admin' });
     const { res, json } = await call(mockReq({ token: t }));
-    check('proxy: demo admin -> 200, fixture (demo:true)', res.statusCode === 200 && json?.demo === true, `status=${res.statusCode} demo=${json?.demo}`);
-    check('proxy: demo admin default period today, total 35000', json?.period === 'today' && json?.totalPremium === 35000, `period=${json?.period} total=${json?.totalPremium}`);
+    check('proxy: 999 admin -> 200, live org summary', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
+    check('proxy: 999 admin default period today, total == live today total', json?.period === 'today' && json?.totalPremium === todayAdmin.totalPremium, `period=${json?.period} total=${json?.totalPremium} vs ${todayAdmin.totalPremium}`);
+    check('proxy: 999 admin summary carries no demo field', !('demo' in (json ?? {})), `keys=${Object.keys(json ?? {}).join(',')}`);
     check('proxy: Cache-Control private, no-store', res.headers['Cache-Control'] === 'private, no-store', res.headers['Cache-Control']);
     const { res: resAll, json: jsonAll } = await call(mockReq({ token: t, url: '/api/retail-data?period=all' }));
-    check('proxy: demo admin ?period=all fixture total 241000', resAll.statusCode === 200 && jsonAll?.totalPremium === 241000, `status=${resAll.statusCode} total=${jsonAll?.totalPremium}`);
+    check('proxy: 999 admin ?period=all total == live admin total', resAll.statusCode === 200 && jsonAll?.totalPremium === admin.totalPremium, `status=${resAll.statusCode} total=${jsonAll?.totalPremium} vs ${admin.totalPremium}`);
   }
   {
     // The live `admin` summary above is all-time (the summarizer's
@@ -589,7 +593,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     // — the bare-call default is Today now.
     const t = signToken({ sub: '2025019', name: 'Staff', role: 'admin' });
     const { res, json } = await call(mockReq({ token: t, url: '/api/retail-data?period=all' }));
-    check('proxy: real admin -> 200, live org summary', res.statusCode === 200 && json?.demo === false && json?.scope === 'org', `status=${res.statusCode} demo=${json?.demo} scope=${json?.scope}`);
+    check('proxy: real admin -> 200, live org summary', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
     check('proxy: real admin total == live admin total', json?.totalPremium === admin.totalPremium, `${fmt(json?.totalPremium ?? 0)} vs ${fmt(admin.totalPremium)}`);
     check('proxy: no raw rows leak in the response', !res.body.includes('"records"') && !res.body.includes('NAZAHA HAQUE'), '');
   }
@@ -599,53 +603,54 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     check('proxy: UM team_lead -> 200 scoped', res.statusCode === 200 && json?.scope === 'team' && json?.totalPremium === um.totalPremium, `status=${res.statusCode} scope=${json?.scope} total=${json?.totalPremium}`);
   }
   {
-    delete process.env.HUB_DEMO_FIXTURE;
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    // A 999xxxx team_lead matches no real rows: empty, no-code — the
+    // same as any unknown ID. There is no fixture gate any more, so
+    // no flag can change this.
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await call(mockReq({ token: t }));
-    check('proxy: demo w/o flag -> empty, demo:false', res.statusCode === 200 && json?.demo === false && json?.empty === true && json?.emptyReason === 'no-code', `demo=${json?.demo} empty=${json?.empty} reason=${json?.emptyReason}`);
-    process.env.HUB_DEMO_FIXTURE = 'true';
+    check('proxy: 999 test ID -> empty, no-code (like any unknown ID)', res.statusCode === 200 && json?.empty === true && json?.emptyReason === 'no-code', `empty=${json?.empty} reason=${json?.emptyReason}`);
   }
   {
-    // This demo project's deployments run on the production target, so
-    // VERCEL_ENV is 'production' live — the fixture must serve with the
-    // flag set regardless of VERCEL_ENV (live bug 2026-11-20: the old
-    // VERCEL_ENV gate silently disabled the fixture on the preview).
+    // This project's deployments run on the production target, so
+    // VERCEL_ENV is 'production' live — a 999xxxx caller is still
+    // empty/no-code there: no fixture gate exists in any env.
     process.env.VERCEL_ENV = 'production';
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await call(mockReq({ token: t }));
-    check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
+    check('proxy: 999 test ID in production env -> still empty, no-code', res.statusCode === 200 && json?.empty === true && json?.emptyReason === 'no-code', `empty=${json?.empty} reason=${json?.emptyReason}`);
     process.env.VERCEL_ENV = 'preview';
   }
   {
     // Period handling: an invalid value is a 400, never a silent
     // fallback to 'all' (the caller would read the wrong window).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res } = await call(mockReq({ token: t, url: '/api/retail-data?period=bogus' }));
     check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
   }
   {
-    // Demo path honours ?period= — the fixture is relative-dated, so
-    // its 3m values are the same on any day (see §5b).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Live path honours ?period= — the handler's 3m total must equal
+    // the summarizer's 3m total on the same payload, exactly.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await call(mockReq({ token: t, url: '/api/retail-data?period=3m' }));
     const w = periodDateWindow('3m', dhakaToday());
-    check('proxy: demo ?period=3m -> 200, fixture 3m total 185000', res.statusCode === 200 && json?.demo === true && json?.totalPremium === 185000, `status=${res.statusCode} total=${json?.totalPremium}`);
-    check('proxy: demo ?period=3m echoes period + window', json?.period === '3m' && JSON.stringify(json?.periodWindow) === JSON.stringify(w), `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
+    const expected3m = summarizeWithIndex(buildRetailIndex(payload, dhakaToday(), '3m'), { employeeId: '2025019', role: 'admin' });
+    check('proxy: live ?period=3m -> 200, total == summarizer 3m total', res.statusCode === 200 && json?.totalPremium === expected3m.totalPremium, `status=${res.statusCode} total=${json?.totalPremium} vs ${expected3m.totalPremium}`);
+    check('proxy: live ?period=3m echoes period + window', json?.period === '3m' && JSON.stringify(json?.periodWindow) === JSON.stringify(w), `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
   }
   {
     // Default period is Today now: a bare call returns the today
-    // window (fixture: D1001's two records, 35000).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // window, identical to an explicit ?period=today.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await call(mockReq({ token: t }));
-    check('proxy: default period is today (fixture total 35000)', res.statusCode === 200 && json?.period === 'today' && json?.totalPremium === 35000, `status=${res.statusCode} period=${json?.period} total=${json?.totalPremium}`);
+    check('proxy: default period is today', res.statusCode === 200 && json?.period === 'today', `status=${res.statusCode} period=${json?.period}`);
     const { res: resT, json: jsonT } = await call(mockReq({ token: t, url: '/api/retail-data?period=today' }));
-    check('proxy: explicit ?period=today -> same as default', resT.statusCode === 200 && jsonT?.totalPremium === 35000 && jsonT?.period === 'today', `status=${resT.statusCode} total=${jsonT?.totalPremium}`);
+    check('proxy: explicit ?period=today -> same as default', resT.statusCode === 200 && jsonT?.totalPremium === json?.totalPremium && jsonT?.period === 'today', `status=${resT.statusCode} total=${jsonT?.totalPremium} vs ${json?.totalPremium}`);
   }
   {
     // Custom ranges through the handler: a valid range returns
     // exactly the rows inside it, and echoes period='custom' + the
     // window. [1st of month, today] must equal this-month.
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const todayIso = dhakaToday();
     const monthStart = `${todayIso.slice(0, 7)}-01`;
     const { res: resTm, json: jsonTm } = await call(mockReq({ token: t, url: '/api/retail-data?period=this-month' }));
@@ -655,11 +660,12 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     check('proxy: custom echoes period + window', json?.period === 'custom' && json?.periodWindow?.start === monthStart && json?.periodWindow?.end === todayIso, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
     // A named period with from/to ignores the range.
     const { res: resNamed, json: jsonNamed } = await call(mockReq({ token: t, url: `/api/retail-data?period=3m&from=${monthStart}&to=${todayIso}` }));
-    check('proxy: named period + from/to ignores the range', resNamed.statusCode === 200 && jsonNamed?.period === '3m' && jsonNamed?.totalPremium === 185000, `period=${jsonNamed?.period} total=${jsonNamed?.totalPremium}`);
+    const expected3m = summarizeWithIndex(buildRetailIndex(payload, todayIso, '3m'), { employeeId: '2025019', role: 'admin' });
+    check('proxy: named period + from/to ignores the range', resNamed.statusCode === 200 && jsonNamed?.period === '3m' && jsonNamed?.totalPremium === expected3m.totalPremium, `period=${jsonNamed?.period} total=${jsonNamed?.totalPremium} vs ${expected3m.totalPremium}`);
   }
   {
     // Invalid custom ranges are 400s, never silent fallbacks.
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const todayIso = dhakaToday();
     const cases = [
       ['custom without a range', '/api/retail-data?period=custom'],
@@ -699,10 +705,10 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   // 2026-11-20 live bug: after the c48ac65 push, a browser running the
   // new bundle against the OLD deployment's proxy (Vercel skew pin)
   // failed client validation — the old proxy response has no
-  // newPremium/deferredPremium — and the whole retail feed fell back
-  // to demo while LeadFlow/Learning stayed Live. The client must
-  // accept the old shape and default the two fields to 0. This tests
-  // the REAL client module with fetch stubbed.
+  // newPremium/deferredPremium — and the whole retail feed was lost
+  // while LeadFlow/Learning stayed up. The client must accept the
+  // old shape and default the two fields to 0. This tests the REAL
+  // client module with fetch stubbed.
   const { register } = await import('node:module');
   register('./qa-ts-resolve-hooks.mjs', import.meta.url);
 
@@ -732,7 +738,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   const fresh = await loadRetailFresh('test-token', '2025019', ALL_TIME_SELECTION);
   check('old-shape: fresh load passes validation', fresh.summary.totalPremium === admin.totalPremium && fresh.summary.fycp === admin.fycp, `total=${fresh.summary.totalPremium}`);
   check('old-shape: newPremium/deferredPremium default to 0', fresh.summary.newPremium === 0 && fresh.summary.deferredPremium === 0, `${fresh.summary.newPremium} / ${fresh.summary.deferredPremium}`);
-  check('old-shape: not demo (live feed stays live)', fresh.summary.demo === false);
+  check('old-shape: summary carries no demo field', !('demo' in fresh.summary));
   // The fresh load cached the NORMALIZED summary — the cached path
   // must serve it back with the 0 defaults too.
   const cached = loadRetailCached('2025019', ALL_TIME_SELECTION);
@@ -779,10 +785,10 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   // for retail figures — these are its definitions (dist/index.html
   // pdDueRowsForWindow + the MTD default preset; api/sales-data.js
   // producers `activity`).
-  const fx = buildDemoPayload(FIXTURE_TODAY);
+  const fx = buildTestPayload(FIXTURE_TODAY);
   const dueStub = ({ policy, faCode, nextDue, premium, duePrem }) => ({
     policy,
-    owner: 'Demo Customer',
+    owner: 'Test Customer',
     nextDue,
     product: 'Shanta Endowment (With Profit) Plan',
     term: '10',
@@ -809,8 +815,8 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   fx.duePolicies.push(dueStub({ policy: 'X9018', faCode: '9990001', nextDue: '2026-11-18', premium: 7000, duePrem: 70000 }));
   // A never-sold FA (directory + producers, no records): in the
   // universe, not active.
-  fx.producerDirectory.push({ code: '9990099', name: 'Demo FA Never Sold', tier: 'FA', selfCode: '', beCode: 'DMO', be: 'Demo BE', ownerCode: '9990099', ownerName: 'Demo FA Never Sold', ownerTier: 'FA', ownerBeCode: 'DMO', ownerBe: 'Demo BE', parentOwnerCode: '9990002', parentOwnerTier: 'UM' });
-  fx.producers.push({ code: '9990099', aliases: ['9990099'], name: 'Demo FA Never Sold', beCode: 'DMO', be: 'Demo BE', beSource: 'recruit', district: '', designation: 'FA', activity: 'Inactive', reason: '', joined: '2025-01-10', lastPremiumDate: '', lastPremiumMonth: '' });
+  fx.producerDirectory.push({ code: '9990099', name: 'Test FA Never Sold', tier: 'FA', selfCode: '', beCode: 'DMO', be: 'Test BE', ownerCode: '9990099', ownerName: 'Test FA Never Sold', ownerTier: 'FA', ownerBeCode: 'DMO', ownerBe: 'Test BE', parentOwnerCode: '9990002', parentOwnerTier: 'UM' });
+  fx.producers.push({ code: '9990099', aliases: ['9990099'], name: 'Test FA Never Sold', beCode: 'DMO', be: 'Test BE', beSource: 'recruit', district: '', designation: 'FA', activity: 'Inactive', reason: '', joined: '2025-01-10', lastPremiumDate: '', lastPremiumMonth: '' });
 
   const adm = summarizeRetail(fx, { employeeId: '9990004', role: 'admin' }, FIXTURE_TODAY);
   check('recon MTD: Nov 25 due excluded (due 45000, 6 pol)', adm.duePremium === 45000 && adm.duePolicies === 6, `${adm.duePremium} (${adm.duePolicies})`);

@@ -16,19 +16,12 @@
  * receives raw rows — not even in-scope ones, because the page renders
  * aggregates only. No JWT = 401. Response is `private, no-store`.
  *
- * Demo fixture: fictional 999xxxx users match no real rows, so when
- * HUB_DEMO_FIXTURE=true, demo callers get the synthetic slice
- * (api/_lib/demoFixture.js) through the same summarizer, labelled
- * demo: true. The locks are: the flag itself (set only on this demo
- * project, never on a real production project), the 999xxxx caller
- * check (real Employee IDs never start with 999), and the
- * vite.config.ts build guard (a HUB_BUILD_TARGET=production build
- * FAILS with HUB_DEMO_FIXTURE=true). NOTE: do NOT gate on
- * VERCEL_ENV — this demo project's main-branch deployments run on
- * the production target, so VERCEL_ENV is always 'production' here
- * and such a check would silently disable the fixture (found live
- * 2026-11-20: the Dashboard showed the empty state until the check
- * was removed).
+ * NO DEMO ANYWHERE (Mahadi 2026-11-20): the synthetic demo slice
+ * and its fixture gate (HUB_DEMO_FIXTURE + 999 sub) were removed
+ * entirely. A 999xxxx caller is treated like any unknown ID — it
+ * matches no real rows and gets the empty summary (emptyReason
+ * 'no-code'). The test fixtures now live under
+ * scripts/test-fixtures/ and are imported ONLY by the QA scripts.
  * No new secrets: the retail endpoint needs no credentials, and the
  * proxy verifies with the PUBLIC key (api/_lib/verifyJwt.js).
  *
@@ -48,7 +41,6 @@
 import { verifySsoTokenNode, publicKeyConfig } from './_lib/verifyJwt.js';
 import { summarizeWithIndex, buildRetailIndex, dhakaToday } from './_lib/retailSummary.js';
 import { parsePeriodQuery } from './_lib/periods.js';
-import { buildDemoPayload } from './_lib/demoFixture.js';
 
 export const config = { maxDuration: 30 };
 
@@ -59,10 +51,6 @@ const INDEX_CACHE_MAX = 16; // 7 periods x a couple of payload versions (+ custo
 
 let payloadCache = null; // { payload, fetchedAtMs }
 let indexCache = new Map(); // key -> index (key includes the period)
-
-function demoFixtureEnabled(env) {
-  return env.HUB_DEMO_FIXTURE === 'true';
-}
 
 async function fetchRetailPayload() {
   const now = Date.now();
@@ -119,17 +107,6 @@ export default async function handler(req, res) {
       return send(res, 400, { error: 'invalid period' });
     }
     const { period, customRange } = parsed;
-    // Demo users (fictional 999xxxx IDs) get the synthetic slice — never
-    // real rows — when the fixture gate is open. Real users always get
-    // the live payload, fixture or not.
-    if (claims.sub.startsWith('999') && demoFixtureEnabled(process.env)) {
-      const summary = summarizeWithIndex(
-        buildRetailIndex(buildDemoPayload(today), today, period, customRange),
-        { employeeId: claims.sub, role: claims.role },
-      );
-      summary.demo = true;
-      return send(res, 200, summary);
-    }
     const payload = await fetchRetailPayload();
     const summary = summarizeWithIndex(indexFor(payload, today, period, customRange), {
       employeeId: claims.sub,

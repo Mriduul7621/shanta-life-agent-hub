@@ -146,9 +146,6 @@ export function LoginPage() {
           <p className="mt-3 max-w-lg text-[2.1rem] font-extrabold leading-snug">
             {t('loginPanelHeadline')}
           </p>
-          <p className="mt-3 max-w-md text-[14px] leading-relaxed text-white/80">
-            {t('loginPanelSub')}
-          </p>
           <ul className="mt-9 max-w-md space-y-3">
             {panelValues.map((title) => (
               <li key={title} className="flex items-center gap-3">
@@ -183,8 +180,6 @@ export function LoginPage() {
                 <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-charcoal">
                   {t('loginTitle')}
                 </h1>
-                <p className="mt-1 text-sm text-charcoal/60">{t('loginSubtitle')}</p>
-
                 {sessionExpired && (
                   <p role="status" className="mt-4 rounded-xl bg-olive/10 px-4 py-3 text-sm font-medium text-charcoal">
                     {t('errorSessionExpired')}

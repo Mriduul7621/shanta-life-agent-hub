@@ -17,7 +17,6 @@ export type DictKey =
   | 'navDashboardShort'
   | 'navProfileShort'
   | 'loginTitle'
-  | 'loginSubtitle'
   | 'employeeId'
   | 'loginIdentifier'
   | 'loginIdentifierPlaceholder'
@@ -42,7 +41,6 @@ export type DictKey =
   | 'greetingMorning'
   | 'greetingAfternoon'
   | 'greetingEvening'
-  | 'demoDataBadge'
   | 'widgetFollowups'
   | 'widgetFollowupsEmpty'
   | 'widgetDues'
@@ -59,17 +57,12 @@ export type DictKey =
   | 'learningInProgress'
   | 'businessThisMonth'
   | 'teamSectionTitle'
-  | 'teamSectionSubtitle'
   | 'modulesTitle'
-  | 'modulesSubtitle'
   | 'openTool'
   | 'opensInThisTab'
   | 'comingSoon'
   | 'proposalsSoon'
-  | 'demoBadge'
   | 'moduleSummaryTitle'
-  | 'leadsDemoNote'
-  | 'learningDemoNote'
   | 'goToLeadManagement'
   | 'goToLearning'
   | 'profileTitle'
@@ -79,7 +72,6 @@ export type DictKey =
   | 'profileVersion'
   | 'signOut'
   | 'consoleTitle'
-  | 'consoleSoon'
   | 'roleEmployee'
   | 'roleTeamLead'
   | 'roleManager'
@@ -96,28 +88,21 @@ export type DictKey =
   | 'groupCalculators'
   | 'groupDashboard'
   | 'groupProposals'
-  | 'pageProposalsNote'
   | 'backHome'
   | 'courseProgress'
   | 'teamMembers'
   | 'teamLearningInProgress'
   // Retail Dashboard — scoped retail KPIs (replaces the SCC summary)
   | 'dashboardPageTitle'
-  | 'dashboardLiveFrom'
   | 'dashboardScopeOwn'
   | 'dashboardScopeTeam'
   | 'dashboardScopeSubtree'
   | 'dashboardScopeOrg'
-  | 'dashboardDemoBadge'
-  | 'dashboardDemoNote'
-  | 'dashboardLastSynced'
   | 'dashboardRefresh'
   | 'dashboardRefreshing'
   | 'dashboardBusinessTitle'
   | 'dashboardLeadersReportsTitle'
-  | 'dashboardLeadersReportsSubtitle'
   | 'dashboardLeadersBeTitle'
-  | 'dashboardLeadersBeSubtitle'
   | 'dashboardUnassigned'
   | 'dashboardUnassignedNote'
   | 'dashboardOpenFull'
@@ -143,30 +128,22 @@ export type DictKey =
   | 'kpiSubNoPolicies'
   | 'kpiSubActiveFas'
   | 'leadersPolicies'
-  // Milestone 3 — Due-premium widget (demo data)
+  // Milestone 3 — Due-premium widget
   | 'dueWidgetTitle'
-  | 'dueWidgetDemoNote'
-  | 'dueWidgetDueThisWeek'
   | 'dueWidgetOverdue'
-  | 'dueWidgetShowing'
-  | 'dueWidgetBacklog'
   | 'dueWidgetDueOn'
   | 'dueWidgetRecentTitle'
   // Phase 2 — live feeds (LeadFlow / Learning Hub / retail dues)
-  | 'feedChipsLabel'
-  | 'feedChipLive'
-  | 'feedChipDemo'
-  | 'feedNameLeadflow'
-  | 'feedNameLearning'
-  | 'feedNameRetail'
-  | 'leadsLiveNote'
-  | 'learningLiveNote'
-  | 'feedLiveLeadflow'
-  | 'feedLiveLearning'
+  | 'feedLoadError'
+  | 'feedRetry'
+  | 'moduleLoading'
+  | 'moduleLoadError'
+  | 'moduleLoadErrorDetail'
+  | 'leadsDuesLoading'
+  | 'leadsDuesUnavailable'
   | 'widgetDuesMonth'
   | 'widgetDuesMonthEmpty'
   | 'duesThisMonth'
-  | 'dueWidgetLiveNote'
   | 'dueWidgetPoliciesDue'
   | 'dueWidgetMonthLabel'
   | 'leadsOverdue'
@@ -191,7 +168,6 @@ export type DictKey =
   | 'periodCustomInvalid'
   | 'snapshotNow'
   | 'kpiSubCumulative'
-  | 'dashboardDueThisMonth'
   // Home sales overview (this-month retail figures)
   | 'homeSalesTitle'
   | 'homeSalesPolicies'
@@ -201,7 +177,6 @@ export type DictKey =
   // Login page (Learning Hub pattern: photo panel + splash)
   | 'loginPanelEyebrow'
   | 'loginPanelHeadline'
-  | 'loginPanelSub'
   | 'loginPanelValue1'
   | 'loginPanelValue2'
   | 'loginPanelValue3'
@@ -225,7 +200,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     navDashboardShort: 'Dash',
     navProfileShort: 'Profile',
     loginTitle: 'Sign in to Agent Hub',
-    loginSubtitle: 'One login for all your tools',
     employeeId: 'Employee ID',
     loginIdentifier: 'Employee ID or email',
     loginIdentifierPlaceholder: 'e.g. 2025019 or name@shantalife.com',
@@ -252,7 +226,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     greetingMorning: 'Good morning',
     greetingAfternoon: 'Good afternoon',
     greetingEvening: 'Good evening',
-    demoDataBadge: 'DEMO DATA',
     widgetFollowups: "Today's follow-ups",
     widgetFollowupsEmpty: 'No follow-ups due today',
     widgetDues: 'Dues this week',
@@ -269,19 +242,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     learningInProgress: 'in progress',
     businessThisMonth: 'FYCP this month',
     teamSectionTitle: 'Your team',
-    teamSectionSubtitle: 'Team totals for your downline.',
     modulesTitle: 'Your tools',
-    modulesSubtitle: 'Everything opens in this tab.',
     openTool: 'Open',
     opensInThisTab: 'Opens in this tab',
     comingSoon: 'Coming soon',
     proposalsSoon: 'Link to confirm with IT',
-    demoBadge: 'DEMO DATA',
     moduleSummaryTitle: 'Summary',
-    leadsDemoNote:
-      'Demo data — live lead data arrives with the LeadFlow connection in a later milestone.',
-    learningDemoNote:
-      'Demo data — live learning data arrives with the Learning Hub connection in a later milestone.',
     goToLeadManagement: 'Go to Lead Management',
     goToLearning: 'Go to Learning',
     profileTitle: 'Profile',
@@ -291,7 +257,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     profileVersion: 'App version',
     signOut: 'Sign out',
     consoleTitle: 'T&D Console',
-    consoleSoon: 'Console in a later milestone',
     roleEmployee: 'Employee',
     roleTeamLead: 'Team Lead',
     roleManager: 'Manager',
@@ -308,32 +273,25 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     groupCalculators: 'Calculators',
     groupDashboard: 'Dashboard',
     groupProposals: 'Proposals',
-    pageProposalsNote: 'The production portal link is not confirmed yet. Please check with IT.',
     backHome: 'Back to Home',
     courseProgress: 'course progress',
     teamMembers: 'team members',
     teamLearningInProgress: '{count} team members learning in progress',
     dashboardPageTitle: 'Retail Sales Dashboard',
-    dashboardLiveFrom: 'Live from Retail Sales Dashboard',
     dashboardScopeOwn: 'Own data',
     dashboardScopeTeam: 'Own + team',
     dashboardScopeSubtree: 'Own + subtree',
     dashboardScopeOrg: 'Org-wide',
-    dashboardDemoBadge: 'DEMO DATA',
-    dashboardDemoNote: 'Demo data — fictional figures for the preview.',
-    dashboardLastSynced: 'Last synced {time}',
     dashboardRefresh: 'Refresh',
     dashboardRefreshing: 'Refreshing…',
     dashboardBusinessTitle: 'Business overview',
     dashboardLeadersReportsTitle: 'Top team members',
-    dashboardLeadersReportsSubtitle: 'By total premium · your direct reports',
     dashboardLeadersBeTitle: 'Top Business Executives',
-    dashboardLeadersBeSubtitle: 'By total premium · org-wide',
     dashboardUnassigned: 'Unassigned',
     dashboardUnassignedNote: 'Premiums that cannot be placed under a person in scope',
     dashboardOpenFull: 'Open the full dashboard',
-    dashboardLoading: 'Loading live dashboard…',
-    dashboardLoadError: 'Could not load the live dashboard.',
+    dashboardLoading: 'Loading the dashboard…',
+    dashboardLoadError: 'Could not load the dashboard.',
     dashboardLoadErrorDetail:
       'Check your connection and try again, or open the full Retail Sales Dashboard.',
     dashboardRetry: 'Try again',
@@ -357,29 +315,19 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiSubActiveFas: 'Sold at least once (all-time)',
     leadersPolicies: '{count} policies',
     dueWidgetTitle: 'Due premiums',
-    dueWidgetDemoNote:
-      'Demo data — live dues arrive with the Due & Lapse connection in a later milestone.',
-    dueWidgetDueThisWeek: 'Due this week',
     dueWidgetOverdue: 'Overdue',
-    dueWidgetShowing: 'Showing {shown} of {total} dues',
-    dueWidgetBacklog: 'Backlog {amount}',
     dueWidgetDueOn: 'Due {date}',
     dueWidgetRecentTitle: 'Recent dues',
-    feedChipsLabel: 'Data sources',
-    feedChipLive: 'Live',
-    feedChipDemo: 'Demo',
-    feedNameLeadflow: 'LeadFlow',
-    feedNameLearning: 'Learning Hub',
-    feedNameRetail: 'Retail Dashboard',
-    leadsLiveNote: 'Live lead data from LeadFlow.',
-    learningLiveNote: 'Live learning data from the Learning Hub.',
-    feedLiveLeadflow: 'Live from LeadFlow',
-    feedLiveLearning: 'Live from Learning Hub',
+    feedLoadError: 'Could not load this data.',
+    feedRetry: 'Try again',
+    moduleLoading: 'Loading…',
+    moduleLoadError: 'Could not load the data.',
+    moduleLoadErrorDetail: 'Check your connection and try again.',
+    leadsDuesLoading: 'Loading dues…',
+    leadsDuesUnavailable: 'Dues unavailable',
     widgetDuesMonth: 'Dues this month',
     widgetDuesMonthEmpty: 'No premiums due this month',
     duesThisMonth: 'premiums due this month',
-    dueWidgetLiveNote:
-      'Live dues for this month from the Retail Sales Dashboard. The policy-wise list lives in the full dashboard.',
     dueWidgetPoliciesDue: '{count} policies due',
     dueWidgetMonthLabel: 'Due in {month}',
     leadsOverdue: 'Overdue follow-ups',
@@ -403,18 +351,16 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'Pick a valid date range (up to 2 years, ending today).',
     snapshotNow: 'Now',
     kpiSubCumulative: 'Cumulative',
-    dashboardDueThisMonth: 'Due Premium is month-to-date',
     homeSalesTitle: 'Sales overview',
     homeSalesPolicies: 'Total policy sales',
     homeSalesPoliciesSub: 'New policies · This month',
     homeSalesFycp: 'Total FYCP',
     homeSalesFycpSub: 'New {new} · Deferred {deferred}',
     loginPanelEyebrow: 'AGENT HUB',
-    loginPanelHeadline: 'One login. Every field tool.',
-    loginPanelSub: 'Leads, learning, calculators and sales — together in one place, with your data only.',
-    loginPanelValue1: 'Leads, learning & sales in one place',
-    loginPanelValue2: 'Live data from your connected apps',
-    loginPanelValue3: 'You see only your own data — and your team’s',
+    loginPanelHeadline: 'From lead to sale — all in one place.',
+    loginPanelValue1: 'Every lead, from first call to closed sale',
+    loginPanelValue2: 'Learning built for the field — courses, quizzes, certificates',
+    loginPanelValue3: 'Your numbers, analysed — sales, dues, performance',
     splashLoading: 'Loading Agent Hub…',
   },
   bn: {
@@ -434,7 +380,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     navDashboardShort: 'ড্যাশ',
     navProfileShort: 'প্রোফাইল',
     loginTitle: 'এজেন্ট হাবে সাইন ইন করুন',
-    loginSubtitle: 'সব টুলের জন্য একটি লগইন',
     employeeId: 'কর্মচারী আইডি',
     loginIdentifier: 'কর্মচারী আইডি বা ইমেইল',
     loginIdentifierPlaceholder: 'যেমন 2025019 বা name@shantalife.com',
@@ -461,7 +406,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     greetingMorning: 'শুভ সকাল',
     greetingAfternoon: 'শুভ অপরাহ্ন',
     greetingEvening: 'শুভ সন্ধ্যা',
-    demoDataBadge: 'ডেমো ডেটা',
     widgetFollowups: 'আজকের ফলো-আপ',
     widgetFollowupsEmpty: 'আজ কোনো ফলো-আপ নেই',
     widgetDues: 'এই সপ্তাহের বকেয়া',
@@ -478,18 +422,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     learningInProgress: 'চলমান',
     businessThisMonth: 'এই মাসে এফওয়াইসিপি',
     teamSectionTitle: 'আপনার টিম',
-    teamSectionSubtitle: 'আপনার ডাউনলাইনের টিম মোট।',
     modulesTitle: 'আপনার টুলস',
-    modulesSubtitle: 'সবকিছু এই ট্যাবেই খুলবে।',
     openTool: 'খুলুন',
     opensInThisTab: 'এই ট্যাবেই খুলবে',
     comingSoon: 'শীঘ্রই আসছে',
     proposalsSoon: 'লিংক আইটির সঙ্গে নিশ্চিত করতে হবে',
-    demoBadge: 'DEMO DATA',
     moduleSummaryTitle: 'সারসংক্ষেপ',
-    leadsDemoNote: 'ডেমো ডেটা — লাইভ লিড ডেটা পরের মাইলস্টোনে লিডফ্লো সংযোগের সঙ্গে আসবে।',
-    learningDemoNote:
-      'ডেমো ডেটা — লাইভ লার্নিং ডেটা পরের মাইলস্টোনে লার্নিং হাব সংযোগের সঙ্গে আসবে।',
     goToLeadManagement: 'লিড ম্যানেজমেন্টে যান',
     goToLearning: 'লার্নিং-এ যান',
     profileTitle: 'প্রোফাইল',
@@ -499,7 +437,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     profileVersion: 'অ্যাপ সংস্করণ',
     signOut: 'সাইন আউট',
     consoleTitle: 'টি অ্যান্ড ডি কনসোল',
-    consoleSoon: 'কনসোল পরের মাইলস্টোনে আসবে',
     roleEmployee: 'কর্মচারী',
     roleTeamLead: 'টিম লিড',
     roleManager: 'ম্যানেজার',
@@ -516,32 +453,25 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     groupCalculators: 'ক্যালকুলেটর',
     groupDashboard: 'ড্যাশবোর্ড',
     groupProposals: 'প্রপোজাল',
-    pageProposalsNote: 'প্রোডাকশন পোর্টালের লিংক এখনো নিশ্চিত হয়নি। আইটির সঙ্গে যোগাযোগ করুন।',
     backHome: 'হোমে ফিরুন',
     courseProgress: 'কোর্স অগ্রগতি',
     teamMembers: 'টিম সদস্য',
     teamLearningInProgress: '{count} জন টিম মেম্বার শিখছেন',
     dashboardPageTitle: 'রিটেইল সেলস ড্যাশবোর্ড',
-    dashboardLiveFrom: 'রিটেইল সেলস ড্যাশবোর্ড থেকে লাইভ',
     dashboardScopeOwn: 'নিজের ডেটা',
     dashboardScopeTeam: 'নিজের + টিম',
     dashboardScopeSubtree: 'নিজের + অধীনস্থ সংগঠন',
     dashboardScopeOrg: 'সারা প্রতিষ্ঠানজুড়ে',
-    dashboardDemoBadge: 'DEMO DATA',
-    dashboardDemoNote: 'ডেমো ডেটা — প্রিভিউয়ের জন্য কাল্পনিক হিসাব।',
-    dashboardLastSynced: 'সর্বশেষ সিঙ্ক {time}',
     dashboardRefresh: 'রিফ্রেশ',
     dashboardRefreshing: 'রিফ্রেশ হচ্ছে…',
     dashboardBusinessTitle: 'ব্যবসার সারসংক্ষেপ',
     dashboardLeadersReportsTitle: 'শীর্ষ টিম মেম্বার',
-    dashboardLeadersReportsSubtitle: 'মোট প্রিমিয়াম অনুযায়ী · আপনার সরাসরি রিপোর্টরা',
     dashboardLeadersBeTitle: 'শীর্ষ বিজনেস এক্সিকিউটিভ',
-    dashboardLeadersBeSubtitle: 'মোট প্রিমিয়াম অনুযায়ী · সারা প্রতিষ্ঠানজুড়ে',
     dashboardUnassigned: 'বরাদ্দহীন',
     dashboardUnassignedNote: 'যেসব প্রিমিয়াম এই স্কোপে কারো অধীনে বসানো যায়নি',
     dashboardOpenFull: 'পূর্ণ ড্যাশবোর্ড খুলুন',
-    dashboardLoading: 'লাইভ ড্যাশবোর্ড লোড হচ্ছে…',
-    dashboardLoadError: 'লাইভ ড্যাশবোর্ড লোড করা যায়নি।',
+    dashboardLoading: 'ড্যাশবোর্ড লোড হচ্ছে…',
+    dashboardLoadError: 'ড্যাশবোর্ড লোড করা যায়নি।',
     dashboardLoadErrorDetail:
       'আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন, অথবা পূর্ণ রিটেইল সেলস ড্যাশবোর্ড খুলুন।',
     dashboardRetry: 'আবার চেষ্টা করুন',
@@ -565,29 +495,19 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     kpiSubActiveFas: 'অন্তত একবার বিক্রি করেছেন',
     leadersPolicies: '{count}টি পলিসি',
     dueWidgetTitle: 'বকেয়া প্রিমিয়াম',
-    dueWidgetDemoNote:
-      'ডেমো ডেটা — লাইভ বকেয়া পরের মাইলস্টোনে ডিউ অ্যান্ড ল্যাপস সংযোগের সঙ্গে আসবে।',
-    dueWidgetDueThisWeek: 'এই সপ্তাহে বকেয়া',
     dueWidgetOverdue: 'মেয়াদোত্তীর্ণ',
-    dueWidgetShowing: '{total}টি বকেয়ার মধ্যে {shown}টি দেখানো হচ্ছে',
-    dueWidgetBacklog: 'বকেয়া {amount}',
     dueWidgetDueOn: '{date}-এ বকেয়া',
     dueWidgetRecentTitle: 'সাম্প্রতিক বকেয়া',
-    feedChipsLabel: 'ডেটা উৎস',
-    feedChipLive: 'লাইভ',
-    feedChipDemo: 'ডেমো',
-    feedNameLeadflow: 'লিডফ্লো',
-    feedNameLearning: 'লার্নিং হাব',
-    feedNameRetail: 'রিটেইল ড্যাশবোর্ড',
-    leadsLiveNote: 'লিডফ্লো থেকে লাইভ লিড ডেটা।',
-    learningLiveNote: 'লার্নিং হাব থেকে লাইভ লার্নিং ডেটা।',
-    feedLiveLeadflow: 'লিডফ্লো থেকে লাইভ',
-    feedLiveLearning: 'লার্নিং হাব থেকে লাইভ',
+    feedLoadError: 'এই ডেটা লোড করা যায়নি।',
+    feedRetry: 'আবার চেষ্টা করুন',
+    moduleLoading: 'লোড হচ্ছে…',
+    moduleLoadError: 'ডেটা লোড করা যায়নি।',
+    moduleLoadErrorDetail: 'আপনার সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।',
+    leadsDuesLoading: 'বকেয়া লোড হচ্ছে…',
+    leadsDuesUnavailable: 'বকেয়া তথ্য পাওয়া যায়নি',
     widgetDuesMonth: 'এই মাসের বকেয়া',
     widgetDuesMonthEmpty: 'এই মাসে কোনো প্রিমিয়াম বকেয়া নেই',
     duesThisMonth: 'এই মাসে বকেয়া প্রিমিয়াম',
-    dueWidgetLiveNote:
-      'রিটেইল সেলস ড্যাশবোর্ড থেকে এই মাসের লাইভ বকেয়া। পলিসিভিত্তিক তালিকা পূর্ণ ড্যাশবোর্ডে আছে।',
     dueWidgetPoliciesDue: '{count}টি পলিসি বকেয়া',
     dueWidgetMonthLabel: '{month}-এ বকেয়া',
     leadsOverdue: 'মেয়াদোত্তীর্ণ ফলো-আপ',
@@ -611,18 +531,16 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'সঠিক তারিখের পরিসর দিন (সর্বোচ্চ ২ বছর, আজ পর্যন্ত)।',
     snapshotNow: 'এখন',
     kpiSubCumulative: 'সব মিলিয়ে',
-    dashboardDueThisMonth: 'বকেয়া প্রিমিয়াম মাসের শুরু থেকে আজ পর্যন্ত',
     homeSalesTitle: 'বিক্রয় সারসংক্ষেপ',
     homeSalesPolicies: 'মোট পলিসি বিক্রয়',
     homeSalesPoliciesSub: 'নতুন পলিসি · এই মাসে',
     homeSalesFycp: 'মোট এফওয়াইসিপি',
     homeSalesFycpSub: 'নতুন {new} · ডেফার্ড {deferred}',
     loginPanelEyebrow: 'এজেন্ট হাব',
-    loginPanelHeadline: 'এক লগইন। সব ফিল্ড টুল।',
-    loginPanelSub: 'লিডস, লার্নিং, ক্যালকুলেটর ও সেলস — এক জায়গায়, শুধু আপনার ডেটা নিয়ে।',
-    loginPanelValue1: 'লিডস, লার্নিং ও সেলস এক জায়গায়',
-    loginPanelValue2: 'আপনার সংযুক্ত অ্যাপ থেকে লাইভ ডেটা',
-    loginPanelValue3: 'আপনি শুধু নিজের ডেটা দেখেন — আর আপনার টিমেরটা',
+    loginPanelHeadline: 'লিড থেকে সেল — সব এক জায়গায়।',
+    loginPanelValue1: 'প্রতিটি লিড — প্রথম কল থেকে সেল পর্যন্ত',
+    loginPanelValue2: 'ফিল্ডের জন্য শেখা — কোর্স, কুইজ, সার্টিফিকেট',
+    loginPanelValue3: 'তোমার সংখ্যা, বিশ্লেষণসহ — সেল, বকেয়া, পারফরম্যান্স',
     splashLoading: 'এজেন্ট হাব লোড হচ্ছে…',
   },
 };

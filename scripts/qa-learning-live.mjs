@@ -22,7 +22,7 @@
  *     Without the vars this section SKIPs gracefully (exit 0) — live
  *     verification then runs post-push against the deployed preview,
  *     where the vars exist.
- *  2. Demo fixture: the synthetic slice's hand-computed values, exact.
+ *  2. Test fixture: the synthetic slice's hand-computed values, exact.
  *     Pinned to 2026-11-20 (FIXTURE_TODAY) so the expectations are
  *     deterministic.
  *  2b. Time-frame filter (fixture, pinned date): enrolled/completed/
@@ -37,11 +37,12 @@
  *     (src/auth/keys.ts).
  *  4. Proxy handler: the real handler with a PostgREST stub serving
  *     the fixture rows (plus stub-only real users) and ephemeral-key
- *     JWTs — 401s, 405, demo fixture gating (flag on/off, production
- *     env), live-path scoping, no-PII canaries in the stub rows, the
- *     RPC-failure BFS fallback, and the inactive-employee empty state.
- *     Period handling: invalid period -> 400, demo + live paths
- *     honour ?period= (the stub serves credit_ledger rows too); the
+ *     JWTs — 401s, 405, a 999xxxx test caller down the live path (the
+ *     demo fixture gate is gone, Mahadi 2026-11-20), live-path
+ *     scoping, no-PII canaries in the stub rows, the RPC-failure BFS
+ *     fallback, and the inactive-employee empty state.
+ *     Period handling: invalid period -> 400, the live path honours
+ *     ?period= (the stub serves credit_ledger rows too); the
  *     default period is Today; custom ranges return exactly the rows
  *     inside them and invalid custom ranges -> 400.
  *
@@ -54,7 +55,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dhakaTodayIso } from '../api/_lib/supabase.js';
 import { summarizeLearning } from '../api/_lib/learningSummary.js';
-import { buildLearningFixture, COURSE_A_ID, COURSE_B_ID } from '../api/_lib/demoFixtureLearning.js';
+import { buildLearningTestFixture, COURSE_A_ID, COURSE_B_ID } from './test-fixtures/testFixtureLearning.js';
 import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -210,7 +211,6 @@ if (!hasLive) {
     skip('live team_employee_ids RPC', 'no employees found');
   }
 
-  delete process.env.HUB_DEMO_FIXTURE;
   const { default: liveHandler } = await import('../api/learning-data.js?live=1');
   const bodies = [];
   if (leadEmp) {
@@ -218,7 +218,7 @@ if (!hasLive) {
     const { res, json } = await callHandler(liveHandler, mockReq({ token: t }));
     liveAdmin = json;
     bodies.push(res.body);
-    check('live admin: 200, org scope, demo:false', res.statusCode === 200 && json?.scope === 'org' && json?.demo === false, `status=${res.statusCode} scope=${json?.scope}`);
+    check('live admin: 200, org scope', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
     console.log(`INFO  live org — enrolled ${json?.learning?.coursesEnrolled} · completed ${json?.learning?.coursesCompleted} · certificates ${json?.learning?.certificates} · credits ${json?.learning?.creditBalance} · truncated=${json?.truncated}`);
   } else {
     skip('live admin org summary', 'no employee with direct reports found');
@@ -254,9 +254,9 @@ if (!hasLive) {
   }
 }
 
-// ---- 2. Demo fixture exact values (pinned date) ----
+// ---- 2. Test fixture exact values (pinned date) ----
 function summarizeFixture(employeeId, role, overrides = {}) {
-  const fixture = buildLearningFixture(FIXTURE_TODAY);
+  const fixture = buildLearningTestFixture(FIXTURE_TODAY);
   return summarizeLearning(
     { ...fixture, downlineIds: overrides.downlineIds ?? null, truncated: false, ...overrides.fixture },
     { employeeId, role },
@@ -308,7 +308,7 @@ function summarizeFixture(employeeId, role, overrides = {}) {
   check('fixture unknown user: empty, no-lms-record', unknown.empty === true && unknown.emptyReason === 'no-lms-record', `empty=${unknown.empty} reason=${unknown.emptyReason}`);
 
   // Inactive employee record -> empty, NOT an error (spec §8.1 step 1).
-  const inactiveFixture = buildLearningFixture(FIXTURE_TODAY);
+  const inactiveFixture = buildLearningTestFixture(FIXTURE_TODAY);
   inactiveFixture.employees.find((e) => e.employee_id === '9990001').is_active = false;
   const inactive = summarizeLearning({ ...inactiveFixture, downlineIds: null, truncated: false }, { employeeId: '9990001', role: 'employee' });
   check('fixture inactive employee: empty, no-lms-record', inactive.empty === true && inactive.emptyReason === 'no-lms-record', `empty=${inactive.empty} reason=${inactive.emptyReason}`);
@@ -324,7 +324,7 @@ function summarizeFixture(employeeId, role, overrides = {}) {
 
 // ---- 2b. Time-frame filter (fixture, pinned date) ----
 function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
-  const fixture = buildLearningFixture(FIXTURE_TODAY);
+  const fixture = buildLearningTestFixture(FIXTURE_TODAY);
   return summarizeLearning(
     {
       ...fixture,
@@ -339,7 +339,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   );
 }
 {
-  // Hand-computed org values (see api/_lib/demoFixtureLearning.js):
+  // Hand-computed org values (see scripts/test-fixtures/testFixtureLearning.js):
   // enrolments cycle ages [today, 40, 100, 200, 300] days + the course
   // B enrolment at 110 days; the single completion is 100 days back;
   // ledger rows mirror the balances at cycled ages.
@@ -396,7 +396,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
 
   // Independent recomputation from the raw fixture rows (org):
   // enrolments by enrolled_at, credits by ledger created_at.
-  const fixture = buildLearningFixture(FIXTURE_TODAY);
+  const fixture = buildLearningTestFixture(FIXTURE_TODAY);
   const publishedIds = new Set(fixture.courses.filter((c) => c.is_published).map((c) => String(c.id)));
   for (const period of ['today', 'this-month', '3m', '6m', 'this-year', 'all']) {
     const w = periodMsWindow(period, FIXTURE_TODAY);
@@ -508,7 +508,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // (active, supervisor 9990002, 10/20 on course A, 50 credits) and
   // 2025002 (inactive — the empty-state test).
   const STUB_TODAY = dhakaTodayIso();
-  const stubFixture = buildLearningFixture(STUB_TODAY);
+  const stubFixture = buildLearningTestFixture(STUB_TODAY);
   const stubEmployees = [
     ...stubFixture.employees,
     { employee_id: '2025001', full_name: 'Stub Agent', designation: 'Field Associate', supervisor_id: '9990002', is_active: true },
@@ -642,7 +642,6 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
 
   process.env.LEARNINGHUB_SUPABASE_URL = 'https://stub.supabase.co';
   process.env.LEARNINGHUB_SERVICE_ROLE_KEY = 'stub-key';
-  process.env.HUB_DEMO_FIXTURE = 'true';
   process.env.VERCEL_ENV = 'preview';
 
   const realFetch = globalThis.fetch;
@@ -679,33 +678,36 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     check('proxy: POST -> 405', res.statusCode === 405, String(res.statusCode));
   }
   {
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // A 999xxxx admin goes down the LIVE path (the demo fixture gate
+    // is gone, Mahadi 2026-11-20): admin sees the stub org — 30
+    // fixture enrolments + the stub user's 1, credits 690 + 50.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo admin -> 200, fixture (demo:true)', res.statusCode === 200 && json?.demo === true, `status=${res.statusCode} demo=${json?.demo}`);
-    check('proxy: demo admin org enrolled 30 completed 1 certs 1 credits 690', json?.learning?.coursesEnrolled === 30 && json?.learning?.coursesCompleted === 1 && json?.learning?.certificates === 1 && json?.learning?.creditBalance === 690, JSON.stringify(json?.learning));
+    check('proxy: 999 admin -> 200, live stub org', res.statusCode === 200 && json?.scope === 'org', `status=${res.statusCode} scope=${json?.scope}`);
+    check('proxy: 999 admin org enrolled 31 completed 1 certs 1 credits 740', json?.learning?.coursesEnrolled === 31 && json?.learning?.coursesCompleted === 1 && json?.learning?.certificates === 1 && json?.learning?.creditBalance === 740, JSON.stringify(json?.learning));
+    check('proxy: 999 admin summary carries no demo field', !('demo' in (json ?? {})), '');
     check('proxy: Cache-Control private, no-store', res.headers['Cache-Control'] === 'private, no-store', res.headers['Cache-Control']);
-    check('proxy: fixture response has no canary PII', !res.body.includes('canary@example.com') && !res.body.includes('01700000002'), '');
+    check('proxy: response has no canary PII', !res.body.includes('canary@example.com') && !res.body.includes('01700000002'), '');
   }
   {
-    // Live path through the stub (non-demo caller).
+    // Live path through the stub (a real-ID caller).
     const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: stub user live -> 200, demo:false', res.statusCode === 200 && json?.demo === false, `status=${res.statusCode} demo=${json?.demo}`);
+    check('proxy: stub user live -> 200', res.statusCode === 200, `status=${res.statusCode}`);
     check('proxy: stub user course A 50% (10/20), enrolled 1, credits 50', json?.learning?.currentCourse?.percent === 50 && json?.learning?.currentCourse?.modulesDone === 10 && json?.learning?.coursesEnrolled === 1 && json?.learning?.creditBalance === 50, JSON.stringify(json?.learning));
     check('proxy: stub user truncated false', json?.truncated === false, String(json?.truncated));
     check('proxy: live response has no canary PII', !res.body.includes('canary@example.com') && !res.body.includes('01700000002') && !res.body.includes('"email"'), '');
   }
   {
-    // Flag off: a demo caller goes down the LIVE path. The stub adds
+    // A 999xxxx team_lead goes down the LIVE path. The stub adds
     // 2025001 + 2025002 under 9990002, so the team is 7 direct
     // reports (5 fixture + 2 stub) — avg (60+50+45+40+30+50+0)/7 = 39.
-    delete process.env.HUB_DEMO_FIXTURE;
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    // No flag exists any more.
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo w/o flag -> live path, demo:false', res.statusCode === 200 && json?.demo === false, `demo=${json?.demo}`);
+    check('proxy: 999 team_lead -> live path', res.statusCode === 200 && json?.scope === 'team', `status=${res.statusCode} scope=${json?.scope}`);
     check('proxy: live team_lead own 80%, team avg 39, direct 7, size 7', json?.learning?.currentCourse?.percent === 80 && json?.team?.avgProgress === 39 && json?.team?.directCount === 7 && json?.team?.teamSize === 7, `own=${json?.learning?.currentCourse?.percent} avg=${json?.team?.avgProgress} direct=${json?.team?.directCount} size=${json?.team?.teamSize}`);
     check('proxy: live team_lead learning members 6 (inactive has none)', json?.team?.learningMembersCount === 6, String(json?.team?.learningMembersCount));
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   {
     const t = signToken({ sub: '2025999', name: 'Nobody', role: 'employee' });
@@ -718,56 +720,56 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     check('proxy: inactive stub user -> empty, no-lms-record', res.statusCode === 200 && json?.empty === true && json?.emptyReason === 'no-lms-record', `empty=${json?.empty} reason=${json?.emptyReason}`);
   }
   {
-    // VERCEL_ENV is 'production' on this project's deployments — the
-    // fixture must serve with the flag set regardless (live bug
-    // 2026-11-20).
+    // VERCEL_ENV is 'production' on this project's deployments — a
+    // 999xxxx caller is still on the live path there: no fixture
+    // gate exists in any env.
     process.env.VERCEL_ENV = 'production';
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: demo + flag in production env -> fixture served', res.statusCode === 200 && json?.demo === true && json?.scope === 'team', `demo=${json?.demo} scope=${json?.scope}`);
+    check('proxy: 999 team_lead in production env -> live path, team scope', res.statusCode === 200 && json?.scope === 'team' && json?.learning?.currentCourse?.percent === 80 && json?.team?.avgProgress === 39, `scope=${json?.scope} own=${json?.learning?.currentCourse?.percent} avg=${json?.team?.avgProgress}`);
     process.env.VERCEL_ENV = 'preview';
   }
   {
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=bogus' }));
     check('proxy: invalid period -> 400', res.statusCode === 400, String(res.statusCode));
   }
   {
-    // Demo path honours ?period= — the fixture is relative-dated, so
-    // its 3m org values (12 enrolled, 0 completed, 290 credits) hold
-    // on any day (§2b).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Live path honours ?period= — the stub org is 12 fixture
+    // enrolments in 3m + the stub user's 1 (enrolled today), credits
+    // 290 + 50.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=3m' }));
-    check('proxy: demo ?period=3m -> 12/0/290', res.statusCode === 200 && json?.demo === true && json?.learning?.enrolledInPeriod === 12 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 290, JSON.stringify(json?.learning));
-    check('proxy: demo ?period=3m echoes period', json?.period === '3m', String(json?.period));
+    check('proxy: 999 admin ?period=3m -> 13/0/340', res.statusCode === 200 && json?.learning?.enrolledInPeriod === 13 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 340, JSON.stringify(json?.learning));
+    check('proxy: 999 admin ?period=3m echoes period', json?.period === '3m', String(json?.period));
   }
   {
-    // Default period is Today now: a bare demo call returns the
-    // today window (fixture: 6 enrolled, 0 completed, 140 credits).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Default period is Today now: a bare call returns the today
+    // window (stub org: 6 fixture enrolments + the stub user's 1,
+    // credits 140 + 50).
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const { res, json } = await callHandler(handler, mockReq({ token: t }));
-    check('proxy: default period is today (6/0/140)', res.statusCode === 200 && json?.period === 'today' && json?.learning?.enrolledInPeriod === 6 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 140, JSON.stringify(json?.learning));
+    check('proxy: default period is today (7/0/190)', res.statusCode === 200 && json?.period === 'today' && json?.learning?.enrolledInPeriod === 7 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 190, JSON.stringify(json?.learning));
   }
   {
-    // Custom ranges through the handler, demo + live paths. The
-    // fixture is relative-dated, so [today, today] is 6/0/140 (demo
-    // org) and [3m start, today] is 12/0/290; the live stub user
-    // enrolled today with 50 ledger credits today (1/0/50).
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    // Custom ranges through the handler: the stub org is 6 fixture
+    // enrolments today + the stub user's 1 (7/0/190) and 12 + 1 in
+    // 3m (13/0/340); the stub user alone is 1/0/50.
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const todayIso = STUB_TODAY;
     const start3m = periodDateWindow('3m', todayIso).start;
     const { res: resD1, json: jsonD1 } = await callHandler(handler, mockReq({ token: t, url: `/api/learning-data?period=custom&from=${todayIso}&to=${todayIso}` }));
-    check('proxy: demo custom [today, today] -> 6/0/140', resD1.statusCode === 200 && jsonD1?.learning?.enrolledInPeriod === 6 && jsonD1?.learning?.completedInPeriod === 0 && jsonD1?.learning?.creditsInPeriod === 140, JSON.stringify(jsonD1?.learning));
-    check('proxy: demo custom echoes period + window', jsonD1?.period === 'custom' && jsonD1?.periodWindow?.start === todayIso && jsonD1?.periodWindow?.end === todayIso, `${jsonD1?.period} ${JSON.stringify(jsonD1?.periodWindow)}`);
+    check('proxy: 999 admin custom [today, today] -> 7/0/190', resD1.statusCode === 200 && jsonD1?.learning?.enrolledInPeriod === 7 && jsonD1?.learning?.completedInPeriod === 0 && jsonD1?.learning?.creditsInPeriod === 190, JSON.stringify(jsonD1?.learning));
+    check('proxy: 999 admin custom echoes period + window', jsonD1?.period === 'custom' && jsonD1?.periodWindow?.start === todayIso && jsonD1?.periodWindow?.end === todayIso, `${jsonD1?.period} ${JSON.stringify(jsonD1?.periodWindow)}`);
     const { res: resD2, json: jsonD2 } = await callHandler(handler, mockReq({ token: t, url: `/api/learning-data?period=custom&from=${start3m}&to=${todayIso}` }));
-    check('proxy: demo custom [3m start, today] -> 12/0/290', resD2.statusCode === 200 && jsonD2?.learning?.enrolledInPeriod === 12 && jsonD2?.learning?.completedInPeriod === 0 && jsonD2?.learning?.creditsInPeriod === 290, JSON.stringify(jsonD2?.learning));
+    check('proxy: 999 admin custom [3m start, today] -> 13/0/340', resD2.statusCode === 200 && jsonD2?.learning?.enrolledInPeriod === 13 && jsonD2?.learning?.completedInPeriod === 0 && jsonD2?.learning?.creditsInPeriod === 340, JSON.stringify(jsonD2?.learning));
     const tLive = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res: resL1, json: jsonL1 } = await callHandler(handler, mockReq({ token: tLive, url: `/api/learning-data?period=custom&from=${todayIso}&to=${todayIso}` }));
     check('proxy: live custom [today, today] -> 1/0/50', resL1.statusCode === 200 && jsonL1?.learning?.enrolledInPeriod === 1 && jsonL1?.learning?.completedInPeriod === 0 && jsonL1?.learning?.creditsInPeriod === 50, JSON.stringify(jsonL1?.learning));
   }
   {
     // Invalid custom ranges are 400s, never silent fallbacks.
-    const t = signToken({ sub: '9990004', name: 'Demo Admin', role: 'admin' });
+    const t = signToken({ sub: '9990004', name: 'Test Admin', role: 'admin' });
     const cases = [
       ['custom without a range', '/api/learning-data?period=custom'],
       ['custom from > to', '/api/learning-data?period=custom&from=2026-11-20&to=2026-11-01'],
@@ -786,7 +788,7 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
     // the snapshots (and the ledger fetch ran without error).
     const t = signToken({ sub: '2025001', name: 'Stub Agent', role: 'employee' });
     const { res, json } = await callHandler(handler, mockReq({ token: t, url: '/api/learning-data?period=6m' }));
-    check('proxy: stub user ?period=6m -> 1/0/50', res.statusCode === 200 && json?.demo === false && json?.learning?.enrolledInPeriod === 1 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 50, JSON.stringify(json?.learning));
+    check('proxy: stub user ?period=6m -> 1/0/50', res.statusCode === 200 && json?.learning?.enrolledInPeriod === 1 && json?.learning?.completedInPeriod === 0 && json?.learning?.creditsInPeriod === 50, JSON.stringify(json?.learning));
     check('proxy: stub user ?period=6m echoes period + window', json?.period === '6m' && json?.periodWindow?.start != null, `${json?.period} ${JSON.stringify(json?.periodWindow)}`);
   }
   check('proxy: employees fetched once (5-min cache)', normalStub.employeeFetchCount() === 1, `${normalStub.employeeFetchCount()} calls`);
@@ -795,13 +797,11 @@ function summarizeFixturePeriod(employeeId, role, period, customRange = null) {
   // Drift: the team_employee_ids RPC is down -> BFS fallback gives the
   // same team (stub RPC mirrors the BFS).
   {
-    delete process.env.HUB_DEMO_FIXTURE;
     globalThis.fetch = makeStub('rpc-down');
     const { default: h2 } = await import('../api/learning-data.js?stub=rpc-down');
-    const t = signToken({ sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' });
+    const t = signToken({ sub: '9990002', name: 'Test Team Lead', role: 'team_lead' });
     const { res, json } = await callHandler(h2, mockReq({ token: t }));
     check('proxy: RPC down -> BFS fallback, teamSize 7, avg 39', res.statusCode === 200 && json?.team?.teamSize === 7 && json?.team?.avgProgress === 39, `size=${json?.team?.teamSize} avg=${json?.team?.avgProgress}`);
-    process.env.HUB_DEMO_FIXTURE = 'true';
   }
   globalThis.fetch = realFetch;
 }

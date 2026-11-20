@@ -1,9 +1,9 @@
 /**
  * LeadFlow summary — pure summarizer over fetched rows (Phase 2 spec
  * §7). The proxy (api/leadflow-data.js) fetches the rows via PostgREST
- * and calls this; the demo fixture (api/_lib/demoFixtureLeadflow.js)
- * builds synthetic rows and calls the SAME function, so scoping is
- * exercised identically for live and demo data.
+ * and calls this; the test fixture (scripts/test-fixtures/
+ * testFixtureLeadflow.js) builds synthetic rows and calls the SAME
+ * function, so scoping is exercised identically for live and test data.
  *
  * Inputs:
  *   users: [{ id, employee_id, full_name, subordinates, manager_id }]
@@ -265,7 +265,6 @@ export function summarizeLeadflow(input, user, todayIso) {
   const scope = role === 'admin' ? 'org' : role === 'manager' ? 'subtree' : role === 'team_lead' ? 'team' : 'own';
 
   const base = {
-    demo: false,
     scope,
     role,
     period: input.period || 'all',

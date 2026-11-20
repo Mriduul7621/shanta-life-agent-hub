@@ -9,16 +9,14 @@ import tailwindcss from '@tailwindcss/vite';
  * HUB_BUILD_TARGET is dev | qa | production, DEFAULT production. It is a
  * build-time variable (NOT VITE_-prefixed, so it is never inlined into the
  * client bundle). Set it in the shell or in `.env`:
- * - dev: local development — demo auth and local signing allowed.
- * - qa: QA builds — demo auth and local signing allowed (`npm run qa`
- *   forces HUB_BUILD_TARGET=qa itself).
- * - production: a production-target build FAILS FAST if VITE_DEMO_AUTH=true,
- *   any VITE_JWT_* signing variable is set, or HUB_DEMO_FIXTURE=true —
- *   because demo users, signing keys and the synthetic retail demo slice
- *   must never ship in a production bundle. (HUB_DEMO_FIXTURE is a
- *   server-side flag for the /api/retail-data proxy, but the build guard
- *   fails on it too so a production build can never be cut from an
- *   environment that has it on.)
+ * - dev: local development — local signing allowed (QA harness).
+ * - qa: QA builds — local signing allowed (`npm run qa` forces
+ *   HUB_BUILD_TARGET=qa itself).
+ * - production: a production-target build FAILS FAST if any VITE_JWT_*
+ *   signing variable is set — signing keys must never ship in a
+ *   production bundle. (The demo-auth and demo-fixture checks that
+ *   used to live here were removed with the demo itself, Mahadi
+ *   2026-11-20: there is no demo auth and no demo slice any more.)
  *   It ALSO fails when a production signing key (HUB_JWT_PRIVATE_KEY_B64)
  *   is present without its matching public-key config
  *   (HUB_PUBLIC_KEY_PEM + HUB_KID), or when the configured HUB_KID does
@@ -52,20 +50,6 @@ function assertProductionSafe(mode: string, target: BuildTarget): void {
   if (target !== 'production') return;
   const env = loadEnv(mode, process.cwd(), '');
   const merged: Record<string, string | undefined> = { ...env, ...process.env };
-  if (merged.VITE_DEMO_AUTH === 'true') {
-    throw new Error(
-      'Agent Hub build guard: refusing a production-target build with VITE_DEMO_AUTH=true.\n' +
-        'Demo auth must never ship in a production build. Set HUB_BUILD_TARGET=dev (local dev) ' +
-        'or HUB_BUILD_TARGET=qa (QA) for builds that need demo users.',
-    );
-  }
-  if (merged.HUB_DEMO_FIXTURE === 'true') {
-    throw new Error(
-      'Agent Hub build guard: refusing a production-target build with HUB_DEMO_FIXTURE=true.\n' +
-        'The synthetic retail demo slice (api/_lib/demoFixture.js) is a Preview-only feature. ' +
-        'Set HUB_BUILD_TARGET=dev or HUB_BUILD_TARGET=qa for builds that serve it.',
-    );
-  }
   const signingVars = Object.keys(merged).filter(
     (k) => k.startsWith('VITE_JWT_') && merged[k] !== undefined && merged[k] !== '',
   );
@@ -73,7 +57,7 @@ function assertProductionSafe(mode: string, target: BuildTarget): void {
     throw new Error(
       `Agent Hub build guard: refusing a production-target build with signing variable(s) set: ${signingVars.join(', ')}.\n` +
         'Production tokens are issued server-side; no signing key may be inlined in a production bundle. ' +
-        'Set HUB_BUILD_TARGET=dev or HUB_BUILD_TARGET=qa for builds that sign demo tokens locally.',
+        'Set HUB_BUILD_TARGET=dev or HUB_BUILD_TARGET=qa for builds that sign test tokens locally.',
     );
   }
   // A production signing key without its matching public-key config
@@ -136,7 +120,7 @@ export default defineConfig(({ command, mode }) => {
     assertProductionSafe(mode, target);
     console.log(
       `[agent-hub] build target: ${target}` +
-        (target === 'production' ? ' (demo auth OFF, no signing keys)' : ' (demo auth + local signing allowed)'),
+        (target === 'production' ? ' (no signing keys in the bundle)' : ' (local signing allowed — QA harness only)'),
     );
   }
   return {

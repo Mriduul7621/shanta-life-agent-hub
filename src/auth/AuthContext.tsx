@@ -47,8 +47,8 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-    // The cached summaries are role-scoped real data (or the demo
-    // slice) — they must never survive sign-out on a shared device.
+    // The cached summaries are role-scoped real data — they must
+    // never survive sign-out on a shared device.
     clearRetailCache();
     clearLeadflowCache();
     clearLearningCache();

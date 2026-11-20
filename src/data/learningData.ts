@@ -25,6 +25,7 @@ import {
   type Period,
   type PeriodSelection,
 } from './period';
+import { fetchProxyJson } from './fetchWithRetry';
 
 export type LearningScope = 'own' | 'team' | 'subtree' | 'org';
 
@@ -48,8 +49,6 @@ export interface LearningTeamMember {
 }
 
 export interface LearningSummary {
-  /** True when the summary comes from the synthetic demo slice. */
-  demo: boolean;
   scope: LearningScope;
   role: string;
   /** The period this summary was computed for ('all' = no filtering). */
@@ -114,7 +113,6 @@ function isValidSummary(value: unknown): value is LearningSummary {
   if (typeof value !== 'object' || value === null) return false;
   const s = value as Record<string, unknown>;
   return (
-    typeof s.demo === 'boolean' &&
     typeof s.scope === 'string' &&
     typeof s.empty === 'boolean' &&
     typeof s.learning === 'object' &&
@@ -179,17 +177,18 @@ export function loadLearningCached(employeeId: string, selection: PeriodSelectio
 }
 
 /**
- * Fresh fetch from the Hub proxy. Throws on any failure (including 401 —
- * the caller's token is missing or expired; AuthContext's expiry checker
- * signs the session out separately).
+ * Fresh fetch from the Hub proxy. Retries once after ~1s on failure
+ * (fetchProxyJson — never on 401). Throws on any failure (including
+ * 401 — the caller's token is missing or expired; AuthContext's
+ * expiry checker signs the session out separately).
  */
 export async function loadLearningFresh(token: string, employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): Promise<LearningLoadResult> {
-  const res = await fetch(`/api/learning-data?${selectionQuery(selection)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`learning-data: HTTP ${res.status}`);
-  const summary: unknown = await res.json();
+  const summary: unknown = await fetchProxyJson(
+    `/api/learning-data?${selectionQuery(selection)}`,
+    token,
+    FETCH_TIMEOUT_MS,
+    'learning-data',
+  );
   if (!isValidSummary(summary)) throw new Error('learning-data: unexpected response shape');
   const cache: LearningCache = { summary, employeeId, syncedAt: Date.now() };
   writeCache(cache, selection);

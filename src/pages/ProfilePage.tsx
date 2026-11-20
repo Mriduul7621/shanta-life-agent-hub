@@ -75,7 +75,6 @@ export function ProfilePage() {
           className="rounded-2xl border border-dashed border-cream-dark bg-cream/60 p-5 sm:p-6"
         >
           <h2 className="text-base font-bold text-charcoal">{t('consoleTitle')}</h2>
-          <p className="mt-1 text-sm text-charcoal/60">{t('consoleSoon')}</p>
           <button
             type="button"
             disabled

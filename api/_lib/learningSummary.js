@@ -1,10 +1,10 @@
 /**
  * Learning Hub summary — pure summarizer over fetched rows (Phase 2
  * spec §8). The proxy (api/learning-data.js) fetches the rows via
- * PostgREST and calls this; the demo fixture
- * (api/_lib/demoFixtureLearning.js) builds synthetic rows and calls
- * the SAME function, so scoping is exercised identically for live and
- * demo data.
+ * PostgREST and calls this; the test fixture
+ * (scripts/test-fixtures/testFixtureLearning.js) builds synthetic
+ * rows and calls the SAME function, so scoping is exercised
+ * identically for live and test data.
  *
  * Shape: spec §8.2 exactly, plus `truncated` (additive, mirroring the
  * LeadFlow feed — set when the module_progress fetch hit its cap).
@@ -361,7 +361,6 @@ export function summarizeLearning(input, user) {
   const scope = role === 'admin' ? 'org' : role === 'manager' ? 'subtree' : role === 'team_lead' ? 'team' : 'own';
 
   const base = {
-    demo: false,
     scope,
     role,
     period: input.period || 'all',

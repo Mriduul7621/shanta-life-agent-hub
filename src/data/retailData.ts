@@ -25,6 +25,7 @@ import {
   type Period,
   type PeriodSelection,
 } from './period';
+import { fetchProxyJson } from './fetchWithRetry';
 
 export type RetailScope = 'own' | 'team' | 'subtree' | 'org';
 
@@ -42,8 +43,6 @@ export interface RetailDueRow {
 }
 
 export interface RetailSummary {
-  /** True when the summary comes from the synthetic demo slice. */
-  demo: boolean;
   scope: RetailScope;
   role: string;
   /** The period this summary was computed for ('all' = no filtering). */
@@ -117,8 +116,8 @@ interface RetailCache {
  * newPremium/deferredPremium fields, but an older deployment's proxy
  * response has neither. A browser running the new bundle against the
  * old proxy (Vercel skew pin from an earlier session) failed this
- * validation and the whole retail feed fell back to demo — while
- * LeadFlow/Learning stayed Live, because their shapes did not change.
+ * validation and the whole retail feed was lost — while
+ * LeadFlow/Learning stayed up, because their shapes did not change.
  * These two fields are therefore OPTIONAL here: absent (or a
  * non-number) is accepted and normalizeSummary() defaults them to 0,
  * so the transient mixed-version state shows New ৳0 · Deferred ৳0 on
@@ -129,7 +128,6 @@ function isValidSummary(value: unknown): value is RetailSummary {
   if (typeof value !== 'object' || value === null) return false;
   const s = value as Record<string, unknown>;
   return (
-    typeof s.demo === 'boolean' &&
     typeof s.scope === 'string' &&
     typeof s.totalPremium === 'number' &&
     typeof s.fycp === 'number' &&
@@ -210,17 +208,18 @@ export function loadRetailCached(employeeId: string, selection: PeriodSelection 
 }
 
 /**
- * Fresh fetch from the Hub proxy. Throws on any failure (including 401 —
- * the caller's token is missing or expired; AuthContext's expiry checker
- * signs the session out separately).
+ * Fresh fetch from the Hub proxy. Retries once after ~1s on failure
+ * (fetchProxyJson — never on 401). Throws on any failure (including
+ * 401 — the caller's token is missing or expired; AuthContext's
+ * expiry checker signs the session out separately).
  */
 export async function loadRetailFresh(token: string, employeeId: string, selection: PeriodSelection = DEFAULT_SELECTION): Promise<RetailLoadResult> {
-  const res = await fetch(`/api/retail-data?${selectionQuery(selection)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`retail-data: HTTP ${res.status}`);
-  const summary: unknown = await res.json();
+  const summary: unknown = await fetchProxyJson(
+    `/api/retail-data?${selectionQuery(selection)}`,
+    token,
+    FETCH_TIMEOUT_MS,
+    'retail-data',
+  );
   if (!isValidSummary(summary)) throw new Error('retail-data: unexpected response shape');
   const cache: RetailCache = { summary: normalizeSummary(summary), employeeId, syncedAt: Date.now() };
   writeCache(cache, selection);

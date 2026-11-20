@@ -926,7 +926,6 @@ export function summarizeWithIndex(index, user) {
   })();
 
   return {
-    demo: false,
     scope: scope.scopeLabel,
     role,
     period: index.period || 'all',

@@ -6,14 +6,17 @@
  * clone. Plain `npm run build` still respects `.env` and defaults
  * to the production target (see vite.config.ts).
  *
- * Sessions are SEEDED, not typed: the demo sign-in path is gone
- * (Mahadi 2026-11-20), so `login()` signs a test token in Node with
- * the bundled jwt.ts + the .env dev key (or the ephemeral keypair
- * when no .env key exists) and drops it into sessionStorage — the
- * app restores it exactly as it would a server-issued token. The
- * UI sign-in form is tested separately (§3/§22): a 999xxxx attempt
- * must FAIL (no demo route), and the server side of real auth is
- * covered by `npm run qa:auth-live`.
+ * Sessions are SEEDED, not typed: there is no demo sign-in path at
+ * all (the demo accounts were removed 2026-11-20, and the demo
+ * fixture code was deleted the same day) — so `login()` signs a test
+ * token in Node with the bundled jwt.ts + the .env dev key (or the
+ * ephemeral keypair when no .env key exists) and drops it into
+ * sessionStorage — the app restores it exactly as it would a
+ * server-issued token. The 999xxxx IDs are harness-only TEST users
+ * (safely non-real, never in the bundle). The UI sign-in form is
+ * tested separately (§3/§22): a 999xxxx attempt must FAIL (no demo
+ * route), and the server side of real auth is covered by
+ * `npm run qa:auth-live`.
  *
  * Runs against the PRODUCTION build via file:// — the VM's Chrome build
  * hard-blocks loopback navigation (ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS;
@@ -31,27 +34,27 @@
  * live fetch cannot succeed here — the dashboard QA below asserts the page
  * reaches a terminal state (live KPIs OR the error state with retry + the
  * retail-dashboard link) and records which path was taken. The ready state
- * is verified against a synthetic session cache seeded with the demo
- * fixture summary (computed by the Hub's own summarizer, api/_lib). The
- * live path itself is verified by `npm run qa:retail-live`, which runs
- * the Hub's own summarizer + proxy handler against the real retail
- * endpoint payload from Node. The same pattern applies to the Phase 2
- * feeds (§21): the LeadFlow / Learning Hub / retail proxies do not exist
- * under file://, so the live ready states are verified against seeded
- * session caches (hub-leadflow-cache-v1, hub-learning-cache-v1,
- * hub-retail-cache-v1, each suffixed with the period — `:today` by
- * default, `:all` for Home + the dues feed, `:custom:from:to` for a
- * custom range) computed by the Hub's own summarizers, with the
- * fixture summaries flipped to demo:false to exercise the live chrome.
- * The live paths are verified by `npm run qa:leadflow-live` and
- * `npm run qa:learning-live`.
+ * is verified against a synthetic session cache seeded with a TEST
+ * fixture summary (computed by the Hub's own summarizer, api/_lib —
+ * see scripts/test-fixtures/). The live path itself is verified by
+ * `npm run qa:retail-live`, which runs the Hub's own summarizer +
+ * proxy handler against the real retail endpoint payload from Node.
+ * The same pattern applies to the Phase 2 feeds (§21): the LeadFlow /
+ * Learning Hub / retail proxies do not exist under file://, so the
+ * live ready states are verified against seeded session caches
+ * (hub-leadflow-cache-v1, hub-learning-cache-v1, hub-retail-cache-v1,
+ * each suffixed with the period — `:today` by default, `:all` for
+ * Home + the dues feed, `:custom:from:to` for a custom range)
+ * computed by the Hub's own summarizers. The live paths are verified
+ * by `npm run qa:leadflow-live` and `npm run qa:learning-live`.
  *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
  *  2. All 4 roles render from a seeded session; the token carries the
  *     documented claims.
- *  3. A 999xxxx UI sign-in attempt FAILS (no demo route — the demo
- *     accounts are gone); no token is issued, no lockout message.
+ *  3. A 999xxxx UI sign-in attempt FAILS (no demo route — there are
+ *     no demo accounts and no demo code path at all); no token is
+ *     issued, no lockout message.
  *  4. Sign-out clears the session token.
  *  5. EN/BN switch changes UI strings.
  *  6. Role views differ (team section only for Team Lead / Manager; Admin sees
@@ -64,7 +67,7 @@
  * Checks (Milestone 2 — 31):
  *  9. Key sanity: the signing private key matches the public key QA
  *     verifies with; the kid is the SHA-256(DER) derivation.
- * 10. The QA build itself succeeds (qa target, demo on, stub override).
+ * 10. The QA build itself succeeds (qa target, stub override).
  * 11. RS256: the issued token's header (alg RS256, expected kid), its
  *     signature verified independently with node:crypto, accepted by the
  *     app's own verifySsoToken (bundled for Node via esbuild), and a
@@ -84,12 +87,14 @@
  * 14. Tile wiring: ALL enabled modules render as same-tab links
  *     (no target=_blank); ssoJoined tiles carry #hub-token= in the href,
  *     non-joined tiles are plain links (read-only — no live navigation).
- * 15. Production-target guard: a production build with demo auth FAILS, a
- *     production build with a signing key FAILS, a production signing key
- *     without its matching public-key config FAILS, a HUB_KID that does
- *     not match HUB_PUBLIC_KEY_PEM FAILS, a matching production keypair
- *     SUCCEEDS, and a clean production build (temp copy, no .env)
- *     succeeds with no demo users and sign-in failing closed.
+ * 15. Production-target guard: a production build with a signing key
+ *     FAILS, a production signing key without its matching public-key
+ *     config FAILS, a HUB_KID that does not match HUB_PUBLIC_KEY_PEM
+ *     FAILS, a matching production keypair SUCCEEDS, and a clean
+ *     production build (temp copy, no .env) succeeds with no test
+ *     users shown and sign-in failing closed. (The old demo-auth
+ *     guard test is gone with the demo code — vite.config.ts no
+ *     longer checks VITE_DEMO_AUTH.)
  *
  * Checks (Retail Dashboard — 40):
  * 16. Dashboard page: heading is "Retail Sales Dashboard", reaches a
@@ -97,16 +102,18 @@
  *     has a Refresh button, links to the Retail Sales Dashboard, and
  *     carries no link to the removed SCC tile.
  * 16b. Dashboard ready state (Team Lead): renders against a synthetic
- *     session cache seeded with the demo fixture summary — exact figures
- *     for all 6 KPIs, the Top team members leaderboard, the DEMO badge,
- *     the scope label, and the cached-while-refreshing banner.
+ *     session cache seeded with a test fixture summary — exact figures
+ *     for all 6 KPIs, the Top team members leaderboard, the scope
+ *     label, and the cached-while-refreshing banner. No DEMO badge or
+ *     demo note anywhere — those were removed with the demo code.
  * 16c. Dashboard role views: Employee sees own data only (no leaderboard);
  *     Admin sees Top Business Executives + the Unassigned line + Org-wide;
  *     an empty scope shows the empty state with the no-code note and no
  *     KPI cards.
- * 17. Due-premium widget: present on Home with the DEMO badge + note and
- *     demo rows for Team Lead; "showing 5 of 31" for Manager team; empty
- *     state for Admin.
+ * 17. Due-premium widget: on Home, one widget only — the unseeded
+ *     (failed-fetch) state shows the error + retry, a seeded cache
+ *     shows the live rows + totals, and a seeded EMPTY summary shows
+ *     the plain empty state. No demo rows, no DEMO badge, no note.
  *
  * Checks (Instant-open — 8):
  * 19. Preconnect + dns-prefetch links exist for all 6 module origins, no
@@ -117,37 +124,43 @@
  * Checks (Home quick-actions + module data pages — 19):
  * 20. Home has one flat quick-action grid (7 tiles, icon + name, no group
  *     headings, no descriptions) with disabled Proposals + Coming soon.
- *     Leads/Learning pages show a DEMO summary strip (exact demo figures)
- *     + a same-tab Go button and no ModuleTile; Calculators/Proposals
- *     pages are unchanged (tiles only, no summary, no Go button).
+ *     Leads/Learning pages show an error + retry when the feeds are
+ *     unloaded (no seeded cache, no proxy under file://) — never
+ *     fixture figures — with a same-tab Go button and no ModuleTile;
+ *     Calculators/Proposals pages are unchanged (tiles only, no
+ *     summary, no Go button).
  * 20b. Leads/Learning pages at 375 px: no horizontal overflow, with
  *     screenshots (device gate; 1440 px shots are taken in §20).
  *
  * Checks (Phase 2 — live feeds):
  * 21. Home / Leads / Learning live ready states against seeded session
- *     caches (fixture summaries flipped to demo:false): feed chips show
- *     Live per feed, exact figures per card (follow-ups 4 own / 12 team
+ *     caches (test fixture summaries computed by the Hub's own
+ *     summarizers): exact figures per card (follow-ups 4 own / 12 team
  *     today-only, dues this week 2 / ৳17,000 with the Sun 15 – Sat 21
  *     Nov week range, learning this month 0 credits / 1 in progress /
- *     0 completed, business LIVE this-month FYCP ৳35,000 with no DEMO
- *     marker, sales 1 policy / FYCP ৳35,000 this month), the Due widget
- *     switches to summary mode (amount + policies + month + scope +
- *     full-dashboard link, no DEMO- rows) with the 3 recent dues above
- *     the totals, the team section drops to 2 cards (follow-ups +
- *     learning) with no team Due widget, and the Leads/Learning summary
- *     strips show "Live from …" + Last synced + the live note with the
- *     extra live stats (overdue / open / converted; enrolled /
- *     completed / certificates / credits). Empty live states show the
- *     plain empty text per card. Fixture (demo:true) seeds show the
- *     DEMO chips + the preview note on the Leads strip. Overflow
- *     checks at 375 / 768 / 1440 with screenshots (home-live-*,
- *     leads-live-1440, learning-live-1440).
+ *     0 completed, business this-month FYCP ৳35,000, sales 1 policy /
+ *     FYCP ৳35,000 this month), the Due widget in summary mode (amount
+ *     + policies + month + scope + full-dashboard link) with the 3
+ *     recent dues above the totals, the team section drops to 2 cards
+ *     (follow-ups + learning) with no team Due widget, and the
+ *     Leads/Learning summary strips show the figures only — no badge,
+ *     no "Live from …" line, no Last synced, no note — with the extra
+ *     live stats (overdue / open / converted; enrolled / completed /
+ *     certificates / credits). Empty live states show the plain empty
+ *     text per card. Overflow checks at 375 / 768 / 1440 with
+ *     screenshots (home-live-*, leads-live-1440, learning-live-1440).
+ * 27. No-demo rule (Mahadi 2026-11-20 — the demo code is deleted):
+ *     a REAL-user session (non-999 id) with a FAILED retail fetch
+ *     shows no fixture figures anywhere (error + retry instead); a
+ *     real user with an EMPTY retail feed shows zeros + empty states,
+ *     never fixture figures; and no 'demo' text appears anywhere
+ *     user-visible on any page for any session.
  *
  * Checks (Phase 2 — real auth):
  * 22. Real-login form at 375 / 768 / 1440: identifier label "Employee
  *     ID or email", identifier placeholder, forgot link out to the
- *     Learning Hub, NO demo notice anywhere (the demo accounts are
- *     gone), and the credential field switching to a password field
+ *     Learning Hub, NO test ID or demo notice anywhere (there are no
+ *     demo accounts and no demo code), and the credential field switching to a password field
  *     when an email is typed; error state (a 999xxxx attempt shows
  *     the not-configured message, never a lockout) at 375 px, with
  *     screenshots (login-real-*, login-error-375,
@@ -177,18 +190,19 @@
  *     returning 400 from the proxies.
  *
  * Checks (Demo removal + login visuals):
- * 24. No DEMO badge in the header for any session (999xxxx or real
- *     Employee ID); the built bundle contains no signing key, no
- *     demo ID and no demo PIN.
+ * 24. No DEMO badge in the header for any session (999xxxx test user
+ *     or real Employee ID); the built bundle contains no signing key,
+ *     no test ID, no test PIN and no 'demo' string.
  * 25. Splash screen: present on first load, gone within ~1.5s; the
  *     login photo panel, wave band and animated card render at
  *     1440/375 with the logo fallbacks; screenshots (splash-*).
- * 26. No subtitle under any page title (Home, Dashboard, Leads,
- *     Learning, Calculators, Proposals, Profile) at 375 / 1440: the
- *     titles stay, no <p> follows any h1, and none of the removed
- *     subtitle strings appears anywhere. Section subtitles (Business
- *     KPIs, Your tools, Your team) and the Proposals callout note are
- *     intentionally kept.
+ * 26. No subtitle under any title (Mahadi 2026-11-20) — no sentence
+ *     under any page title OR section title, on Home, Dashboard,
+ *     Leads, Learning, Calculators, Proposals, Profile: the titles
+ *     stay, no <p> follows any h1, and none of the removed strings
+ *     (subtitles, demo/live notes, Last synced, "Live from …")
+ *     appears anywhere. Card sub-values and scope labels are kept —
+ *     they are data, not title sentences.
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -210,18 +224,20 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import puppeteer from 'puppeteer-core';
-// Retail Dashboard QA: the demo fixture summary is computed by the Hub's
+// Retail Dashboard QA: the test fixture summary is computed by the Hub's
 // OWN summarizer (api/_lib — pure, no Node/browser APIs), so the seeded
-// cache is exactly what the proxy would return for a demo user.
+// cache is exactly what the proxy would return for the same rows. The
+// fixture builders live under scripts/test-fixtures/ (test-only —
+// never imported by the app bundle).
 import { summarizeRetail } from '../api/_lib/retailSummary.js';
-import { buildDemoPayload } from '../api/_lib/demoFixture.js';
+import { buildTestPayload } from './test-fixtures/testFixture.js';
 // Phase 2 feeds QA: same pattern — the seeded caches are computed by
 // the Hub's OWN summarizers, so they are exactly what the proxies
-// would return for a demo user.
+// would return for the same rows.
 import { summarizeLeadflow, aggregateLeadCounts, scopeSetsFor } from '../api/_lib/leadflowSummary.js';
-import { buildLeadflowFixture } from '../api/_lib/demoFixtureLeadflow.js';
+import { buildLeadflowTestFixture } from './test-fixtures/testFixtureLeadflow.js';
 import { summarizeLearning } from '../api/_lib/learningSummary.js';
-import { buildLearningFixture } from '../api/_lib/demoFixtureLearning.js';
+import { buildLearningTestFixture } from './test-fixtures/testFixtureLearning.js';
 import { periodMsWindow, periodDateWindow } from '../api/_lib/periods.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -255,7 +271,7 @@ function runBuild(cwd, env) {
 }
 
 // ---------------------------------------------------------------------------
-// Key resolution. QA needs the private key that signs demo tokens and the
+// Key resolution. QA needs the private key that signs test tokens and the
 // public key that verifies them. From a fresh clone there is no .env, so QA
 // generates an ephemeral keypair and passes the matching public key + kid to
 // the build via the VITE_HUB_* overrides (public material only). When the
@@ -362,10 +378,10 @@ if (LOCAL_QA) {
 }
 
 // ---- 10. QA's own build (local QA only) ----
-// The build needs NO demo or signing variables: the app signs
-// nothing in the browser and the demo sign-in path is gone. The
-// private key stays in the harness (Node-side test-token signing
-// only) — the check below proves it never reaches the bundle.
+// The build needs NO signing variables: the app signs nothing in the
+// browser and there is no demo sign-in path. The private key stays in
+// the harness (Node-side test-token signing only) — the check below
+// proves it never reaches the bundle.
 if (LOCAL_QA) {
   const qaBuild = runBuild(ROOT, {
     ...process.env,
@@ -378,17 +394,20 @@ if (LOCAL_QA) {
     console.log(qaBuild.output);
     summarizeAndExit(1);
   }
-  // The dev signing key, the demo IDs and the demo PIN must not ship
+  // The dev signing key, the test IDs and the test PIN must not ship
   // in the browser bundle (the browser never signs; there are no demo
-  // accounts). Read the built assets and check the raw strings.
+  // accounts and no demo code). Read the built assets and check the
+  // raw strings. The bundle must also carry no 'demo' string at all —
+  // the word survives only in code comments that explain the removal.
   const bundleText = fs
     .readdirSync(path.join(ROOT, 'dist', 'assets'))
     .filter((f) => f.endsWith('.js'))
     .map((f) => fs.readFileSync(path.join(ROOT, 'dist', 'assets', f), 'utf8'))
     .join('\n');
   check('bundle: no dev signing key ships in the browser bundle', !bundleText.includes(privateB64));
-  check('bundle: no demo Employee ID ships in the browser bundle', !bundleText.includes('9990001'));
-  check('bundle: no demo PIN ships in the browser bundle', !bundleText.includes('123456'));
+  check('bundle: no test Employee ID ships in the browser bundle', !bundleText.includes('9990001'));
+  check('bundle: no test PIN ships in the browser bundle', !bundleText.includes('123456'));
+  check('bundle: no demo string ships in the browser bundle', !/demo/i.test(bundleText));
 }
 
 // ---- Bundle the app's jwt.ts for Node (negative-case tests use the REAL code) ----
@@ -429,16 +448,17 @@ async function newPage(browser, width) {
 }
 
 /**
- * Test users for session seeding. The demo SIGN-IN path is gone
- * (Mahadi 2026-11-20) — these records exist only so the harness can
- * mint test tokens for the proxy fixture slices (999xxxx) and the
- * role views. No PIN exists for any of them.
+ * Test users for session seeding. There is NO demo sign-in path —
+ * the demo accounts were removed (Mahadi 2026-11-20) and the demo
+ * code deleted the same day — so these records exist only so the
+ * harness can mint test tokens for the role views (999xxxx IDs are
+ * safely non-real). No PIN exists for any of them.
  */
 const TEST_USERS = {
-  9990001: { role: 'employee', name: 'Demo Agent' },
-  9990002: { role: 'team_lead', name: 'Demo Team Lead' },
-  9990003: { role: 'manager', name: 'Demo Manager' },
-  9990004: { role: 'admin', name: 'Demo Admin' },
+  9990001: { role: 'employee', name: 'Test Agent' },
+  9990002: { role: 'team_lead', name: 'Test Team Lead' },
+  9990003: { role: 'manager', name: 'Test Manager' },
+  9990004: { role: 'admin', name: 'Test Admin' },
 };
 
 /**
@@ -520,8 +540,8 @@ async function clickNav(page, bn, en) {
 async function waitForDashboardTerminal(page) {
   await page.waitForFunction(
     () =>
-      document.body.textContent.includes('লাইভ ড্যাশবোর্ড লোড করা যায়নি') ||
-      document.body.textContent.includes('Could not load the live dashboard') ||
+      document.body.textContent.includes('ড্যাশবোর্ড লোড করা যায়নি') ||
+      document.body.textContent.includes('Could not load the dashboard') ||
       document.body.textContent.includes('মোট প্রাপ্ত প্রিমিয়াম') ||
       document.body.textContent.includes('Total premium received') ||
       document.body.textContent.includes('এই স্কোপে কোনো সেলস ডেটা নেই') ||
@@ -537,30 +557,27 @@ async function waitForDashboardTerminal(page) {
 }
 
 /**
- * The demo fixture summary the proxy would return for a demo user — used
- * to seed the Dashboard's session cache (hub-retail-cache-v1) so the
- * ready state can be verified without the proxy. Values are the
+ * The test fixture summary the proxy would return for the same rows —
+ * used to seed the Dashboard's session cache (hub-retail-cache-v1) so
+ * the ready state can be verified without the proxy. Values are the
  * hand-computed fixture expectations (see scripts/qa-retail-live.mjs).
  * The fixture scenario is PINNED to 2026-11-20: its due expectations
  * depend on instalment dates relative to the reference day, so pinning
  * keeps the seeded values deterministic whatever day the suite runs.
  */
 const FIXTURE_TODAY = '2026-11-20';
-function demoSummaryFor(employeeId, role, period = 'all', customRange = null) {
-  const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY, period, customRange);
-  summary.demo = true; // the proxy marks fixture summaries demo: true
-  return summary;
+function testSummaryFor(employeeId, role, period = 'all', customRange = null) {
+  return summarizeRetail(buildTestPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY, period, customRange);
 }
 
 /**
- * Phase 2 feed summaries for the seeded caches (§21). `live = true`
- * flips the fixture summary to demo:false — the figures stay the
- * hand-computed fixture values, but the UI treats them as live, which
- * exercises the live chrome (chips, live notes, summary-mode Due
- * widget, extra stats) without a proxy.
+ * Phase 2 feed summaries for the seeded caches (§21). The figures are
+ * the hand-computed test fixture values; the UI treats the seeded
+ * summaries exactly as it treats live proxy data (there is no demo
+ * flag any more — the demo code was deleted 2026-11-20).
  */
-function leadflowSummaryFor(employeeId, role, live = false, period = 'all') {
-  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+function leadflowSummaryFor(employeeId, role, period = 'all') {
+  const fixture = buildLeadflowTestFixture(FIXTURE_TODAY);
   const scopes = scopeSetsFor(fixture.users, employeeId, role);
   const byUuid = new Map(fixture.users.map((u) => [String(u.id), u]));
   const byEmp = new Map(fixture.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
@@ -584,11 +601,10 @@ function leadflowSummaryFor(employeeId, role, live = false, period = 'all') {
     { employeeId, role },
     FIXTURE_TODAY,
   );
-  summary.demo = !live;
   return summary;
 }
-function learningSummaryFor(employeeId, role, live = false, period = 'all') {
-  const fixture = buildLearningFixture(FIXTURE_TODAY);
+function learningSummaryFor(employeeId, role, period = 'all') {
+  const fixture = buildLearningTestFixture(FIXTURE_TODAY);
   const summary = summarizeLearning(
     {
       ...fixture,
@@ -601,8 +617,33 @@ function learningSummaryFor(employeeId, role, live = false, period = 'all') {
     },
     { employeeId, role },
   );
-  summary.demo = !live;
   return summary;
+}
+
+/** Wait until a Leads/Learning summary strip has rendered stat values
+ * (the ready state — the strip used to carry a "Live from …" line to
+ * wait on; that line was removed with the demo code). */
+async function waitForSummaryReady(page) {
+  await page.waitForFunction(
+    () => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section && section.querySelectorAll('p.text-2xl').length > 0;
+    },
+    { timeout: 5000 },
+  );
+}
+
+/** No 'demo' text anywhere user-visible on the current page (EN + BN
+ * — 'ডেমো' included). The word may remain in code comments only. */
+async function noDemoText(page) {
+  return page.evaluate(() => !/demo|ডেমো/i.test(document.body.textContent));
+}
+
+/** The splash shows on every (re)load and fades within ~1s — wait it
+ * out before a screenshot, or the shot shows the splash, not the
+ * page. Returns immediately when the splash is already gone. */
+async function waitForSplashGone(page) {
+  await page.waitForFunction(() => !document.querySelector('[data-splash]'), { timeout: 5000 }).catch(() => {});
 }
 
 /** Seed any of the three feed caches (null = leave unseeded).
@@ -662,15 +703,14 @@ try {
   }
 
   // ---- 2. All 4 roles render from a seeded session; JWT claims ----
-  // The demo sign-in path is gone (Mahadi 2026-11-20) — login() seeds
-  // a Node-signed test token and the app restores it. The token's
-  // claims (sub/name/role/exp-iat=3600) are checked from the stored
+  // There is no demo sign-in path — login() seeds a Node-signed test
+  // token and the app restores it. The token's claims (sub/name/role/exp-iat=3600) are checked from the stored
   // session, and the 9990002 token is reused by the RS256 checks.
   const roleCases = [
-    { id: '9990001', role: 'employee', name: 'Demo Agent' },
-    { id: '9990002', role: 'team_lead', name: 'Demo Team Lead' },
-    { id: '9990003', role: 'manager', name: 'Demo Manager' },
-    { id: '9990004', role: 'admin', name: 'Demo Admin' },
+    { id: '9990001', role: 'employee', name: 'Test Agent' },
+    { id: '9990002', role: 'team_lead', name: 'Test Team Lead' },
+    { id: '9990003', role: 'manager', name: 'Test Manager' },
+    { id: '9990004', role: 'admin', name: 'Test Admin' },
   ];
   for (const c of roleCases) {
     const { ctx, page, errors } = await newPage(browser, 1440);
@@ -703,12 +743,13 @@ try {
   }
 
   // ---- 3. A 999xxxx UI sign-in attempt FAILS (no demo route) ----
-  // The demo accounts are gone entirely — submitting a 999xxxx ID in
-  // the form must not sign in, must not issue a token, and must never
-  // show a lockout message (there is no client-side lockout any more;
-  // the server lockout is covered by qa:auth-live). Under file:// the
-  // /api/hub-auth fetch throws, so the form shows the not-configured
-  // message; the point here is the failure, not the wording.
+  // There are no demo accounts and no demo code path — submitting a
+  // 999xxxx ID in the form must not sign in, must not issue a token,
+  // and must never show a lockout message (there is no client-side
+  // lockout any more; the server lockout is covered by qa:auth-live).
+  // Under file:// the /api/hub-auth fetch throws, so the form shows
+  // the not-configured message; the point here is the failure, not
+  // the wording.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -724,12 +765,12 @@ try {
       await new Promise((r) => setTimeout(r, 400));
     }
     const alert = await page.$eval('[role="alert"]', (el) => el.textContent);
-    check('demo sign-in removed: 999xxxx attempt fails (not configured)', /কনফিগার করা হয়নি|not configured/i.test(alert), alert);
-    check('demo sign-in removed: 5 attempts never show a lock message', !/লক|lock/i.test(alert), alert);
+    check('no demo sign-in: 999xxxx attempt fails (not configured)', /কনফিগার করা হয়নি|not configured/i.test(alert), alert);
+    check('no demo sign-in: 5 attempts never show a lock message', !/লক|lock/i.test(alert), alert);
     const tokenAfterFail = await getToken(page);
-    check('demo sign-in removed: no token issued', tokenAfterFail === null);
+    check('no demo sign-in: no token issued', tokenAfterFail === null);
     const stillLogin = await page.evaluate(() => !!document.querySelector('#employee-id'));
-    check('demo sign-in removed: still on the login page', stillLogin);
+    check('no demo sign-in: still on the login page', stillLogin);
     await ctx.close();
   }
 
@@ -737,7 +778,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll('button')];
       btns.find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
@@ -773,7 +814,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     const teamLeadHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('team lead home: team section present', teamLeadHasTeam);
     await ctx.close();
@@ -781,7 +822,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
     const employeeHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('employee home: NO team section', !employeeHasTeam);
     await ctx.close();
@@ -789,21 +830,36 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
     await page.evaluate(() => {
       [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
     });
     await page.waitForFunction(() => document.body.textContent.includes('টি অ্যান্ড ডি কনসোল') || document.body.textContent.includes('T&D Console'), { timeout: 5000 });
     check('admin profile: console placeholder present', true);
-    const emptyState = await page.evaluate(() => document.body.textContent.includes('কোনো ফলো-আপ নেই') || document.body.textContent.includes('No follow-ups'));
     await page.evaluate(() => {
       [...document.querySelectorAll('button')].find((b) => b.textContent.includes('হোম') || b.textContent.includes('Home'))?.click();
     });
-    await new Promise((r) => setTimeout(r, 500));
-    const adminEmpty = await page.evaluate(
-      () => document.body.textContent.includes('আজ কোনো ফলো-আপ নেই') || document.body.textContent.includes('No follow-ups due today'),
+    // Back on Home with no seeded cache and no proxy under file://,
+    // the feeds fail — the page must say so plainly (error + retry),
+    // never silently show fixture figures or a fake empty state. (The
+    // old check expected the demo admin's empty text here — that text
+    // came from the demo fallback, which is deleted.)
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('Could not load this data.') ||
+        document.body.textContent.includes('এই ডেটা লোড করা যায়নি।'),
+      { timeout: 10000 },
     );
-    check('admin home: zero state says so plainly (never-empty rule)', adminEmpty, `profile-empty-check=${emptyState}`);
+    const adminError = await page.evaluate(
+      () =>
+        (document.body.textContent.includes('Could not load this data.') ||
+          document.body.textContent.includes('এই ডেটা লোড করা যায়নি।')) &&
+        (document.body.textContent.includes('Try again') ||
+          document.body.textContent.includes('আবার চেষ্টা করুন')) &&
+        !document.body.textContent.includes('48,500') &&
+        !document.body.textContent.includes('185,000'),
+    );
+    check('admin home: failed feeds say so plainly (error + retry, no fixture figures)', adminError);
     await ctx.close();
   }
 
@@ -817,13 +873,15 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     const loginOv = await overflowCheck(page);
     check(`screenshot login-${width}: no horizontal overflow`, !loginOv.overflow, `scrollWidth=${loginOv.scrollWidth} innerWidth=${loginOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `login-${width}.png`), fullPage: true });
     // Home as Team Lead (richest view: own + team widgets)
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const homeOv = await overflowCheck(page);
     check(`screenshot home-${width}: no horizontal overflow`, !homeOv.overflow, `scrollWidth=${homeOv.scrollWidth} innerWidth=${homeOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `home-${width}.png`), fullPage: true });
     // Profile
     await page.evaluate(() => {
@@ -832,6 +890,7 @@ try {
     await new Promise((r) => setTimeout(r, 500));
     const profOv = await overflowCheck(page);
     check(`screenshot profile-${width}: no horizontal overflow`, !profOv.overflow, `scrollWidth=${profOv.scrollWidth} innerWidth=${profOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `profile-${width}.png`), fullPage: true });
     // Dashboard (M3) — terminal state (live or error), overflow, screenshot
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -839,6 +898,7 @@ try {
     await new Promise((r) => setTimeout(r, 300));
     const dashOv = await overflowCheck(page);
     check(`screenshot dashboard-${width}: no horizontal overflow (${dashPath})`, !dashOv.overflow, `scrollWidth=${dashOv.scrollWidth} innerWidth=${dashOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `dashboard-${width}.png`), fullPage: true });
     await ctx.close();
   }
@@ -852,8 +912,9 @@ try {
   for (const s of roleShots) {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, s.id);
-    await page.waitForFunction(() => document.body.textContent.includes('Demo'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, s.file), fullPage: true });
     console.log(`SHOT  ${s.file}`);
     await ctx.close();
@@ -863,7 +924,7 @@ try {
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error' || dashPath === 'empty', `path=${dashPath}`);
@@ -919,23 +980,24 @@ try {
   }
 
   // ---- 16b. Dashboard ready state (retail): synthetic cache, exact figures ----
-  // Seeded with the demo fixture summary for 9990002 (Team Lead), computed
+  // Seeded with the test fixture summary for 9990002 (Team Lead), computed
   // by the Hub's own summarizer — the exact values the proxy returns.
   // The page defaults to This Month: total ৳43,000 · FYCP ৳35,000 ·
   // policies 1 · due ৳34,000 (4 pol) · persistency 83.3% (5/6) ·
-  // active 3 of 3 (ever-sold) · leaders Demo Agent ৳35,000, Eleven
+  // active 3 of 3 (ever-sold) · leaders Test Agent ৳35,000, Eleven
   // ৳0, Twelve ৳0. Switching the dropdown to All time shows total
-  // ৳1,64,000 · FYCP ৳1,56,000 · policies 7 · leaders Demo Agent
-  // ৳67,000, Demo FA Eleven ৳57,000, Demo FA Twelve ৳15,000 · DEMO
-  // badge · scope "Own + team". The background refresh fails here (no
-  // proxy under file://), so the cached-while-refreshing banner must
-  // also show.
+  // ৳1,64,000 · FYCP ৳1,56,000 · policies 7 · leaders Test Agent
+  // ৳67,000, Test FA Eleven ৳57,000, Test FA Twelve ৳15,000 · scope
+  // "Own + team". There is no DEMO badge or demo note any more — the
+  // demo code was deleted 2026-11-20. The background refresh fails here
+  // (no proxy under file://), so the cached-while-refreshing banner
+  // must also show.
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
-    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: demoSummaryFor('9990002', 'team_lead') }, 'all');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
+    await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (synthetic cache): ready state renders', dashPath === 'live', `path=${dashPath}`);
@@ -956,7 +1018,7 @@ try {
     check('dashboard ready (this-month default): total ৳43,000 + FYCP ৳35,000 + policies 1', kpisThisMonth['Total premium received'] === '৳43,000' && kpisThisMonth.FYCP === '৳35,000' && kpisThisMonth.Policies === '1', JSON.stringify(kpisThisMonth));
     check('dashboard ready (this-month): due ৳34,000 + persistency 83.3% + active 3 of 3', kpisThisMonth['Due premium — this month'] === '৳34,000' && kpisThisMonth.Persistency === '83.3%' && kpisThisMonth['Active field FAs'] === '3 of 3', JSON.stringify(kpisThisMonth));
     const bodyThisMonth = await page.evaluate(() => document.body.textContent);
-    check('dashboard ready (this-month): leaders still listed (35,000 / 0 / 0)', bodyThisMonth.includes('Demo Agent') && bodyThisMonth.includes('Demo FA Eleven') && bodyThisMonth.includes('Demo FA Twelve'));
+    check('dashboard ready (this-month): leaders still listed (35,000 / 0 / 0)', bodyThisMonth.includes('Test Agent') && bodyThisMonth.includes('Test FA Eleven') && bodyThisMonth.includes('Test FA Twelve'));
     check('dashboard ready (this-month): due card shows the MTD window', bodyThisMonth.includes('1 – 20 Nov 2026'));
     // Switch the dropdown to All time and assert the all-time figures.
     await page.select('#period-select', 'all');
@@ -978,12 +1040,13 @@ try {
     check('dashboard ready: active FAs 3 of 3', kpis['Active field FAs'] === '3 of 3', JSON.stringify(kpis));
     check('dashboard ready: due 4 policies + persistency 5 of 6 inforce', body.includes('4 policies') && body.includes('5 of 6 inforce'));
     check('dashboard ready: deferred/renewal subline', body.includes('Deferred 3.0%') && body.includes('Renewal 4.9%'));
-    check('dashboard ready: leaders ranked (Demo Agent, Eleven, Twelve)', body.includes('Demo Agent') && body.includes('Demo FA Eleven') && body.includes('Demo FA Twelve'));
-    check('dashboard ready: DEMO badge + note', body.includes('DEMO DATA') && body.includes('Demo data — fictional figures'));
+    check('dashboard ready: leaders ranked (Test Agent, Eleven, Twelve)', body.includes('Test Agent') && body.includes('Test FA Eleven') && body.includes('Test FA Twelve'));
+    check('dashboard ready: no DEMO badge or demo note anywhere', !body.includes('DEMO DATA') && !/demo/i.test(body));
     check('dashboard ready: scope label Own + team', body.includes('Own + team'));
     check('dashboard ready: cached-while-refreshing banner', body.includes('Refresh failed') || body.includes('রিফ্রেশ ব্যর্থ'));
     const readyOv = await overflowCheck(page);
     check('dashboard ready: no horizontal overflow', !readyOv.overflow, `scrollWidth=${readyOv.scrollWidth} innerWidth=${readyOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'dashboard-ready-1440.png'), fullPage: true });
     const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
     check('dashboard ready: no console errors', appErrors.length === 0, appErrors.join(' | '));
@@ -999,9 +1062,9 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee', 'this-month') }, 'this-month');
-    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: demoSummaryFor('9990001', 'employee') }, 'all');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: testSummaryFor('9990001', 'employee', 'this-month') }, 'this-month');
+    await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: testSummaryFor('9990001', 'employee') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (employee): ready state renders', dashPath === 'live', `path=${dashPath}`);
@@ -1016,14 +1079,14 @@ try {
     check('dashboard (employee): no leaderboard section', !body.includes('Top team members') && !body.includes('Top Business Executives') && !body.includes('শীর্ষ টিম মেম্বার') && !body.includes('শীর্ষ বিজনেস এক্সিকিউটিভ'));
     await ctx.close();
   }
-  // Admin (9990004): org-wide — Top Business Executives with Demo BE
+  // Admin (9990004): org-wide — Top Business Executives with Test BE
   // ৳2,34,000, the Unassigned line ৳7,000, scope "Org-wide".
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin', 'this-month') }, 'this-month');
-    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: demoSummaryFor('9990004', 'admin') }, 'all');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: testSummaryFor('9990004', 'admin', 'this-month') }, 'this-month');
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: testSummaryFor('9990004', 'admin') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard (admin): ready state renders', dashPath === 'live', `path=${dashPath}`);
@@ -1033,7 +1096,7 @@ try {
       { timeout: 5000 },
     );
     const body = await page.evaluate(() => document.body.textContent);
-    check('dashboard (admin): Top Business Executives + Demo BE ৳2,34,000', body.includes('Top Business Executives') && body.includes('Demo BE') && body.includes('৳2,34,000'));
+    check('dashboard (admin): Top Business Executives + Test BE ৳2,34,000', body.includes('Top Business Executives') && body.includes('Test BE') && body.includes('৳2,34,000'));
     check('dashboard (admin): Unassigned line ৳7,000', body.includes('Unassigned') && body.includes('৳7,000'));
     check('dashboard (admin): scope label Org-wide', body.includes('Org-wide'));
     await ctx.close();
@@ -1044,8 +1107,8 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    const emptySummary = demoSummaryFor('9990001', 'employee', 'this-month');
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    const emptySummary = testSummaryFor('9990001', 'employee', 'this-month');
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
     await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: emptySummary }, 'this-month');
@@ -1058,10 +1121,26 @@ try {
     await ctx.close();
   }
   // ---- 17. Due-premium widget (M3) ----
+  // One widget only, on Home. Three states, no demo anywhere:
+  // (a) unseeded Team Lead — the retail fetch fails under file://, so
+  // the widget shows the error state + retry, never fixture figures;
+  // (b) Manager with a seeded cache — the live widget with the 3
+  // recent dues + MTD totals; (c) Admin with a seeded EMPTY summary —
+  // the plain empty state. The old demo rows ("DEMO-" policies) and
+  // the "showing 5 of 31" line are gone with the demo code.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    // The retail fetch fails (no proxy under file://) and the single
+    // retry fails too — the widget itself must land on the error state.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+        return el && (el.textContent.includes('Could not load this data.') || el.textContent.includes('এই ডেটা লোড করা যায়নি।'));
+      },
+      { timeout: 10000 },
+    );
     const widget = await page.evaluate(() => {
       const sections = [
         ...document.querySelectorAll(
@@ -1070,32 +1149,67 @@ try {
       ];
       return { count: sections.length, text: sections[0] ? sections[0].textContent : '' };
     });
-    check('due widget: present on team-lead home (own + team)', widget.count === 2, `sections=${widget.count}`);
+    check('due widget: exactly one widget on team-lead home', widget.count === 1, `sections=${widget.count}`);
     check(
-      'due widget: DEMO badge + note',
-      (widget.text.includes('DEMO DATA') && widget.text.includes('live dues')) ||
-        (widget.text.includes('ডেমো ডেটা') && widget.text.includes('লাইভ বকেয়া')),
-      widget.text.slice(0, 120),
+      'due widget (failed fetch): error state + retry, no fixture figures',
+      widget.text.includes('Could not load this data.') &&
+        widget.text.includes('Try again') &&
+        !widget.text.includes('48,500') &&
+        !widget.text.includes('185,000'),
+      widget.text.slice(0, 160),
     );
-    check('due widget: demo rows with DEMO- policies', /DEMO-\d+/.test(widget.text));
+    check('due widget (failed fetch): no demo text', !/demo|ডেমো/i.test(widget.text), widget.text.slice(0, 120));
     await ctx.close();
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990003');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Manager'), { timeout: 5000 });
-    const showing = await page.evaluate(
-      () =>
-        document.body.textContent.includes('31টি বকেয়ার মধ্যে 5টি') ||
-        document.body.textContent.includes('Showing 5 of 31 dues'),
+    await page.waitForFunction(() => document.body.textContent.includes('Test Manager'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990003', { leadflow: null, learning: null, retail: testSummaryFor('9990003', 'manager', 'this-month') }, 'this-month');
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('৳38,000'), { timeout: 5000 });
+    const widget = await page.evaluate(() => {
+      const el = document.querySelector(
+        'section[aria-label="বকেয়া প্রিমিয়াম"], section[aria-label="Due premiums"]',
+      );
+      return el ? el.textContent : '';
+    });
+    check(
+      'due widget (manager, seeded): MTD totals 5 policies + ৳38,000',
+      widget.includes('5 policies') && widget.includes('৳38,000'),
+      widget.slice(0, 200),
     );
-    check('due widget (manager team): "showing 5 of 31" line', showing);
+    check(
+      'due widget (manager, seeded): 3 recent dues (10 Oct ৳3,000, 10 Nov ৳5,000, 12 Nov ৳4,000)',
+      widget.includes('10 Oct 2026') && widget.includes('10 Nov 2026') && widget.includes('12 Nov 2026') &&
+        widget.includes('৳3,000') && widget.includes('৳5,000') && widget.includes('৳4,000'),
+      widget.slice(0, 400),
+    );
+    check(
+      'due widget (manager, seeded): no demo text, no DEMO- rows',
+      !/demo|ডেমো/i.test(widget) && !widget.includes('DEMO-'),
+      widget.slice(0, 120),
+    );
     await ctx.close();
   }
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+    const emptySummary = testSummaryFor('9990004', 'admin', 'this-month');
+    emptySummary.empty = true;
+    emptySummary.emptyReason = 'no-code';
+    emptySummary.duePolicies = 0;
+    emptySummary.duePremium = 0;
+    emptySummary.dueRows = [];
+    await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: emptySummary }, 'this-month');
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('No premiums due this month') ||
+        document.body.textContent.includes('এই মাসে কোনো প্রিমিয়াম বকেয়া নেই'),
+      { timeout: 5000 },
+    );
     const adminWidget = await page.evaluate(() => {
       const el = document.querySelector(
         'section[aria-label="বকেয়া প্রিমিয়াম"], section[aria-label="Due premiums"]',
@@ -1103,11 +1217,12 @@ try {
       return el ? el.textContent : '';
     });
     check(
-      'due widget (admin): empty state says so plainly',
-      adminWidget.includes('এই সপ্তাহে কোনো প্রিমিয়াম বকেয়া নেই') ||
-        adminWidget.includes('No premiums due this week'),
+      'due widget (admin, empty): empty state says so plainly',
+      adminWidget.includes('এই মাসে কোনো প্রিমিয়াম বকেয়া নেই') ||
+        adminWidget.includes('No premiums due this month'),
       adminWidget.slice(0, 120),
     );
+    check('due widget (admin, empty): no demo text', !/demo|ডেমো/i.test(adminWidget), adminWidget.slice(0, 120));
     await ctx.close();
   }
 
@@ -1123,7 +1238,7 @@ try {
     const nowSec = () => Math.floor(Date.now() / 1000);
     const basePayload = {
       sub: '9990002',
-      name: 'Demo Team Lead',
+      name: 'Test Team Lead',
       role: 'team_lead',
       iat: nowSec(),
       exp: nowSec() + 3600,
@@ -1161,7 +1276,7 @@ try {
 
     // Round-trip through the bundled jwt.ts (independent of the login token).
     const roundTrip = await jwtNode.signSsoToken(
-      { sub: '9990002', name: 'Demo Team Lead', role: 'team_lead' },
+      { sub: '9990002', name: 'Test Team Lead', role: 'team_lead' },
       privateB64,
     );
     const rtHeader = decodeJwt(roundTrip).header;
@@ -1199,7 +1314,7 @@ try {
     const { ctx, page, errors } = await newPage(browser, 1440);
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
 
       // 14. Tile wiring (read-only — no live navigation).
       const wiring = await page.evaluate(() => {
@@ -1320,7 +1435,7 @@ try {
             .evaluate(
               () =>
                 document.getElementById('hub-header')?.classList.contains('visible') &&
-                (document.getElementById('user-chip')?.textContent ?? '').includes('Demo Team Lead'),
+                (document.getElementById('user-chip')?.textContent ?? '').includes('Test Team Lead'),
             )
             .catch(() => false);
           handoffCheck('handoff: stub shows hub header + user chip', !!hubHeader, status);
@@ -1331,7 +1446,7 @@ try {
 
           // Back to Hub: same-tab navigation back to the Hub home, still signed in.
           await page.evaluate(() => document.getElementById('back-to-hub')?.click());
-          await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 10000 });
+          await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 10000 });
           const tokenAfterBack = await getToken(page);
           handoffCheck('handoff: Back to Hub returns to the signed-in Hub', tokenAfterBack !== null);
 
@@ -1386,17 +1501,16 @@ try {
   }
 
   // ---- 15. Production-target guard (local QA only) ----
+  // The old demo-auth guard test is gone with the demo code:
+  // vite.config.ts no longer checks VITE_DEMO_AUTH at all (there is
+  // no demo auth to guard). The guard that remains is the signing-key
+  // guard — a production build must never ship a signing key — plus
+  // the production key-pair checks and the clean-build fail-closed
+  // login check.
   if (LOCAL_QA) {
-    const failDemo = runBuild(ROOT, { ...process.env, HUB_BUILD_TARGET: 'production', VITE_DEMO_AUTH: 'true' });
-    check(
-      'guard: production build with demo auth FAILS',
-      failDemo.status !== 0 && /VITE_DEMO_AUTH=true/.test(failDemo.output),
-      `exit=${failDemo.status}`,
-    );
     const failSigning = runBuild(ROOT, {
       ...process.env,
       HUB_BUILD_TARGET: 'production',
-      VITE_DEMO_AUTH: 'false',
       VITE_JWT_PRIVATE_KEY_B64: privateB64,
     });
     check(
@@ -1462,13 +1576,13 @@ try {
       okKeyPair.status === 0 ? '' : okKeyPair.output.slice(-400),
     );
     const prodBuild = runBuild(prodTmp, prodEnv);
-    check('production build: clean demo-off build succeeds', prodBuild.status === 0, prodBuild.status === 0 ? '' : prodBuild.output.slice(-400));
+    check('production build: clean build succeeds', prodBuild.status === 0, prodBuild.status === 0 ? '' : prodBuild.output.slice(-400));
     if (prodBuild.status === 0) {
       const prodBase = `file://${path.join(prodTmp, 'dist', 'index.html')}`;
       const { ctx, page } = await newPage(browser, 1440);
       await page.goto(prodBase, { waitUntil: 'networkidle0' });
-      const demoShown = await page.evaluate(() => document.body.textContent.includes('9990001'));
-      check('production build: no demo users shown', !demoShown);
+      const testIdShown = await page.evaluate(() => document.body.textContent.includes('9990001'));
+      check('production build: no test IDs shown', !testIdShown);
       await page.type('#employee-id', '9990002');
       await page.type('#pin', '123456');
       await page.click('button[type="submit"]');
@@ -1487,7 +1601,7 @@ try {
       );
       await ctx.close();
     } else {
-      check('production build: no demo users shown', false, 'production build failed');
+      check('production build: no test IDs shown', false, 'production build failed');
       check('production build: sign-in fails closed (not configured)', false, 'production build failed');
     }
   }
@@ -1527,7 +1641,7 @@ try {
     });
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
       await page.waitForFunction(
         (names) => names.every((n) => [...document.querySelectorAll('h3')].some((h) => h.textContent === n)),
         { timeout: 5000 },
@@ -1639,7 +1753,7 @@ try {
     const { ctx, page } = await newPage(browser, 1440);
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
       const headLinks = await page.evaluate(() => ({
         preconnect: [...document.querySelectorAll('link[rel="preconnect"]')].map((l) => l.getAttribute('href')),
         dnsPrefetch: [...document.querySelectorAll('link[rel="dns-prefetch"]')].map((l) => l.getAttribute('href')),
@@ -1710,12 +1824,15 @@ try {
 
   // ---- 20. Home quick-actions + Leads/Learning data pages ----
   // Home (Mahadi 2026-11-20): one flat quick-action grid under "Your
-  // tools" — no group sections. Leads/Learning pages: DEMO summary strip
-  // + Go button, no ModuleTile. Calculators/Proposals pages: unchanged.
+  // tools" — no group sections. Leads/Learning pages with NO seeded
+  // cache and no proxy under file://: the summary strip shows the
+  // error state + retry — never fixture figures (the demo summary
+  // strip is gone with the demo code). The seeded live ready states
+  // are covered in §21b/§21c. Calculators/Proposals pages: unchanged.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     // Home quick-actions.
     const toolsSection = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Your tools"], section[aria-label="আপনার টুলস"]');
@@ -1751,18 +1868,13 @@ try {
       toolsSection ? toolsSection.text.slice(0, 160) : 'no tools section',
     );
 
-    // Stat values by label inside the Summary strip (own first, team second).
-    const readStats = (label) =>
-      page.evaluate((lbl) => {
+    // Stat values inside the Summary strip: the error state shows no
+    // stat values at all (zero p.text-2xl elements).
+    const stripStatCount = () =>
+      page.evaluate(() => {
         const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
-        if (!section) return null;
-        const out = [];
-        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
-          const labelEl = valueEl.previousElementSibling;
-          if (labelEl && labelEl.textContent.trim() === lbl) out.push(valueEl.textContent.trim());
-        }
-        return out;
-      }, label);
+        return section ? section.querySelectorAll('p.text-2xl').length : -1;
+      });
     const goButton = (en, bn) =>
       page.evaluate(([e, b]) => {
         const a = [...document.querySelectorAll('a')].find(
@@ -1781,17 +1893,27 @@ try {
         return section ? section.textContent : null;
       });
 
-    // Leads page (Team Lead 9990002): own 4 follow-ups / 1 due, team 12 / 8.
+    // Leads page (Team Lead 9990002, no seeded cache): the feed fetch
+    // fails under file://, so the strip shows the error state + retry
+    // — no figures at all, and certainly no fixture figures.
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('Could not load the data.') ||
+        document.body.textContent.includes('ডেটা লোড করা যায়নি।'),
+      { timeout: 10000 },
+    );
     const leadsSummary = await summaryInfo();
     check(
-      'leads page: DEMO summary strip with the LeadFlow note',
-      !!leadsSummary && leadsSummary.includes('DEMO DATA') && leadsSummary.includes('live lead data arrives with the LeadFlow connection'),
+      'leads page (unloaded): error state + retry, no figures, no demo text',
+      !!leadsSummary &&
+        leadsSummary.includes('Could not load the data.') &&
+        leadsSummary.includes('Try again') &&
+        (await stripStatCount()) === 0 &&
+        !/demo|ডেমো/i.test(leadsSummary),
       leadsSummary ? leadsSummary.slice(0, 160) : 'no summary strip',
     );
-    check('leads page: follow-ups 4 own + 12 team', JSON.stringify(await readStats("Today's follow-ups")) === JSON.stringify(['4', '12']));
-    check('leads page: dues 1 own + 8 team', JSON.stringify(await readStats('Dues this week')) === JSON.stringify(['1', '8']));
     const leadsGo = await goButton('Go to Lead Management', 'লিড ম্যানেজমেন্টে যান');
     check(
       'leads page: Go button links same-tab to LeadFlow',
@@ -1800,22 +1922,24 @@ try {
     );
     check('leads page: no ModuleTile (Go button replaces it)', !(await hasTileNamed('LeadFlow')));
 
-    // Learning page (Team Lead): own 80% + Art of Selling, team 45% + 5 members.
+    // Learning page (Team Lead, no seeded cache): same error state.
     await clickNav(page, 'লার্নিং', 'Learning');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('Could not load the data.') ||
+        document.body.textContent.includes('ডেটা লোড করা যায়নি।'),
+      { timeout: 10000 },
+    );
     const learningSummary = await summaryInfo();
     check(
-      'learning page: DEMO summary strip with the Learning Hub note',
-      !!learningSummary && learningSummary.includes('DEMO DATA') && learningSummary.includes('live learning data arrives with the Learning Hub connection'),
-      learningSummary ? learningSummary.slice(0, 160) : 'no summary strip',
-    );
-    check('learning page: progress 80% own + 45% team', JSON.stringify(await readStats('Learning in progress')) === JSON.stringify(['80%', '45%']));
-    check(
-      'learning page: own course + team members line',
+      'learning page (unloaded): error state + retry, no figures, no demo text',
       !!learningSummary &&
-        learningSummary.includes('The Art of Selling — Communication Masterclass') &&
-        learningSummary.includes('5 team members learning in progress'),
-      learningSummary ? learningSummary.slice(0, 240) : 'no summary strip',
+        learningSummary.includes('Could not load the data.') &&
+        learningSummary.includes('Try again') &&
+        (await stripStatCount()) === 0 &&
+        !/demo|ডেমো/i.test(learningSummary),
+      learningSummary ? learningSummary.slice(0, 160) : 'no summary strip',
     );
     const learningGo = await goButton('Go to Learning', 'লার্নিং-এ যান');
     check(
@@ -1840,15 +1964,20 @@ try {
       'summary/go must be absent here',
     );
 
-    // Proposals page: unchanged — disabled tile + IT note, no summary, no Go button.
+    // Proposals page: unchanged — disabled tile + Coming soon, no
+    // summary, no Go button. (The "production portal link" callout
+    // note under the title was removed with the other title
+    // sentences — the tile itself still says "Link to confirm with
+    // IT".)
     await clickNav(page, 'প্রপোজাল', 'Proposals');
     await page.waitForFunction(() => document.body.textContent.includes('Proposals'), { timeout: 5000 });
     const proposalsOk = await page.evaluate(
       () =>
         [...document.querySelectorAll('h3')].some((h) => h.textContent === 'Proposals') &&
-        document.body.textContent.includes('production portal link is not confirmed yet'),
+        document.body.textContent.includes('Coming soon') &&
+        document.body.textContent.includes('Link to confirm with IT'),
     );
-    check('proposals page: unchanged, disabled tile + IT note', proposalsOk);
+    check('proposals page: unchanged, disabled tile + Coming soon', proposalsOk);
     check(
       'proposals page: no summary strip, no Go button',
       (await summaryInfo()) === null && !(await goButton('Go to', 'যান')),
@@ -1858,10 +1987,12 @@ try {
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'leads-1440.png'), fullPage: true });
     await clickNav(page, 'লার্নিং', 'Learning');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'learning-1440.png'), fullPage: true });
     await ctx.close();
   }
@@ -1870,48 +2001,56 @@ try {
   {
     const { ctx, page } = await newPage(browser, 375);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const leadsOv = await overflowCheck(page);
     check('screenshot leads-375: no horizontal overflow', !leadsOv.overflow, `scrollWidth=${leadsOv.scrollWidth} innerWidth=${leadsOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'leads-375.png'), fullPage: true });
     await clickNav(page, 'লার্নিং', 'Learning');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Learning') || document.body.textContent.includes('লার্নিং-এ যান'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const learningOv = await overflowCheck(page);
     check('screenshot learning-375: no horizontal overflow', !learningOv.overflow, `scrollWidth=${learningOv.scrollWidth} innerWidth=${learningOv.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'learning-375.png'), fullPage: true });
     await ctx.close();
   }
 
-  // ---- 21a. Home live ready state (Team Lead): seeded caches, demo:false ----
-  // Fixture figures, live chrome: chips Live, exact card figures,
-  // business LIVE (this-month FYCP, no DEMO marker), dues this week
-  // with the week range, monthly learning card, Due widget in summary
-  // mode with the 3 recent dues, team section drops to 2 cards, no
-  // team Due widget. Home loads retail + learning with :this-month
-  // and LeadFlow with :all (follow-ups are day-bucketed).
+  // ---- 21a. Home live ready state (Team Lead): seeded caches ----
+  // Test fixture figures, live rendering: exact card figures,
+  // business (this-month FYCP), dues this week with the week range,
+  // monthly learning card, Due widget in summary mode with the 3
+  // recent dues, team section drops to 2 cards, no team Due widget.
+  // No feed chips any more (deleted with the demo code) and no
+  // "Live from …" line anywhere. Home loads retail + learning with
+  // :this-month and LeadFlow with :all (follow-ups are day-bucketed).
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      leadflow: leadflowSummaryFor('9990002', 'team_lead'),
       learning: null,
       retail: null,
     });
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
-      learning: learningSummaryFor('9990002', 'team_lead', true, 'this-month'),
-      retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false },
+      learning: learningSummaryFor('9990002', 'team_lead', 'this-month'),
+      retail: testSummaryFor('9990002', 'team_lead', 'this-month'),
     }, 'this-month');
     // The Home effect already ran (empty caches) — reload so it re-reads.
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('৳34,000'), { timeout: 5000 });
     const body = await page.evaluate(() => document.body.textContent);
-    check('home live: feed chips all Live', body.includes('LeadFlow · Live') && body.includes('Learning Hub · Live') && body.includes('Retail Dashboard · Live'));
+    check(
+      'home live: no feed chips, no demo/live info anywhere',
+      !body.includes('LeadFlow · Live') && !body.includes('Learning Hub · Live') && !body.includes('Retail Dashboard · Live') &&
+        !body.includes('LeadFlow · Demo') && !body.includes('Learning Hub · Demo') && !body.includes('Retail Dashboard · Demo') &&
+        !/demo|ডেমো/i.test(body),
+    );
     check('home live: no page-title subtitle', !body.includes('Here is your day at a glance') && !body.includes('Live data from your connected apps.'));
     const cards = await page.evaluate(() => {
       const out = { own: {}, team: {} };
@@ -1949,9 +2088,8 @@ try {
       JSON.stringify(cards.own['Learning this month']),
     );
     check(
-      'home live own: business LIVE this-month FYCP ৳35,000, no DEMO marker',
-      cards.own["This month's business"]?.value === '৳35,000' &&
-        !cards.own["This month's business"]?.sub.includes('DEMO DATA'),
+      'home live own: business this-month FYCP ৳35,000',
+      cards.own["This month's business"]?.value === '৳35,000',
       JSON.stringify(cards.own["This month's business"]),
     );
     // Sales overview (Mahadi 2026-11-20): THIS-MONTH retail figures —
@@ -2004,15 +2142,16 @@ try {
       dueWidgets[0]?.slice(0, 400),
     );
     check(
-      'home live due widget: live chip + scope + full-dashboard link',
-      dueWidgets[0]?.includes('Live from Retail Sales Dashboard') &&
-        dueWidgets[0]?.includes('Own + team') &&
-        dueWidgets[0]?.includes('Open the full dashboard'),
+      'home live due widget: scope + full-dashboard link, no live-note line',
+      dueWidgets[0]?.includes('Own + team') &&
+        dueWidgets[0]?.includes('Open the full dashboard') &&
+        !dueWidgets[0]?.includes('Live from Retail Sales Dashboard'),
       dueWidgets[0]?.slice(0, 200),
     );
-    check('home live due widget: no DEMO- rows', !dueWidgets[0]?.includes('DEMO-'));
+    check('home live due widget: no demo text, no DEMO- rows', !/demo|ডেমো/i.test(dueWidgets[0] ?? '') && !dueWidgets[0]?.includes('DEMO-'));
     const ov = await overflowCheck(page);
     check('home live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'home-live-1440.png'), fullPage: true });
     const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
     check('home live: no console errors', appErrors.length === 0, appErrors.join(' | '));
@@ -2026,29 +2165,30 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead', true, 'today'),
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', 'today'),
       learning: null,
       retail: null,
     }, 'today');
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
       learning: null,
-      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+      retail: testSummaryFor('9990002', 'team_lead'),
     }, 'all');
     await clickNav(page, 'লিডস', 'Leads');
-    await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+    await waitForSummaryReady(page);
     const strip = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
       return section ? section.textContent : null;
     });
     check(
-      'leads live: Live chip + Last synced + live note, no DEMO badge',
-      strip?.includes('Live from LeadFlow') &&
-        strip?.includes('Last synced') &&
-        strip?.includes('Live lead data from LeadFlow.') &&
-        !strip?.includes('DEMO DATA'),
+      'leads live: figures only — no badge, no "Live from …", no Last synced, no note',
+      strip !== null &&
+        !strip.includes('Live from LeadFlow') &&
+        !strip.includes('Last synced') &&
+        !strip.includes('Live lead data from LeadFlow.') &&
+        !/demo|ডেমো/i.test(strip),
       strip?.slice(0, 200),
     );
     const readStats = (label) =>
@@ -2077,6 +2217,7 @@ try {
     check('leads live: Go button still same-tab to LeadFlow', go?.href === 'https://lead-flow-jet.vercel.app' && !go.target, JSON.stringify(go));
     const ov = await overflowCheck(page);
     check('leads live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'leads-live-1440.png'), fullPage: true });
     await ctx.close();
   }
@@ -2089,29 +2230,30 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
-      learning: learningSummaryFor('9990002', 'team_lead', true, 'today'),
+      learning: learningSummaryFor('9990002', 'team_lead', 'today'),
       retail: null,
     }, 'today');
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
-      learning: learningSummaryFor('9990002', 'team_lead', true),
+      learning: learningSummaryFor('9990002', 'team_lead'),
       retail: null,
     }, 'all');
     await clickNav(page, 'লার্নিং', 'Learning');
-    await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+    await waitForSummaryReady(page);
     const strip = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
       return section ? section.textContent : null;
     });
     check(
-      'learning live: Live chip + Last synced + live note, no DEMO badge',
-      strip?.includes('Live from Learning Hub') &&
-        strip?.includes('Last synced') &&
-        strip?.includes('Live learning data from the Learning Hub.') &&
-        !strip?.includes('DEMO DATA'),
+      'learning live: figures only — no badge, no "Live from …", no Last synced, no note',
+      strip !== null &&
+        !strip.includes('Live from Learning Hub') &&
+        !strip.includes('Last synced') &&
+        !strip.includes('Live learning data from the Learning Hub.') &&
+        !/demo|ডেমো/i.test(strip),
       strip?.slice(0, 200),
     );
     const readStats = (label) =>
@@ -2162,6 +2304,7 @@ try {
     check('learning live: Go button still same-tab to Learning Hub', go?.href === 'https://shanta-life-learning-hub.vercel.app' && !go.target, JSON.stringify(go));
     const ov = await overflowCheck(page);
     check('learning live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'learning-live-1440.png'), fullPage: true });
     await ctx.close();
   }
@@ -2170,22 +2313,23 @@ try {
   for (const width of [375, 768]) {
     const { ctx, page } = await newPage(browser, width);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      leadflow: leadflowSummaryFor('9990002', 'team_lead'),
       learning: null,
       retail: null,
     });
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
-      learning: learningSummaryFor('9990002', 'team_lead', true, 'this-month'),
-      retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false },
+      learning: learningSummaryFor('9990002', 'team_lead', 'this-month'),
+      retail: testSummaryFor('9990002', 'team_lead', 'this-month'),
     }, 'this-month');
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('৳34,000'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const ov = await overflowCheck(page);
     check(`home live ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `home-live-${width}.png`), fullPage: true });
     await ctx.close();
   }
@@ -2197,19 +2341,18 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
-    const emptyLeadflow = leadflowSummaryFor('9990001', 'employee', true);
+    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    const emptyLeadflow = leadflowSummaryFor('9990001', 'employee');
     emptyLeadflow.empty = true;
     emptyLeadflow.emptyReason = 'no-leadflow-account';
     emptyLeadflow.followups = { overdue: 0, today: 0, upcoming: 0, all: 0 };
     emptyLeadflow.leads = { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} };
-    const emptyLearning = learningSummaryFor('9990001', 'employee', true);
+    const emptyLearning = learningSummaryFor('9990001', 'employee');
     emptyLearning.empty = true;
     emptyLearning.emptyReason = 'no-lms-record';
     emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0, coursesInProgress: 0 };
     const emptyRetail = {
-      ...demoSummaryFor('9990001', 'employee'),
-      demo: false,
+      ...testSummaryFor('9990001', 'employee'),
       empty: true,
       emptyReason: 'no-rows',
       duePolicies: 0,
@@ -2221,7 +2364,7 @@ try {
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'this-month');
     await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'today');
     await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Live'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('No follow-ups due today'), { timeout: 5000 });
     const cards = await page.evaluate(() => {
       const out = {};
       for (const section of document.querySelectorAll('section[aria-label]')) {
@@ -2242,14 +2385,14 @@ try {
     });
     check('home empty live: due widget empty text', dueText.includes('No premiums due this month'), dueText.slice(0, 160));
     await clickNav(page, 'লিডস', 'Leads');
-    await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+    await waitForSummaryReady(page);
     const leadsStrip = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
       return section ? section.textContent : '';
     });
     check('leads empty live: zeros, no demo figures', leadsStrip.includes('0') && !leadsStrip.includes('The Art of Selling'), leadsStrip.slice(0, 200));
     await clickNav(page, 'লার্নিং', 'Learning');
-    await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+    await waitForSummaryReady(page);
     const learningStrip = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
       return section ? section.textContent : '';
@@ -2258,66 +2401,176 @@ try {
     await ctx.close();
   }
 
-  // ---- 21f. Fixture mode (demo:true seeds): DEMO chrome, not the unloaded note ----
-  // Seeded at :all (LeadFlow on Home), :this-month (Home's retail +
-  // learning feeds) and :today (the Leads page defaults to Today now).
+  // ---- 27. No-demo rule: real users never see fixture figures ----
+  // (Mahadi 2026-11-20 — the demo code is deleted.) The incident:
+  // Maliha Rahman (2026033, real employee, no retail code) logged
+  // in, her retail fetch failed transiently, and the old Home fell
+  // back to the demo fixture (dues 2 / ৳48,500, business ৳1,85,000).
+  // (a) A real user with a FAILED retail fetch shows error + retry,
+  // never fixture figures — on Home and on the Leads/Learning pages.
+  // (b) A real user with an EMPTY retail feed (empty:true, no-code)
+  // shows zeros + empty states, never fixture figures. (c) No 'demo'
+  // text appears anywhere user-visible on any page for any session.
   {
     const { ctx, page } = await newPage(browser, 1440);
-    await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-    await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead'),
-      learning: learningSummaryFor('9990002', 'team_lead'),
-      retail: demoSummaryFor('9990002', 'team_lead'),
-    });
-    await seedFeedCaches(page, '9990002', {
-      leadflow: null,
-      learning: learningSummaryFor('9990002', 'team_lead', false, 'this-month'),
-      retail: demoSummaryFor('9990002', 'team_lead', 'this-month'),
-    }, 'this-month');
-    await seedFeedCaches(page, '9990002', {
-      leadflow: leadflowSummaryFor('9990002', 'team_lead', false, 'today'),
-      learning: learningSummaryFor('9990002', 'team_lead', false, 'today'),
-      retail: demoSummaryFor('9990002', 'team_lead', 'today'),
-    }, 'today');
-    await page.reload({ waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => document.body.textContent.includes('Retail Dashboard · Demo'), { timeout: 5000 });
-    const body = await page.evaluate(() => document.body.textContent);
-    check('home fixture: feed chips all Demo', body.includes('LeadFlow · Demo') && body.includes('Learning Hub · Demo') && body.includes('Retail Dashboard · Demo'));
-    check('home fixture: no page-title subtitle', !body.includes('Demo view for this role') && !body.includes('Live data from your connected apps.'));
-    const dueText = await page.evaluate(() => {
-      const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
-      return el ? el.textContent : '';
-    });
-    check(
-      'home fixture: due widget summary mode with DEMO badge + preview note',
-      dueText.includes('DEMO DATA') && dueText.includes('Demo data — fictional figures for the preview.') && dueText.includes('৳34,000'),
-      dueText.slice(0, 200),
+    await login(page, '2026033', 'employee', 'Maliha Rahman');
+    await page.waitForFunction(() => document.body.textContent.includes('Maliha Rahman'), { timeout: 5000 });
+    // No caches seeded and no proxy under file:// — every feed fails.
+    // Wait for the Due widget itself to reach the error state.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+        return el && (el.textContent.includes('Could not load this data.') || el.textContent.includes('এই ডেটা লোড করা যায়নি।'));
+      },
+      { timeout: 10000 },
     );
-    check('home fixture: due widget has no DEMO- rows', !dueText.includes('DEMO-'));
+    const homeBody = await page.evaluate(() => document.body.textContent);
+    check(
+      'no-demo (a) home failed fetch: error + retry, no Sales overview',
+      homeBody.includes('Could not load this data.') &&
+        homeBody.includes('Try again') &&
+        !homeBody.includes('Total policy sales') &&
+        !homeBody.includes('Total FYCP'),
+      homeBody.slice(0, 200),
+    );
+    check(
+      'no-demo (a) home failed fetch: no fixture figures anywhere',
+      !homeBody.includes('48,500') && !homeBody.includes('185,000') && !homeBody.includes('1,85,000'),
+      homeBody.slice(0, 200),
+    );
+    check('no-demo (a) home failed fetch: no demo text', !/demo|ডেমো/i.test(homeBody));
     await clickNav(page, 'লিডস', 'Leads');
-    await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management'), { timeout: 5000 });
-    const strip = await page.evaluate(() => {
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('Could not load the data.') ||
+        document.body.textContent.includes('ডেটা লোড করা যায়নি।'),
+      { timeout: 10000 },
+    );
+    const leadsBody = await page.evaluate(() => document.body.textContent);
+    check(
+      'no-demo (a) leads failed fetch: error + retry, no fixture figures',
+      leadsBody.includes('Could not load the data.') &&
+        leadsBody.includes('Try again') &&
+        !leadsBody.includes('48,500') &&
+        !leadsBody.includes('185,000') &&
+        !leadsBody.includes('1,85,000'),
+      leadsBody.slice(0, 200),
+    );
+    check('no-demo (a) leads failed fetch: no demo text', !/demo|ডেমো/i.test(leadsBody));
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(
+      () =>
+        document.body.textContent.includes('Could not load the data.') ||
+        document.body.textContent.includes('ডেটা লোড করা যায়নি।'),
+      { timeout: 10000 },
+    );
+    const learningBody = await page.evaluate(() => document.body.textContent);
+    check(
+      'no-demo (a) learning failed fetch: error + retry, no fixture figures',
+      learningBody.includes('Could not load the data.') &&
+        learningBody.includes('Try again') &&
+        !learningBody.includes('48,500') &&
+        !learningBody.includes('185,000') &&
+        !learningBody.includes('1,85,000'),
+      learningBody.slice(0, 200),
+    );
+    check('no-demo (a) learning failed fetch: no demo text', !/demo|ডেমো/i.test(learningBody));
+    await ctx.close();
+  }
+  {
+    // (b) Empty retail feed for a real user: 2026033 has no fixture
+    // rows, so the summarizer itself returns empty:true,
+    // emptyReason 'no-code' with all zeros — exactly what the proxy
+    // returns for her live. Seed it at :all and :this-month, with
+    // empty LeadFlow/Learning summaries, and check the whole page
+    // shows honest empty states.
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '2026033', 'employee', 'Maliha Rahman');
+    await page.waitForFunction(() => document.body.textContent.includes('Maliha Rahman'), { timeout: 5000 });
+    const emptyLeadflow = leadflowSummaryFor('2026033', 'employee');
+    emptyLeadflow.empty = true;
+    emptyLeadflow.emptyReason = 'no-leadflow-account';
+    emptyLeadflow.followups = { overdue: 0, today: 0, upcoming: 0, all: 0 };
+    emptyLeadflow.leads = { total: 0, open: 0, converted: 0, todayCollection: 0, createdInPeriod: 0, statusCounts: {} };
+    const emptyLearning = learningSummaryFor('2026033', 'employee');
+    emptyLearning.empty = true;
+    emptyLearning.emptyReason = 'no-lms-record';
+    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0, enrolledInPeriod: 0, completedInPeriod: 0, creditsInPeriod: 0, coursesInProgress: 0 };
+    const emptyRetail = testSummaryFor('2026033', 'employee', 'this-month');
+    await seedFeedCaches(page, '2026033', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail });
+    await seedFeedCaches(page, '2026033', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'this-month');
+    await seedFeedCaches(page, '2026033', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail }, 'today');
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('No follow-ups due today'), { timeout: 5000 });
+    const homeBody = await page.evaluate(() => document.body.textContent);
+    check(
+      'no-demo (b) home empty feed: plain empty texts, no Sales overview',
+      homeBody.includes('No follow-ups due today') &&
+        homeBody.includes('No premiums due this week') &&
+        homeBody.includes('No learning this month') &&
+        homeBody.includes('No premiums due this month') &&
+        !homeBody.includes('Total policy sales') &&
+        !homeBody.includes('Total FYCP'),
+      homeBody.slice(0, 240),
+    );
+    check(
+      'no-demo (b) home empty feed: no fixture figures anywhere',
+      !homeBody.includes('48,500') && !homeBody.includes('185,000') && !homeBody.includes('1,85,000'),
+      homeBody.slice(0, 200),
+    );
+    check('no-demo (b) home empty feed: no demo text', !/demo|ডেমো/i.test(homeBody));
+    await clickNav(page, 'লিডস', 'Leads');
+    await waitForSummaryReady(page);
+    const leadsStrip = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
       return section ? section.textContent : '';
     });
     check(
-      'leads fixture: DEMO badge + preview note, not the unloaded note',
-      strip.includes('DEMO DATA') &&
-        strip.includes('Demo data — fictional figures for the preview.') &&
-        !strip.includes('live lead data arrives with the LeadFlow connection'),
-      strip.slice(0, 200),
+      'no-demo (b) leads empty feed: zeros, no fixture figures',
+      leadsStrip.includes('0') &&
+        !leadsStrip.includes('48,500') &&
+        !leadsStrip.includes('185,000') &&
+        !leadsStrip.includes('1,85,000'),
+      leadsStrip.slice(0, 200),
     );
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await waitForSummaryReady(page);
+    const learningStrip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : '';
+    });
+    check(
+      'no-demo (b) learning empty feed: no course in progress, no fixture figures',
+      learningStrip.includes('No course in progress') &&
+        !learningStrip.includes('48,500') &&
+        !learningStrip.includes('185,000'),
+      learningStrip.slice(0, 200),
+    );
+    // (c) No 'demo' text on any remaining page for this session.
+    await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
+    await waitForDashboardTerminal(page);
+    check('no-demo (c) dashboard: no demo text', await noDemoText(page));
+    await clickNav(page, 'ক্যালকুলেটর', 'Calculators');
+    await page.waitForFunction(() => document.body.textContent.includes('PremiumPulse'), { timeout: 5000 });
+    check('no-demo (c) calculators: no demo text', await noDemoText(page));
+    await clickNav(page, 'প্রপোজাল', 'Proposals');
+    await page.waitForFunction(() => document.body.textContent.includes('Proposals'), { timeout: 5000 });
+    check('no-demo (c) proposals: no demo text', await noDemoText(page));
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
+    });
+    await page.waitForFunction(() => document.body.textContent.includes('Maliha Rahman'), { timeout: 5000 });
+    check('no-demo (c) profile: no demo text', await noDemoText(page));
     await ctx.close();
   }
 
   // ---- 22. Real-auth login states (Phase 2) ----
   // The form is the real-login form: one identifier field (Employee
   // ID or email) + one credential field, with a forgot link out to
-  // the Learning Hub. There is NO demo notice any more — the demo
-  // accounts are gone entirely (Mahadi 2026-11-20), so the page must
-  // not mention a demo ID anywhere. The server lockout surfaces via
-  // the same alert (qa:auth-live covers the server side).
+  // the Learning Hub. There is NO demo notice any more — there are no
+  // demo accounts and no demo code at all — so the page must not
+  // mention a demo ID anywhere. The server lockout surfaces via the
+  // same alert (qa:auth-live covers the server side).
   for (const width of [375, 768, 1440]) {
     const { ctx, page } = await newPage(browser, width);
     await page.goto(BASE, { waitUntil: 'networkidle0' });
@@ -2332,7 +2585,7 @@ try {
     check(`login real form ${width}: identifier label`, idLabel.includes('Employee ID or email'), idLabel);
     check(`login real form ${width}: identifier placeholder`, idPlaceholder.includes('2025019 or name@shantalife.com'), idPlaceholder);
     check(`login real form ${width}: forgot link to LH`, forgotHref.includes('shanta-life-learning-hub.vercel.app/login/forgot'), forgotHref);
-    check(`login real form ${width}: NO demo notice (demo accounts removed)`, !demoNotice);
+    check(`login real form ${width}: NO test ID shown (no demo accounts)`, !demoNotice);
     // Typing an email switches the credential field to a password field.
     await page.type('#employee-id', 'staff@shantalife.com');
     await new Promise((r) => setTimeout(r, 200));
@@ -2341,6 +2594,7 @@ try {
     check(`login real form ${width}: email identifier -> password placeholder`, credPlaceholder === 'Password' && credType === 'password', `${credPlaceholder} / ${credType}`);
     const ov = await overflowCheck(page);
     check(`login real form ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `login-real-${width}.png`), fullPage: true });
     await ctx.close();
   }
@@ -2364,6 +2618,7 @@ try {
     );
     const ov = await overflowCheck(page);
     check('login error state: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'login-error-375.png'), fullPage: true });
     await ctx.close();
   }
@@ -2389,23 +2644,24 @@ try {
     check('login error-repeat state 375: still not-configured, never a lock message', /not configured|কনফিগার করা হয়নি/i.test(alert) && !/লক|lock/i.test(alert), alert);
     const ov = await overflowCheck(page);
     check('login error-repeat state 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'login-error-repeat-375.png'), fullPage: true });
     await ctx.close();
   }
   // ---- 23. Time-frame filter: dropdown + defaults + Custom range ----
-  // Each data page at 375/768/1440: seed the caches (live mode), open
-  // the page, confirm the default figures — This Month on the
-  // Dashboard (retail data lags a day, so Today shows ৳0), Today on
-  // Leads and Learning — select 'Last 3 months' from the dropdown,
-  // and confirm the figures change to the 3m values while the
-  // snapshots stay put. The Dashboard also exercises the Custom
-  // range: selecting Custom reveals the date inputs; filling
-  // 2026-11-01..2026-11-20 returns exactly the rows inside it (the
-  // this-month values); an invalid range (to before from) shows the
-  // inline error and keeps the last figures. The background refresh
-  // fails under file:// (no proxy) — the pages fall back to the
-  // seeded cache, which is exactly the path under test. Expected
-  // values are the hand-computed fixture values (qa-*-live §2b/§5b).
+  // Each data page at 375/768/1440: seed the caches, open the page,
+  // confirm the default figures — This Month on the Dashboard (retail
+  // data lags a day, so Today shows ৳0), Today on Leads and Learning
+  // — select 'Last 3 months' from the dropdown, and confirm the
+  // figures change to the 3m values while the snapshots stay put. The
+  // Dashboard also exercises the Custom range: selecting Custom
+  // reveals the date inputs; filling 2026-11-01..2026-11-20 returns
+  // exactly the rows inside it (the this-month values); an invalid
+  // range (to before from) shows the inline error and keeps the last
+  // figures. The background refresh fails under file:// (no proxy) —
+  // the pages fall back to the seeded cache, which is exactly the
+  // path under test. Expected values are the hand-computed fixture
+  // values (qa-*-live §2b/§5b).
   const readKpis = (page) =>
     page.evaluate(() => {
       const out = {};
@@ -2451,10 +2707,10 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'this-month'), demo: false } }, 'this-month');
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', '3m'), demo: false } }, '3m');
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead', 'custom', { start: '2026-11-01', end: '2026-11-20' }), demo: false } }, 'custom:2026-11-01:2026-11-20');
+      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', '3m') }, '3m');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'custom', { start: '2026-11-01', end: '2026-11-20' }) }, 'custom:2026-11-01:2026-11-20');
       await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
       const dashPath = await waitForDashboardTerminal(page);
       check(`period dashboard ${width}: ready state renders`, dashPath === 'live', `path=${dashPath}`);
@@ -2473,6 +2729,7 @@ try {
       check(`period dashboard ${width}: dropdown value tracks 3m`, (await selectValue()) === '3m');
       const ov = await overflowCheck(page);
       check(`period dashboard ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await waitForSplashGone(page);
       await page.screenshot({ path: path.join(QA_DIR, `dashboard-period-3m-${width}.png`), fullPage: true });
       // Custom range: reveal the date inputs, fill the range, and
       // confirm exactly the rows inside it come back.
@@ -2498,6 +2755,7 @@ try {
       const kpisInvalid = await readKpis(page);
       check(`period dashboard ${width}: invalid range shows the error and keeps the figures`, kpisInvalid['Total premium received'] === '৳43,000', JSON.stringify(kpisInvalid));
       if (width === 375) {
+        await waitForSplashGone(page);
         await page.screenshot({ path: path.join(QA_DIR, 'dashboard-period-custom-375.png'), fullPage: true });
       }
       await ctx.close();
@@ -2507,12 +2765,12 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, 'today'), learning: null, retail: null }, 'today');
-      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', true, '3m'), learning: null, retail: null }, '3m');
-      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false } }, 'all');
+      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', 'today'), learning: null, retail: null }, 'today');
+      await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', '3m'), learning: null, retail: null }, '3m');
+      await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead') }, 'all');
       await clickNav(page, 'লিডস', 'Leads');
-      await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+      await waitForSummaryReady(page);
       check(`period leads ${width}: dropdown defaults to Today`, (await page.$eval('#period-select', (el) => el.value)) === 'today');
       check(`period leads ${width}: today new leads 2 own + 1 team`, JSON.stringify(await readSummaryStats(page, 'New leads')) === JSON.stringify(['2', '1']));
       await page.select('#period-select', '3m');
@@ -2527,6 +2785,7 @@ try {
       check(`period leads ${width}: dropdown value tracks 3m`, (await page.$eval('#period-select', (el) => el.value)) === '3m');
       const ov = await overflowCheck(page);
       check(`period leads ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await waitForSplashGone(page);
       await page.screenshot({ path: path.join(QA_DIR, `leads-period-3m-${width}.png`), fullPage: true });
       await ctx.close();
     }
@@ -2536,11 +2795,11 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990004');
-      await page.waitForFunction(() => document.body.textContent.includes('Demo Admin'), { timeout: 5000 });
-      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true, 'today'), retail: null }, 'today');
-      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', true, '3m'), retail: null }, '3m');
+      await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', 'today'), retail: null }, 'today');
+      await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', '3m'), retail: null }, '3m');
       await clickNav(page, 'লার্নিং', 'Learning');
-      await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+      await waitForSummaryReady(page);
       check(`period learning ${width}: dropdown defaults to Today`, (await page.$eval('#period-select', (el) => el.value)) === 'today');
       check(`period learning ${width}: today enrolled 6, completed 0, credits 140`, JSON.stringify(await readSummaryStats(page, 'Courses enrolled')) === JSON.stringify(['6']) && JSON.stringify(await readSummaryStats(page, 'Courses completed')) === JSON.stringify(['0']) && JSON.stringify(await readSummaryStats(page, 'Knowledge Credit')) === JSON.stringify(['140']));
       await page.select('#period-select', '3m');
@@ -2555,20 +2814,20 @@ try {
       check(`period learning ${width}: dropdown value tracks 3m`, (await page.$eval('#period-select', (el) => el.value)) === '3m');
       const ov = await overflowCheck(page);
       check(`period learning ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+      await waitForSplashGone(page);
       await page.screenshot({ path: path.join(QA_DIR, `learning-period-3m-${width}.png`), fullPage: true });
       await ctx.close();
     }
   }
 
   // ---- 24. Demo removal: no DEMO badge in the header, for ANY session ----
-  // The header badge is gone entirely (Mahadi 2026-11-20) — check the
-  // <header> element's text specifically, because the Due widget's
-  // DEMO badge and the Dashboard's DEMO badge still exist elsewhere
-  // on the page (those are correct: they mark fixture data, not the
-  // session). Both a 999xxxx session and a real-user session
-  // (2025019, admin) must show no badge in the header.
+  // The header badge is gone entirely (Mahadi 2026-11-20) — and with
+  // the demo code deleted the same day, the Due widget's and the
+  // Dashboard's DEMO badges are gone too. Both a 999xxxx test-user
+  // session and a real-user session (2025019, admin) must show no
+  // badge in the header.
   for (const [id, role, name] of [
-    ['9990002', 'team_lead', 'Demo Team Lead'],
+    ['9990002', 'team_lead', 'Test Team Lead'],
     ['2025019', 'admin', 'Mahadi Hasan'],
   ]) {
     const { ctx, page } = await newPage(browser, 1440);
@@ -2609,8 +2868,24 @@ try {
       await page.waitForFunction(() => !document.querySelector('img[src*="logo-white.png"]'), { timeout: 5000 }).catch(() => {});
       const whiteLogoGone = await page.evaluate(() => !document.querySelector('img[src*="logo-white.png"]'));
       check('login visuals 1440: white logo falls back when it cannot load', whiteLogoGone);
-      const panelHeadline = await page.evaluate(() => document.body.textContent.includes('One login. Every field tool.'));
+      const panelHeadline = await page.evaluate(() => document.body.textContent.includes('From lead to sale — all in one place.'));
       check('login visuals 1440: panel headline present', panelHeadline);
+      const panelBullets = await page.evaluate(() =>
+        [
+          'Every lead, from first call to closed sale',
+          'Learning built for the field — courses, quizzes, certificates',
+          'Your numbers, analysed — sales, dues, performance',
+        ].every((s) => document.body.textContent.includes(s)),
+      );
+      check('login visuals 1440: lead-to-sale value bullets present', panelBullets);
+      const oldPanelCopy = await page.evaluate(
+        () =>
+          document.body.textContent.includes('One login. Every field tool.') ||
+          document.body.textContent.includes('Leads, learning & sales in one place') ||
+          document.body.textContent.includes('Live data from your connected apps') ||
+          document.body.textContent.includes('You see only your own data'),
+      );
+      check('login visuals 1440: old panel copy gone', !oldPanelCopy);
     } else {
       const wave = await page.evaluate(() => !!document.querySelector('svg[data-wave]'));
       check('login visuals 375: wave band present', wave);
@@ -2623,25 +2898,65 @@ try {
     await ctx.close();
   }
 
-  // ---- 26. No subtitle under any page title (Mahadi 2026-11-20) ----
-  // The descriptive subtitle line under each page's h1 is gone on
-  // every page — Home, Dashboard, Leads, Learning, Calculators,
+  // ---- 26. No sentence under any title (Mahadi 2026-11-20) ----
+  // No sentence under ANY title — page titles AND section titles —
+  // on every page: Home, Dashboard, Leads, Learning, Calculators,
   // Proposals, Profile. The titles themselves stay. Checked
   // structurally (no <p class="mt-1 ..."> directly after the h1 —
   // the subtitle's exact shape) and by text (none of the removed
-  // subtitle strings appears anywhere on the page). Section
-  // subtitles (Business KPIs, Your tools, Your team) are NOT page
-  // titles and are intentionally kept. The Proposals callout note
-  // (mt-3, rounded box) is also kept — it is not a subtitle.
+  // strings appears anywhere on the page): the old page subtitles,
+  // the section subtitles (team totals, "Everything opens in this
+  // tab", leaders, Due Premium month-to-date), the demo/live notes,
+  // "Live from …", Last synced, the Proposals callout, the console
+  // note, the login subtitle + panel sub, and the reworded
+  // loading/error strings. Card sub-values and scope labels are
+  // kept — they are data, not title sentences.
   const REMOVED_SUBTITLES = [
+    // Old page-title subtitles.
     'Here is your day at a glance.',
     'Live data from your connected apps.',
+    'Live data from your connected apps',
     'Demo view for this role — real data arrives in a later milestone.',
     'Sales business, dues and persistency — scoped to what you can see.',
     'Your leads, follow-ups and reminders live in LeadFlow.',
     'Your courses, quizzes and certificates live in the Learning Hub.',
     'Premium, SDPP and income calculators.',
     'Proposal submission stays with the official agent portal (IT-owned).',
+    // Section subtitles.
+    'Team totals for your downline.',
+    'Everything opens in this tab.',
+    'By total premium · your direct reports',
+    'By total premium · org-wide',
+    'Due Premium is month-to-date',
+    // Demo / live notes, badges, synced lines.
+    'DEMO DATA',
+    'Demo data — fictional figures for the preview.',
+    'Demo data — live lead data arrives with the LeadFlow connection in a later milestone.',
+    'Demo data — live learning data arrives with the Learning Hub connection in a later milestone.',
+    'Demo data — live dues arrive with the Due & Lapse connection in a later milestone.',
+    'Live lead data from LeadFlow.',
+    'Live learning data from the Learning Hub.',
+    'Live from LeadFlow',
+    'Live from Learning Hub',
+    'Live from Retail Sales Dashboard',
+    'Live dues for this month from the Retail Sales Dashboard.',
+    'Last synced',
+    'Showing 5 of 31 dues',
+    'Due this week',
+    // Proposals callout + console note + login subtitle/panel sub.
+    'The production portal link is not confirmed yet.',
+    'Console in a later milestone',
+    'One login for all your tools',
+    'Leads, learning, calculators and sales — together in one place, with your data only.',
+    // Reworded loading / error strings (the "live" wording is gone).
+    'Loading live dashboard…',
+    'Could not load the live dashboard.',
+    'Loading live data…',
+    'Could not load live data.',
+    // Old login panel copy (replaced by the lead-to-sale copy).
+    'One login. Every field tool.',
+    'Leads, learning & sales in one place',
+    'You see only your own data — and your team’s',
   ];
   const checkNoSubtitle = async (page, name, width) => {
     await page.waitForSelector('h1', { timeout: 5000 });
@@ -2665,7 +2980,7 @@ try {
   for (const width of [375, 1440]) {
     const { ctx, page } = await newPage(browser, width);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
     await checkNoSubtitle(page, 'Home', width);
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     await checkNoSubtitle(page, 'Dashboard', width);

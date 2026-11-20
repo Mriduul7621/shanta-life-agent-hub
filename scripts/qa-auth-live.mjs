@@ -31,7 +31,7 @@
  *     sign-then-verify round trip against verifyJwt.js.
  *  4. Handler with a stubbed LH backend: valid PIN login -> 200 +
  *     verifiable JWT; wrong PIN / bad format / locked / inactive /
- *     must-change / unknown user / email staff login / demo ID;
+ *     must-change / unknown user / email staff login / 999 test ID;
  *     role derivation end-to-end (employee/team_lead/manager/
  *     admin); no-credential/no-PII leak checks (the LH session
  *     token, the PIN, and profile.mobile must never appear in any
@@ -419,7 +419,7 @@ if (!hasLive) {
   }
   {
     const { res, json } = await callHandler(handler, mockReq({ body: { identifier: '9990002', credential: '123456' } }));
-    check('handler: demo ID -> 401 no_lms_record (hub-auth never mints demo tokens)', res.statusCode === 401 && json?.error === 'no_lms_record', `status=${res.statusCode}`);
+    check('handler: 999 test ID -> 401 no_lms_record (hub-auth never mints tokens for unknown IDs)', res.statusCode === 401 && json?.error === 'no_lms_record', `status=${res.statusCode}`);
   }
   // Staff track.
   {
