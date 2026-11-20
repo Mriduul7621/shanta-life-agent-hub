@@ -1,0 +1,155 @@
+# Agent Hub — Android release APK
+#
+# Manual dispatch ONLY: no APK is ever produced by accident. Each run
+# builds the signed release APK from the checked-in version source
+# (android/version.properties) and uploads it as a workflow artifact.
+#
+# UPLOAD ROUTE — read before pushing: the Muse GitHub App CANNOT push
+# files under .github/workflows/ (deterministic 403, workflows:write
+# missing). This file reaches the repo when Mahadi uploads it via the
+# github.com web UI, or after he grants the App the Workflows
+# permission. Do not attempt a connector push of this file.
+#
+# What this pipeline deliberately does NOT do:
+# - No web build (`npm run build`): the shell remote-loads the live
+#   production Hub, so the APK contains no copy of the web app.
+# - No VITE_* / HUB_* variables: the Android build holds no JWT material
+#   (the production private key stays in Vercel). The only secrets are
+#   the four AGENTHUB_KEYSTORE_* signing secrets.
+# - No Gradle wrapper: gradle-wrapper.jar is a binary and is not
+#   committed, so Gradle is installed by gradle/actions/setup-gradle
+#   and invoked as `gradle` (not ./gradlew).
+#
+# Required repository secrets (names only — values live in GitHub
+# Secrets, never in this file): AGENTHUB_KEYSTORE_B64,
+# AGENTHUB_KEYSTORE_PASSWORD, AGENTHUB_KEY_ALIAS, AGENTHUB_KEY_PASSWORD.
+# See docs/ANDROID_RELEASE.md for how Mahadi creates them.
+
+name: Android release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle 8.14.3
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.14.3
+
+      - name: Install Android SDK 36
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read release version
+        id: version
+        run: |
+          CODE=$(grep '^versionCode=' android/version.properties | cut -d= -f2)
+          NAME=$(grep '^versionName=' android/version.properties | cut -d= -f2)
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Release version: $NAME ($CODE)"
+
+      - name: Generate launcher icons
+        run: npm run android:assets
+
+      - name: Sync Capacitor shell
+        run: npx cap sync android
+
+      - name: Restore release keystore from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.AGENTHUB_KEYSTORE_B64 }}
+          AGENTHUB_KEYSTORE_PASSWORD: ${{ secrets.AGENTHUB_KEYSTORE_PASSWORD }}
+          AGENTHUB_KEY_ALIAS: ${{ secrets.AGENTHUB_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::AGENTHUB_KEYSTORE_B64 secret is not set — see docs/ANDROID_RELEASE.md"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/agenthub-release.keystore"
+          # Fail fast if the keystore is corrupt or the alias/password is wrong.
+          keytool -list -keystore "$RUNNER_TEMP/agenthub-release.keystore" \
+            -storepass "$AGENTHUB_KEYSTORE_PASSWORD" \
+            -alias "$AGENTHUB_KEY_ALIAS" > /dev/null
+
+      - name: Build signed release APK
+        env:
+          AGENTHUB_KEYSTORE_PATH: ${{ runner.temp }}/agenthub-release.keystore
+          AGENTHUB_KEYSTORE_PASSWORD: ${{ secrets.AGENTHUB_KEYSTORE_PASSWORD }}
+          AGENTHUB_KEY_ALIAS: ${{ secrets.AGENTHUB_KEY_ALIAS }}
+          AGENTHUB_KEY_PASSWORD: ${{ secrets.AGENTHUB_KEY_PASSWORD }}
+        run: gradle -p android :app:assembleRelease --no-daemon
+
+      - name: Verify signature, signer and version
+        env:
+          AGENTHUB_KEYSTORE_PASSWORD: ${{ secrets.AGENTHUB_KEYSTORE_PASSWORD }}
+          AGENTHUB_KEY_ALIAS: ${{ secrets.AGENTHUB_KEY_ALIAS }}
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          test -f "$APK" || { echo "::error::APK not found at $APK"; exit 1; }
+          # 1. The APK signature must verify.
+          "$BUILD_TOOLS/apksigner" verify "$APK"
+          # 2. The signer must be the release keystore — never a debug key.
+          #    (Compares the APK cert fingerprint with the keystore cert.)
+          APK_FP=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 'SHA-256' | awk '{print $NF}')
+          KS_FP=$(keytool -list -v -keystore "$RUNNER_TEMP/agenthub-release.keystore" \
+            -storepass "$AGENTHUB_KEYSTORE_PASSWORD" -alias "$AGENTHUB_KEY_ALIAS" \
+            | grep -m1 'SHA256:' | awk '{print $NF}')
+          if [ "$APK_FP" != "$KS_FP" ]; then
+            echo "::error::APK signer does not match the release keystore (APK=$APK_FP keystore=$KS_FP)"
+            exit 1
+          fi
+          echo "Signer fingerprint (SHA-256): $APK_FP"
+          # 3. The version must match the checked-in version source.
+          BADGING=$("$BUILD_TOOLS/aapt2" dump badging "$APK" | head -1)
+          echo "$BADGING"
+          echo "$BADGING" | grep -q "versionCode='${{ steps.version.outputs.code }}'" || { echo "::error::versionCode mismatch"; exit 1; }
+          echo "$BADGING" | grep -q "versionName='${{ steps.version.outputs.name }}'" || { echo "::error::versionName mismatch"; exit 1; }
+
+      - name: SHA-256 checksum
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          sha256sum "$APK" | awk '{print $1}' > "$APK.sha256"
+          echo "SHA-256: $(cat "$APK.sha256")"
+          {
+            echo "## Agent Hub Android release"
+            echo ""
+            echo "- Version: ${{ steps.version.outputs.name }} (versionCode ${{ steps.version.outputs.code }})"
+            echo "- APK: app-release.apk"
+            echo "- SHA-256: \`$(cat "$APK.sha256")\`"
+            echo "- Signer: release keystore (verified — fingerprint matches AGENTHUB_KEYSTORE_B64)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-hub-android-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/release/app-release.apk.sha256
+          retention-days: 90
