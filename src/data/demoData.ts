@@ -8,14 +8,17 @@
  * - Manager: downline totals (bigger numbers, team section).
  * - Admin: zero states everywhere (never-empty rule: cards say so plainly).
  *
- * The Dashboard page now loads REAL Retail Sales data, role-scoped, via
- * the Hub-side proxy (see api/retail-data.js and src/data/retailData.ts).
- * The due-premium rows below stay DEMO: the Due & Lapse sheet needs a
- * service-account secret the Hub must not hold (see M3_DESIGN.md §2.6),
- * so the widget shows fictional rows until a server-side due feed exists.
- * The row shape mirrors the verified Due & Lapse mapping (policy, owner,
- * nextDue, premium, duePrem, status) so the real feed can drop in later
- * without a UI change.
+ * The Dashboard page loads REAL Retail Sales data, role-scoped, via the
+ * Hub-side proxy (see api/retail-data.js and src/data/retailData.ts) —
+ * and Phase 2 wires the Home widgets and the Leads/Learning pages to
+ * the same retail proxy plus the LeadFlow and Learning Hub proxies
+ * (api/leadflow-data.js, api/learning-data.js). This file stays the
+ * FALLBACK: while a feed is loading, unreachable, or the user is a
+ * demo account on a build without the proxies, the pages show these
+ * fictional figures, always labelled DEMO. The due-premium rows below
+ * stay DEMO-only by design: the real due feed is a summary (count +
+ * amount for the month — see DuePremiumsWidget live mode), never
+ * policy-wise rows, because the due list would expose customer PII.
  */
 import type { Role } from '../auth/types';
 

@@ -6,6 +6,8 @@ import { signSsoToken, verifySsoToken } from './jwt';
 import { HUB_PUBLIC_KEY_PEM } from './keys';
 import type { AuthError, AuthProvider, HubUser } from './types';
 import { clearRetailCache } from '../data/retailData';
+import { clearLeadflowCache } from '../data/leadflowData';
+import { clearLearningCache } from '../data/learningData';
 
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
 const SESSION_CHECK_MS = 30_000;
@@ -55,9 +57,11 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-    // The cached Dashboard summary is role-scoped real data (or the demo
-    // slice) — it must never survive sign-out on a shared device.
+    // The cached summaries are role-scoped real data (or the demo
+    // slice) — they must never survive sign-out on a shared device.
     clearRetailCache();
+    clearLeadflowCache();
+    clearLearningCache();
     setUser(null);
     setToken(null);
   }, []);

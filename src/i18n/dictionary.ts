@@ -160,7 +160,32 @@ export type DictKey =
   | 'dueWidgetOverdue'
   | 'dueWidgetShowing'
   | 'dueWidgetBacklog'
-  | 'dueWidgetDueOn';
+  | 'dueWidgetDueOn'
+  // Phase 2 — live feeds (LeadFlow / Learning Hub / retail dues)
+  | 'feedChipsLabel'
+  | 'feedChipLive'
+  | 'feedChipDemo'
+  | 'feedNameLeadflow'
+  | 'feedNameLearning'
+  | 'feedNameRetail'
+  | 'homeLiveNote'
+  | 'leadsLiveNote'
+  | 'learningLiveNote'
+  | 'feedLiveLeadflow'
+  | 'feedLiveLearning'
+  | 'widgetDuesMonth'
+  | 'widgetDuesMonthEmpty'
+  | 'duesThisMonth'
+  | 'dueWidgetLiveNote'
+  | 'dueWidgetPoliciesDue'
+  | 'dueWidgetMonthLabel'
+  | 'leadsOverdue'
+  | 'leadsOpen'
+  | 'leadsConverted'
+  | 'learningCompleted'
+  | 'learningCertificates'
+  | 'learningCredits'
+  | 'learningEnrolled';
 
 export const dict: Record<Lang, Record<DictKey, string>> = {
   en: {
@@ -329,6 +354,31 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetShowing: 'Showing {shown} of {total} dues',
     dueWidgetBacklog: 'Backlog {amount}',
     dueWidgetDueOn: 'Due {date}',
+    feedChipsLabel: 'Data sources',
+    feedChipLive: 'Live',
+    feedChipDemo: 'Demo',
+    feedNameLeadflow: 'LeadFlow',
+    feedNameLearning: 'Learning Hub',
+    feedNameRetail: 'Retail Dashboard',
+    homeLiveNote: 'Live data from your connected apps.',
+    leadsLiveNote: 'Live lead data from LeadFlow.',
+    learningLiveNote: 'Live learning data from the Learning Hub.',
+    feedLiveLeadflow: 'Live from LeadFlow',
+    feedLiveLearning: 'Live from Learning Hub',
+    widgetDuesMonth: 'Dues this month',
+    widgetDuesMonthEmpty: 'No premiums due this month',
+    duesThisMonth: 'premiums due this month',
+    dueWidgetLiveNote:
+      'Live dues for this month from the Retail Sales Dashboard. The policy-wise list lives in the full dashboard.',
+    dueWidgetPoliciesDue: '{count} policies due',
+    dueWidgetMonthLabel: 'Due in {month}',
+    leadsOverdue: 'Overdue follow-ups',
+    leadsOpen: 'Open leads',
+    leadsConverted: 'Converted',
+    learningCompleted: 'Courses completed',
+    learningCertificates: 'Certificates',
+    learningCredits: 'Knowledge Credit',
+    learningEnrolled: 'Courses enrolled',
   },
   bn: {
     appName: 'এজেন্ট হাব',
@@ -495,5 +545,30 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     dueWidgetShowing: '{total}টি বকেয়ার মধ্যে {shown}টি দেখানো হচ্ছে',
     dueWidgetBacklog: 'বকেয়া {amount}',
     dueWidgetDueOn: '{date}-এ বকেয়া',
+    feedChipsLabel: 'ডেটা উৎস',
+    feedChipLive: 'লাইভ',
+    feedChipDemo: 'ডেমো',
+    feedNameLeadflow: 'লিডফ্লো',
+    feedNameLearning: 'লার্নিং হাব',
+    feedNameRetail: 'রিটেইল ড্যাশবোর্ড',
+    homeLiveNote: 'আপনার সংযুক্ত অ্যাপ থেকে লাইভ ডেটা।',
+    leadsLiveNote: 'লিডফ্লো থেকে লাইভ লিড ডেটা।',
+    learningLiveNote: 'লার্নিং হাব থেকে লাইভ লার্নিং ডেটা।',
+    feedLiveLeadflow: 'লিডফ্লো থেকে লাইভ',
+    feedLiveLearning: 'লার্নিং হাব থেকে লাইভ',
+    widgetDuesMonth: 'এই মাসের বকেয়া',
+    widgetDuesMonthEmpty: 'এই মাসে কোনো প্রিমিয়াম বকেয়া নেই',
+    duesThisMonth: 'এই মাসে বকেয়া প্রিমিয়াম',
+    dueWidgetLiveNote:
+      'রিটেইল সেলস ড্যাশবোর্ড থেকে এই মাসের লাইভ বকেয়া। পলিসিভিত্তিক তালিকা পূর্ণ ড্যাশবোর্ডে আছে।',
+    dueWidgetPoliciesDue: '{count}টি পলিসি বকেয়া',
+    dueWidgetMonthLabel: '{month}-এ বকেয়া',
+    leadsOverdue: 'মেয়াদোত্তীর্ণ ফলো-আপ',
+    leadsOpen: 'খোলা লিড',
+    leadsConverted: 'কনভার্টেড',
+    learningCompleted: 'সম্পন্ন কোর্স',
+    learningCertificates: 'সার্টিফিকেট',
+    learningCredits: 'নলেজ ক্রেডিট',
+    learningEnrolled: 'ভর্তি কোর্স',
   },
 };

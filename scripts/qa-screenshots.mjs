@@ -25,7 +25,14 @@
  * fixture summary (computed by the Hub's own summarizer, api/_lib). The
  * live path itself is verified by `npm run qa:retail-live`, which runs
  * the Hub's own summarizer + proxy handler against the real retail
- * endpoint payload from Node.
+ * endpoint payload from Node. The same pattern applies to the Phase 2
+ * feeds (§21): the LeadFlow / Learning Hub / retail proxies do not exist
+ * under file://, so the live ready states are verified against seeded
+ * session caches (hub-leadflow-cache-v1, hub-learning-cache-v1,
+ * hub-retail-cache-v1) computed by the Hub's own summarizers, with the
+ * fixture summaries flipped to demo:false to exercise the live chrome.
+ * The live paths are verified by `npm run qa:leadflow-live` and
+ * `npm run qa:learning-live`.
  *
  * Checks (Milestone 1 — 33, unchanged):
  *  1. Login page loads with no console errors.
@@ -101,6 +108,25 @@
  * 20b. Leads/Learning pages at 375 px: no horizontal overflow, with
  *     screenshots (device gate; 1440 px shots are taken in §20).
  *
+ * Checks (Phase 2 — live feeds):
+ * 21. Home / Leads / Learning live ready states against seeded session
+ *     caches (fixture summaries flipped to demo:false): feed chips show
+ *     Live per feed, the live note replaces the demo role note, exact
+ *     figures per card (follow-ups 4 own / 12 team, dues 4 / ৳34,000
+ *     this month with the Own + team scope, learning 80% own / 45%
+ *     team), the business card keeps its demo figure with a DEMO
+ *     marker, the Due widget switches to summary mode (amount +
+ *     policies + month + scope + full-dashboard link, no DEMO- rows),
+ *     the team section drops to 2 cards (follow-ups + learning) with
+ *     no team Due widget, and the Leads/Learning summary strips show
+ *     "Live from …" + Last synced + the live note with the extra live
+ *     stats (overdue / open / converted; enrolled / completed /
+ *     certificates / credits). Empty live states show the plain empty
+ *     text per card. Fixture (demo:true) seeds show the DEMO chips +
+ *     demo role note + the preview note on the Leads strip. Overflow
+ *     checks at 375 / 768 / 1440 with screenshots (home-live-*,
+ *     leads-live-1440, learning-live-1440).
+ *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
  *     Income) render as <img> with the expected live URL, local icons
@@ -126,6 +152,13 @@ import puppeteer from 'puppeteer-core';
 // cache is exactly what the proxy would return for a demo user.
 import { summarizeRetail } from '../api/_lib/retailSummary.js';
 import { buildDemoPayload } from '../api/_lib/demoFixture.js';
+// Phase 2 feeds QA: same pattern — the seeded caches are computed by
+// the Hub's OWN summarizers, so they are exactly what the proxies
+// would return for a demo user.
+import { summarizeLeadflow, aggregateLeadCounts, scopeSetsFor } from '../api/_lib/leadflowSummary.js';
+import { buildLeadflowFixture } from '../api/_lib/demoFixtureLeadflow.js';
+import { summarizeLearning } from '../api/_lib/learningSummary.js';
+import { buildLearningFixture } from '../api/_lib/demoFixtureLearning.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const LOCAL_QA = !process.env.HUB_QA_URL;
@@ -396,6 +429,64 @@ function demoSummaryFor(employeeId, role) {
   const summary = summarizeRetail(buildDemoPayload(FIXTURE_TODAY), { employeeId, role }, FIXTURE_TODAY);
   summary.demo = true; // the proxy marks fixture summaries demo: true
   return summary;
+}
+
+/**
+ * Phase 2 feed summaries for the seeded caches (§21). `live = true`
+ * flips the fixture summary to demo:false — the figures stay the
+ * hand-computed fixture values, but the UI treats them as live, which
+ * exercises the live chrome (chips, live notes, summary-mode Due
+ * widget, extra stats) without a proxy.
+ */
+function leadflowSummaryFor(employeeId, role, live = false) {
+  const fixture = buildLeadflowFixture(FIXTURE_TODAY);
+  const scopes = scopeSetsFor(fixture.users, employeeId, role);
+  const byUuid = new Map(fixture.users.map((u) => [String(u.id), u]));
+  const byEmp = new Map(fixture.users.map((u) => [String(u.employee_id).toUpperCase(), u]));
+  const emptyCounts = {
+    followups: { overdue: 0, today: 0, upcoming: 0 },
+    total: 0,
+    open: 0,
+    converted: 0,
+    todayCollection: 0,
+  };
+  const ownCounts = scopes
+    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.ownUuids, scopes.ownEmpIds, fixture.terminalStatuses, FIXTURE_TODAY)
+    : emptyCounts;
+  const teamCounts = scopes
+    ? aggregateLeadCounts(fixture.leads, byUuid, byEmp, scopes.teamUuids, scopes.teamEmpIds, fixture.terminalStatuses, FIXTURE_TODAY)
+    : emptyCounts;
+  const summary = summarizeLeadflow(
+    { users: fixture.users, ownCounts, teamCounts, rows: fixture.leads, terminalStatuses: fixture.terminalStatuses },
+    { employeeId, role },
+    FIXTURE_TODAY,
+  );
+  summary.demo = !live;
+  return summary;
+}
+function learningSummaryFor(employeeId, role, live = false) {
+  const summary = summarizeLearning(
+    { ...buildLearningFixture(FIXTURE_TODAY), downlineIds: null, truncated: false },
+    { employeeId, role },
+  );
+  summary.demo = !live;
+  return summary;
+}
+
+/** Seed any of the three feed caches (null = leave unseeded). */
+async function seedFeedCaches(page, employeeId, { leadflow, learning, retail }) {
+  await page.evaluate(
+    (caches) => {
+      for (const [key, cache] of Object.entries(caches)) {
+        if (cache) sessionStorage.setItem(key, JSON.stringify(cache));
+      }
+    },
+    {
+      'hub-leadflow-cache-v1': leadflow ? { summary: leadflow, employeeId, syncedAt: Date.now() } : null,
+      'hub-learning-cache-v1': learning ? { summary: learning, employeeId, syncedAt: Date.now() } : null,
+      'hub-retail-cache-v1': retail ? { summary: retail, employeeId, syncedAt: Date.now() } : null,
+    },
+  );
 }
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -1604,6 +1695,331 @@ try {
     const learningOv = await overflowCheck(page);
     check('screenshot learning-375: no horizontal overflow', !learningOv.overflow, `scrollWidth=${learningOv.scrollWidth} innerWidth=${learningOv.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, 'learning-375.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---- 21a. Home live ready state (Team Lead): seeded caches, demo:false ----
+  // Fixture figures, live chrome: chips Live, live note, exact card
+  // figures, business keeps its demo figure with a DEMO marker, Due
+  // widget in summary mode, team section drops to 2 cards, no team Due
+  // widget.
+  {
+    const { ctx, page, errors } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      learning: learningSummaryFor('9990002', 'team_lead', true),
+      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+    });
+    // The Home effect already ran (empty caches) — reload so it re-reads.
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    const body = await page.evaluate(() => document.body.textContent);
+    check('home live: feed chips all Live', body.includes('LeadFlow · Live') && body.includes('Learning Hub · Live') && body.includes('Retail Dashboard · Live'));
+    check('home live: live note, no demo role note', body.includes('Live data from your connected apps.') && !body.includes('Demo view for this role'));
+    const cards = await page.evaluate(() => {
+      const out = { own: {}, team: {} };
+      for (const section of document.querySelectorAll('section[aria-label]')) {
+        if (!section.querySelector(':scope > span[aria-hidden].w-1')) continue; // direct child — a parent section (e.g. Your team) must not match via a nested card // WidgetCard only
+        const title = section.getAttribute('aria-label');
+        const value = section.querySelector('p.text-3xl');
+        const sub = value ? value.nextElementSibling : null;
+        const empty = section.querySelector('p.text-base');
+        const entry = {
+          value: value ? value.textContent.trim() : null,
+          sub: sub ? sub.textContent.trim() : '',
+          emptyText: empty ? empty.textContent.trim() : null,
+        };
+        const inTeam = !!section.closest('section[aria-label="Your team"], section[aria-label="আপনার টিম"]');
+        (inTeam ? out.team : out.own)[title] = entry;
+      }
+      return out;
+    });
+    check('home live own: follow-ups 4', cards.own["Today's follow-ups"]?.value === '4', JSON.stringify(cards.own));
+    check(
+      'home live own: dues this month 4, Own + team, ৳34,000',
+      cards.own['Dues this month']?.value === '4' &&
+        cards.own['Dues this month']?.sub.includes('Own + team') &&
+        cards.own['Dues this month']?.sub.includes('4 premiums due this month') &&
+        cards.own['Dues this month']?.sub.includes('৳34,000'),
+      JSON.stringify(cards.own['Dues this month']),
+    );
+    check(
+      'home live own: learning 80% + Art of Selling',
+      cards.own['Learning in progress']?.value === '80%' &&
+        cards.own['Learning in progress']?.sub.includes('The Art of Selling'),
+      JSON.stringify(cards.own['Learning in progress']),
+    );
+    check(
+      'home live own: business keeps demo figure + DEMO marker',
+      cards.own["This month's business"]?.value === '৳2,40,000' &&
+        cards.own["This month's business"]?.sub.includes('DEMO DATA'),
+      JSON.stringify(cards.own["This month's business"]),
+    );
+    check(
+      'home live team: 2 cards only (follow-ups 12, learning 45%)',
+      Object.keys(cards.team).length === 2 &&
+        cards.team["Today's follow-ups"]?.value === '12' &&
+        cards.team['Learning in progress']?.value === '45%',
+      JSON.stringify(cards.team),
+    );
+    check('home live team: size 3 team members', body.includes('3 team members'));
+    const dueWidgets = await page.evaluate(() =>
+      [...document.querySelectorAll('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]')].map((s) => s.textContent),
+    );
+    check('home live: exactly one Due widget (team widget omitted)', dueWidgets.length === 1, `sections=${dueWidgets.length}`);
+    check(
+      'home live due widget: summary mode ৳34,000 + 4 policies + November 2026',
+      dueWidgets[0]?.includes('৳34,000') && dueWidgets[0]?.includes('4 policies due') && dueWidgets[0]?.includes('Due in November 2026'),
+      dueWidgets[0]?.slice(0, 200),
+    );
+    check(
+      'home live due widget: live chip + scope + full-dashboard link',
+      dueWidgets[0]?.includes('Live from Retail Sales Dashboard') &&
+        dueWidgets[0]?.includes('Own + team') &&
+        dueWidgets[0]?.includes('Open the full dashboard'),
+      dueWidgets[0]?.slice(0, 200),
+    );
+    check('home live due widget: no DEMO- rows', !dueWidgets[0]?.includes('DEMO-'));
+    const ov = await overflowCheck(page);
+    check('home live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'home-live-1440.png'), fullPage: true });
+    const appErrors = errors.filter((e) => !e.startsWith('Failed to load resource'));
+    check('home live: no console errors', appErrors.length === 0, appErrors.join(' | '));
+    await ctx.close();
+  }
+
+  // ---- 21b. Leads page live ready state (Team Lead) ----
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      learning: null,
+      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+    });
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+    const strip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : null;
+    });
+    check(
+      'leads live: Live chip + Last synced + live note, no DEMO badge',
+      strip?.includes('Live from LeadFlow') &&
+        strip?.includes('Last synced') &&
+        strip?.includes('Live lead data from LeadFlow.') &&
+        !strip?.includes('DEMO DATA'),
+      strip?.slice(0, 200),
+    );
+    const readStats = (label) =>
+      page.evaluate((lbl) => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        if (!section) return null;
+        const out = [];
+        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+          const labelEl = valueEl.previousElementSibling;
+          if (labelEl && labelEl.textContent.trim() === lbl) out.push(valueEl.textContent.trim());
+        }
+        return out;
+      }, label);
+    check('leads live: follow-ups 4 own + 12 team', JSON.stringify(await readStats("Today's follow-ups")) === JSON.stringify(['4', '12']));
+    check('leads live: dues 4 this month (own only)', JSON.stringify(await readStats('Dues this month')) === JSON.stringify(['4']));
+    check(
+      'leads live: overdue 1, open 8 own + 20 team, converted 1',
+      JSON.stringify(await readStats('Overdue follow-ups')) === JSON.stringify(['1']) &&
+        JSON.stringify(await readStats('Open leads')) === JSON.stringify(['8', '20']) &&
+        JSON.stringify(await readStats('Converted')) === JSON.stringify(['1']),
+    );
+    const go = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('a')].find((el) => el.textContent.includes('Go to Lead Management'));
+      return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
+    });
+    check('leads live: Go button still same-tab to LeadFlow', go?.href === 'https://lead-flow-jet.vercel.app' && !go.target, JSON.stringify(go));
+    const ov = await overflowCheck(page);
+    check('leads live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'leads-live-1440.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---- 21c. Learning page live ready state (Team Lead) ----
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: null,
+      learning: learningSummaryFor('9990002', 'team_lead', true),
+      retail: null,
+    });
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+    const strip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : null;
+    });
+    check(
+      'learning live: Live chip + Last synced + live note, no DEMO badge',
+      strip?.includes('Live from Learning Hub') &&
+        strip?.includes('Last synced') &&
+        strip?.includes('Live learning data from the Learning Hub.') &&
+        !strip?.includes('DEMO DATA'),
+      strip?.slice(0, 200),
+    );
+    const readStats = (label) =>
+      page.evaluate((lbl) => {
+        const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+        if (!section) return null;
+        const out = [];
+        for (const valueEl of section.querySelectorAll('p.text-2xl')) {
+          const labelEl = valueEl.previousElementSibling;
+          if (labelEl && labelEl.textContent.trim() === lbl) out.push(valueEl.textContent.trim());
+        }
+        return out;
+      }, label);
+    check('learning live: progress 80% own + 45% team', JSON.stringify(await readStats('Learning in progress')) === JSON.stringify(['80%', '45%']));
+    check(
+      'learning live: enrolled 1, completed 0, certificates 0, credits 120',
+      JSON.stringify(await readStats('Courses enrolled')) === JSON.stringify(['1']) &&
+        JSON.stringify(await readStats('Courses completed')) === JSON.stringify(['0']) &&
+        JSON.stringify(await readStats('Certificates')) === JSON.stringify(['0']) &&
+        JSON.stringify(await readStats('Knowledge Credit')) === JSON.stringify(['120']),
+    );
+    check('learning live: team members line', strip?.includes('5 team members learning in progress'));
+    const go = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('a')].find((el) => el.textContent.includes('Go to Learning'));
+      return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
+    });
+    check('learning live: Go button still same-tab to Learning Hub', go?.href === 'https://shanta-life-learning-hub.vercel.app' && !go.target, JSON.stringify(go));
+    const ov = await overflowCheck(page);
+    check('learning live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, 'learning-live-1440.png'), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---- 21d. Home live at 375 + 768 px (device gate) ----
+  for (const width of [375, 768]) {
+    const { ctx, page } = await newPage(browser, width);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: leadflowSummaryFor('9990002', 'team_lead', true),
+      learning: learningSummaryFor('9990002', 'team_lead', true),
+      retail: { ...demoSummaryFor('9990002', 'team_lead'), demo: false },
+    });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 300));
+    const ov = await overflowCheck(page);
+    check(`home live ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
+    await page.screenshot({ path: path.join(QA_DIR, `home-live-${width}.png`), fullPage: true });
+    await ctx.close();
+  }
+
+  // ---- 21e. Empty live states (Employee): plain empty text, no demo figures ----
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990001', '123456');
+    await page.waitForSelector('#new-pin', { timeout: 5000 });
+    await page.type('#new-pin', '654321');
+    await page.type('#confirm-pin', '654321');
+    await page.click('button[type="submit"]');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Agent'), { timeout: 5000 });
+    const emptyLeadflow = leadflowSummaryFor('9990001', 'employee', true);
+    emptyLeadflow.empty = true;
+    emptyLeadflow.emptyReason = 'no-leadflow-account';
+    emptyLeadflow.followups = { overdue: 0, today: 0, upcoming: 0, all: 0 };
+    emptyLeadflow.leads = { total: 0, open: 0, converted: 0, todayCollection: 0, statusCounts: {} };
+    const emptyLearning = learningSummaryFor('9990001', 'employee', true);
+    emptyLearning.empty = true;
+    emptyLearning.emptyReason = 'no-lms-record';
+    emptyLearning.learning = { currentCourse: null, coursesEnrolled: 0, coursesCompleted: 0, certificates: 0, creditBalance: 0 };
+    const emptyRetail = {
+      ...demoSummaryFor('9990001', 'employee'),
+      demo: false,
+      empty: true,
+      emptyReason: 'no-rows',
+      duePolicies: 0,
+      duePremium: 0,
+    };
+    await seedFeedCaches(page, '9990001', { leadflow: emptyLeadflow, learning: emptyLearning, retail: emptyRetail });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('Live data from your connected apps.'), { timeout: 5000 });
+    const cards = await page.evaluate(() => {
+      const out = {};
+      for (const section of document.querySelectorAll('section[aria-label]')) {
+        if (!section.querySelector(':scope > span[aria-hidden].w-1')) continue; // direct child — a parent section (e.g. Your team) must not match via a nested card
+        const title = section.getAttribute('aria-label');
+        const empty = section.querySelector('p.text-base');
+        out[title] = empty ? empty.textContent.trim() : section.querySelector('p.text-3xl')?.textContent.trim();
+      }
+      return out;
+    });
+    check('home empty live: follow-ups empty text', cards["Today's follow-ups"] === 'No follow-ups due today', JSON.stringify(cards));
+    check('home empty live: dues this month empty text', cards['Dues this month'] === 'No premiums due this month', JSON.stringify(cards));
+    check('home empty live: learning empty text', cards['Learning in progress'] === 'No course in progress', JSON.stringify(cards));
+    const dueText = await page.evaluate(() => {
+      const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+      return el ? el.textContent : '';
+    });
+    check('home empty live: due widget empty text', dueText.includes('No premiums due this month'), dueText.slice(0, 160));
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Live from LeadFlow'), { timeout: 5000 });
+    const leadsStrip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : '';
+    });
+    check('leads empty live: zeros, no demo figures', leadsStrip.includes('0') && !leadsStrip.includes('The Art of Selling'), leadsStrip.slice(0, 200));
+    await clickNav(page, 'লার্নিং', 'Learning');
+    await page.waitForFunction(() => document.body.textContent.includes('Live from Learning Hub'), { timeout: 5000 });
+    const learningStrip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : '';
+    });
+    check('learning empty live: no course in progress', learningStrip.includes('No course in progress'), learningStrip.slice(0, 200));
+    await ctx.close();
+  }
+
+  // ---- 21f. Fixture mode (demo:true seeds): DEMO chrome, not the unloaded note ----
+  {
+    const { ctx, page } = await newPage(browser, 1440);
+    await login(page, '9990002', '123456');
+    await page.waitForFunction(() => document.body.textContent.includes('Demo Team Lead'), { timeout: 5000 });
+    await seedFeedCaches(page, '9990002', {
+      leadflow: leadflowSummaryFor('9990002', 'team_lead'),
+      learning: learningSummaryFor('9990002', 'team_lead'),
+      retail: demoSummaryFor('9990002', 'team_lead'),
+    });
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.body.textContent.includes('Demo view for this role'), { timeout: 5000 });
+    const body = await page.evaluate(() => document.body.textContent);
+    check('home fixture: feed chips all Demo', body.includes('LeadFlow · Demo') && body.includes('Learning Hub · Demo') && body.includes('Retail Dashboard · Demo'));
+    check('home fixture: demo role note, no live note', body.includes('Demo view for this role') && !body.includes('Live data from your connected apps.'));
+    const dueText = await page.evaluate(() => {
+      const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
+      return el ? el.textContent : '';
+    });
+    check(
+      'home fixture: due widget summary mode with DEMO badge + preview note',
+      dueText.includes('DEMO DATA') && dueText.includes('Demo data — fictional figures for the preview.') && dueText.includes('৳34,000'),
+      dueText.slice(0, 200),
+    );
+    check('home fixture: due widget has no DEMO- rows', !dueText.includes('DEMO-'));
+    await clickNav(page, 'লিডস', 'Leads');
+    await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management'), { timeout: 5000 });
+    const strip = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? section.textContent : '';
+    });
+    check(
+      'leads fixture: DEMO badge + preview note, not the unloaded note',
+      strip.includes('DEMO DATA') &&
+        strip.includes('Demo data — fictional figures for the preview.') &&
+        !strip.includes('live lead data arrives with the LeadFlow connection'),
+      strip.slice(0, 200),
+    );
     await ctx.close();
   }
 } finally {

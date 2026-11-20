@@ -1,24 +1,49 @@
 /**
- * Due-premium widget (Milestone 3) — Home.
+ * Due-premium widget (Milestone 3, live mode in Phase 2) — Home.
  *
- * Lists the next dues (customer, policy, due date, amount), grouped into
- * "Due this week" and "Overdue" following the verified Retail Dashboard
- * rule (M3_DESIGN.md §2.4): Inforce + next due inside the window = due;
- * backlog outstanding + next due before the window = overdue.
+ * Two modes:
  *
- * DEMO DATA: the rows come from demoData.ts (fictional customers and
- * DEMO- policy numbers) because the Due & Lapse sheet needs a
- * service-account secret the Hub must not hold. The widget carries a DEMO
- * DATA badge and says so plainly. The row shape mirrors the verified
- * mapping, so the real feed can drop in later without a UI change.
+ * DEMO ROWS (no `live` prop): lists the next dues (customer, policy,
+ * due date, amount) from demoData.ts (fictional customers and DEMO-
+ * policy numbers), grouped into "Due this week" and "Overdue"
+ * following the verified Retail Dashboard rule (M3_DESIGN.md §2.4).
+ * Carries a DEMO DATA badge and says so plainly.
+ *
+ * LIVE SUMMARY (`live` prop): the real due summary from the retail
+ * proxy — count + amount for the calendar month, scoped to the caller.
+ * Summary ONLY, never policy-wise rows: the due list would expose
+ * customer PII in the Hub, so the full list lives in the Retail Sales
+ * Dashboard (linked). When the summary comes from the demo fixture
+ * (demo users on the preview), it is labelled DEMO like everywhere
+ * else.
  */
 import { useI18n } from '../i18n/I18nContext';
+import type { Lang } from '../i18n/dictionary';
 import { formatBdt } from '../data/demoData';
 import type { DueRow, WidgetData } from '../data/demoData';
+import { MODULES } from '../data/modules';
+import type { RetailScope } from '../data/retailData';
 
 const MAX_DUE_ROWS = 5;
 const MAX_OVERDUE_ROWS = 5;
 const WINDOW_DAYS = 7;
+
+export interface DueLiveSummary {
+  duePolicies: number;
+  duePremium: number;
+  /** 'YYYY-MM' — the month the Due Premium figure covers. */
+  dueMonth: string;
+  scope: RetailScope;
+  /** True when the summary comes from the synthetic demo slice. */
+  demo: boolean;
+}
+
+const SCOPE_KEY = {
+  own: 'dashboardScopeOwn',
+  team: 'dashboardScopeTeam',
+  subtree: 'dashboardScopeSubtree',
+  org: 'dashboardScopeOrg',
+} as const;
 
 function localIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -34,6 +59,17 @@ function formatDueDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** 'YYYY-MM' → 'November 2026' (locale-aware). */
+function formatMonth(ym: string, lang: Lang): string {
+  const [y, m] = ym.split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 function DueList({ rows, overdue }: { rows: DueRow[]; overdue: boolean }) {
@@ -61,8 +97,63 @@ function DueList({ rows, overdue }: { rows: DueRow[]; overdue: boolean }) {
   );
 }
 
-export function DuePremiumsWidget({ data }: { data: WidgetData }) {
+function LiveSummary({ live }: { live: DueLiveSummary }) {
+  const { t, lang } = useI18n();
+  const retailUrl = MODULES.find((m) => m.id === 'retail-dashboard')?.url;
+  const empty = live.duePolicies === 0 && live.duePremium === 0;
+  return (
+    <section
+      aria-label={t('dueWidgetTitle')}
+      className="rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-base font-bold text-charcoal">{t('dueWidgetTitle')}</h3>
+        {live.demo ? (
+          <span className="rounded-full bg-sunset/15 px-2.5 py-1 text-xs font-bold text-sunset-dark">
+            {t('dashboardDemoBadge')}
+          </span>
+        ) : (
+          <span className="rounded-full bg-olive/15 px-2.5 py-1 text-xs font-bold text-olive">
+            {t('dashboardLiveFrom')}
+          </span>
+        )}
+        <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
+          {t(SCOPE_KEY[live.scope])}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-charcoal/60">
+        {live.demo ? t('dashboardDemoNote') : t('dueWidgetLiveNote')}
+      </p>
+
+      {empty ? (
+        <p className="mt-3 text-base font-medium text-charcoal/70">{t('widgetDuesMonthEmpty')}</p>
+      ) : (
+        <div className="mt-4">
+          <p className="text-3xl font-bold tracking-tight text-charcoal">{formatBdt(live.duePremium)}</p>
+          <p className="mt-1 text-sm text-charcoal/60">
+            {t('dueWidgetPoliciesDue', { count: live.duePolicies })} ·{' '}
+            {t('dueWidgetMonthLabel', { month: formatMonth(live.dueMonth, lang) })}
+          </p>
+          {retailUrl && (
+            <a
+              href={retailUrl}
+              className="mt-3 inline-block text-sm font-semibold text-sunset-dark underline-offset-2 hover:underline"
+            >
+              {t('dashboardOpenFull')} →
+            </a>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function DuePremiumsWidget({ data, live }: { data?: WidgetData; live?: DueLiveSummary }) {
   const { t } = useI18n();
+
+  if (live) return <LiveSummary live={live} />;
+  if (!data) return null;
+
   const today = localIso(new Date());
   const windowEnd = addDays(today, WINDOW_DAYS);
 

@@ -10,9 +10,12 @@
  * subtree, was rejected for exactly that reason).
  *
  * GATING: the proxy serves this ONLY when HUB_DEMO_FIXTURE=true AND the
- * deployment is not production (VERCEL_ENV !== 'production') AND the
- * caller's sub starts with '999'. In production the flag is never set and
- * VERCEL_ENV is 'production', so the fixture path is doubly closed.
+ * caller's sub starts with '999'. NO Vercel-env check — this project's
+ * deployments run on the production target, so VERCEL_ENV is always
+ * 'production' here and such a check silently disables the fixture
+ * (live bug 2026-11-20). The real production lock is the vite.config
+ * build guard: a HUB_BUILD_TARGET=production build FAILS with the flag
+ * set.
  *
  * The slice goes through the SAME summarizer as live data, so scoping is
  * exercised identically. All dates are relative to `todayIso` so the
