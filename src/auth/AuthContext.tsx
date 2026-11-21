@@ -7,7 +7,7 @@ import type { AuthError, AuthProvider, HubUser } from './types';
 import { clearRetailCache } from '../data/retailData';
 import { clearLeadflowCache } from '../data/leadflowData';
 import { clearLearningCache } from '../data/learningData';
-import { syncPushSubscription } from '../native/push';
+import { syncPushSubscription, unregisterPush } from '../native/push';
 
 export const TOKEN_STORAGE_KEY = 'hub-session-token';
 const SESSION_CHECK_MS = 30_000;
@@ -60,6 +60,11 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     clearSession();
     setSessionExpired(false);
+    // Explicit sign-out ONLY unregisters push (deletes the FCM token
+    // — FCM drops it from every topic). A session EXPIRY keeps the
+    // subscription: the agent keeps receiving notifications on their
+    // own phone and signs in again to open them (Mahadi 2026-11-21).
+    void unregisterPush();
     // Same-tab navigation (Milestone 2 follow-up): there is no second
     // window to notify, so Hub sign-out cannot reach a module the agent
     // already navigated to. Module sessions end at token expiry (≤ 1 h) —
@@ -103,11 +108,14 @@ export function AuthProviderComponent({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   // Native push: keep the FCM topic subscription in step with the
-  // session — subscribe on sign-in / session restore, unsubscribe on
-  // sign-out / expiry. Gated on `restoring` so launch does not
-  // unregister before the saved session is known. A no-op on web
-  // (syncPushSubscription returns immediately off-native) and never
-  // throws — push must never break auth.
+  // session — subscribe on sign-in / session restore. A session END
+  // (expiry) only forgets the session in memory: the subscription
+  // SURVIVES expiry by design, so the agent keeps receiving
+  // notifications and signs in again to open them. Only an explicit
+  // signOut() unregisters (see signOut above). Gated on `restoring`
+  // so launch does not end the session before the saved session is
+  // known. A no-op on web (syncPushSubscription returns immediately
+  // off-native) and never throws — push must never break auth.
   useEffect(() => {
     if (restoring) return;
     void syncPushSubscription(user, token);

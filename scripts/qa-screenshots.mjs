@@ -221,7 +221,7 @@
  *     android-promo-bn-375.png, login-android-375.png,
  *     login-promo-375.png.
  *
- * Checks (FCM push notifications — 29):
+ * Checks (FCM push notifications — 34):
  * 29. The pushRouting bundle builds for Node (esbuild, like jwt.ts).
  *     Pure routing (the REAL src/native/pushRouting.ts): topic
  *     derivation (valid ID →
@@ -235,7 +235,12 @@
  *     → 401, bad token → 401, valid JWT + missing FCM token → 400,
  *     GET → 405, valid JWT + valid body with no service account →
  *     503 push_not_configured (graceful degradation — the Firebase
- *     project does not exist yet). Bundle split (local QA only): the
+ *     project does not exist yet). Subscription lifetime (source
+ *     needles): unregisterPush is exported, unregister() is called
+ *     exactly once in push.ts and lives in unregisterPush,
+ *     syncPushSubscription never calls it (expiry keeps the
+ *     subscription), and AuthContext.signOut calls unregisterPush
+ *     (explicit sign-out only). Bundle split (local QA only): the
  *     eager index chunk contains neither the '@capacitor/
  *     push-notifications' specifier nor the plugin's registration
  *     call (`"PushNotifications",{}`), while a lazy chunk does — the
@@ -3443,6 +3448,44 @@ try {
       'push-subscribe: valid JWT + valid body, no service account → 503 push_not_configured',
       res.statusCode === 503 && res.body?.error === 'push_not_configured',
       `${res.statusCode} ${JSON.stringify(res.body)}`,
+    );
+  }
+
+  // Subscription lifetime (Mahadi 2026-11-21 — "agent janbe
+  // kibhabe?"): the subscription survives session expiry; only an
+  // EXPLICIT sign-out unregisters. Native behaviour cannot run here,
+  // so these needles pin the wiring in source: unregister() must live
+  // in unregisterPush() only, syncPushSubscription's null branch
+  // must not call it, and AuthContext.signOut must call it.
+  {
+    const pushSrc = fs.readFileSync(path.join(ROOT, 'src', 'native', 'push.ts'), 'utf8');
+    const authSrc = fs.readFileSync(path.join(ROOT, 'src', 'auth', 'AuthContext.tsx'), 'utf8');
+    const unregisterCalls = pushSrc.match(/PushNotifications\.unregister\(\)/g) ?? [];
+    const unregisterFn = pushSrc.slice(
+      pushSrc.indexOf('export async function unregisterPush'),
+      pushSrc.indexOf('export async function syncPushSubscription'),
+    );
+    const syncFn = pushSrc.slice(pushSrc.indexOf('export async function syncPushSubscription'));
+    check('push lifetime: push.ts exports unregisterPush', pushSrc.includes('export async function unregisterPush'), '');
+    check(
+      'push lifetime: unregister() is called exactly once in push.ts',
+      unregisterCalls.length === 1,
+      `${unregisterCalls.length} call(s)`,
+    );
+    check(
+      'push lifetime: the single unregister() call lives in unregisterPush',
+      unregisterFn.includes('PushNotifications.unregister()'),
+      '',
+    );
+    check(
+      'push lifetime: syncPushSubscription never calls unregister (expiry keeps the subscription)',
+      !syncFn.includes('unregister('),
+      '',
+    );
+    check(
+      'push lifetime: AuthContext.signOut calls unregisterPush (explicit sign-out only)',
+      /const signOut = useCallback\(\(\) => \{[\s\S]*?unregisterPush\(\)/.test(authSrc),
+      '',
     );
   }
 

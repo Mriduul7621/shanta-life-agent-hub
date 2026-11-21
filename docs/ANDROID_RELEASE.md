@@ -247,10 +247,16 @@ limit, and no billing is needed for it.
   has NO topic subscribe/unsubscribe API (verified against the 8.1.3
   sources — only permission, register/unregister, delivered
   notification and channel calls). The route is the subscription
-  mechanism. Unsubscribe needs no route: sign-out / session expiry
-  calls `PushNotifications.unregister()`, which deletes the FCM
-  token, and FCM drops a dead token from every topic — this also
-  covers expiry, where the JWT is already dead.
+  mechanism. Unsubscribe needs no route: an EXPLICIT sign-out calls
+  `PushNotifications.unregister()`, which deletes the FCM token, and
+  FCM drops a dead token from every topic.
+- **Subscription lifetime (Mahadi 2026-11-21):** the subscription is
+  tied to the DEVICE, not the session. A session EXPIRY (1-hour JWT)
+  ends the session but KEEPS the subscription — the agent keeps
+  receiving notifications on their own phone and signs in again to
+  open them (tap → sign-in required to see content, like
+  WhatsApp/Gmail). Only an explicit sign-out unregisters. QA §29
+  pins this in source (unregister() lives in unregisterPush() only).
 - **Permission:** requested once after native sign-in, only while
   undecided. Denied stays silent forever — no nagging, no bell
   fallback. Android 12 and below need no runtime permission (the

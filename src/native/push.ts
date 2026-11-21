@@ -20,16 +20,26 @@
  * `sub` claim SERVER-side — a client must never choose whose topic it
  * joins. The token is used in the request and forgotten; nothing
  * stores it. Unsubscribe needs no route at all: `unregister()`
- * deletes the FCM token, and FCM drops a dead token from every topic
- * — which also covers session expiry, where the JWT is already dead.
+ * deletes the FCM token, and FCM drops a dead token from every topic.
+ *
+ * Subscription lifetime (Mahadi 2026-11-21 — "agent janbe
+ * kibhabe?"): the subscription is tied to the DEVICE, not the
+ * session. Only an EXPLICIT sign-out unregisters (unregisterPush).
+ * A session EXPIRY (1-hour JWT) ends the session but KEEPS the
+ * subscription — the agent keeps receiving notifications on their
+ * own phone and signs in again to open them, exactly like
+ * WhatsApp/Gmail. Re-sign-in re-subscribes idempotently.
  *
  * Lifecycle (wired in src/auth/AuthContext.tsx):
  * - Sign-in / session restore → syncPushSubscription(user, token):
  *   permission (requested once, only while undecided) → register() →
  *   POST the token to /api/push-subscribe. Denied permission stays
  *   silent forever — no nagging, no bell fallback.
- * - Sign-out / session expiry → syncPushSubscription(null, null):
- *   unregister() + forget the subscription. Best-effort, never throws.
+ * - Session expiry → syncPushSubscription(null, null): forgets the
+ *   session in memory only. The FCM token and the topic subscription
+ *   SURVIVE — no unregister() here.
+ * - Explicit sign-out → unregisterPush(): unregister() + forget
+ *   everything. Best-effort, never throws.
  * - Token refresh → the `registration` listener re-subscribes the new
  *   token for the current session.
  *
@@ -190,10 +200,35 @@ export function initPushNotifications(): void {
 }
 
 /**
+ * Explicit sign-out ONLY: delete the FCM token (FCM drops the dead
+ * token from every topic — this IS the unsubscribe) and forget the
+ * subscription. Called from AuthContext.signOut, never from the
+ * session-expiry path: an expired session keeps its subscription
+ * (see the header note). Native-only; a no-op on web. Never throws.
+ */
+export async function unregisterPush(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  session = null;
+  subscribed = null;
+  lastToken = null;
+  try {
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+    await PushNotifications.unregister();
+  } catch {
+    // Already unregistered, or no plugin — nothing to do.
+  }
+}
+
+/**
  * Keep the FCM topic subscription in step with the auth session.
  * Called from AuthContext whenever the user/token change (sign-in,
- * session restore, sign-out, session expiry). Native-only; a no-op on
- * web. Never throws — push must never break sign-in or sign-out.
+ * session restore, session expiry). Native-only; a no-op on web.
+ * Never throws — push must never break sign-in or sign-out.
+ *
+ * A null user/token means the SESSION ended (expiry) — it forgets
+ * the session in memory but does NOT unregister: the subscription
+ * survives expiry by design. Only unregisterPush() (explicit
+ * sign-out) deletes the token.
  */
 export async function syncPushSubscription(
   user: { employeeId: string } | null,
@@ -205,18 +240,11 @@ export async function syncPushSubscription(
 
   try {
     if (!user || !jwt) {
+      // Session ended (expiry): forget the session, KEEP the
+      // subscription — lastToken survives so the next sign-in
+      // reuses the same token and re-subscribes idempotently.
       session = null;
       subscribed = null;
-      lastToken = null;
-      // Unregister deletes the FCM token — FCM drops the dead token
-      // from every topic, so this IS the unsubscribe (and it needs no
-      // JWT, so it also works when the session expired).
-      try {
-        const { PushNotifications } = await import('@capacitor/push-notifications');
-        await PushNotifications.unregister();
-      } catch {
-        // Already unregistered, or no plugin — nothing to do.
-      }
       return;
     }
 
