@@ -85,7 +85,7 @@ export default function PeriodSelector({ value, onChange, label }: PeriodSelecto
       <div className="flex flex-wrap items-center gap-2">
         <label
           htmlFor="period-select"
-          className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+          className="text-xs font-semibold uppercase tracking-wide text-charcoal/60"
         >
           {label ?? t('periodLabel')}
         </label>
@@ -93,7 +93,7 @@ export default function PeriodSelector({ value, onChange, label }: PeriodSelecto
           id="period-select"
           value={value.period}
           onChange={(e) => handlePeriodChange(e.target.value as Period)}
-          className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30 sm:w-auto sm:min-w-44"
+          className="min-h-11 w-full rounded-xl border border-cream-dark bg-white px-3 py-2 text-sm font-semibold text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30 sm:w-auto sm:min-w-44"
         >
           {PERIODS.map((period) => (
             <option key={period} value={period}>
@@ -118,7 +118,7 @@ export default function PeriodSelector({ value, onChange, label }: PeriodSelecto
               min={minDate}
               max={today}
               onChange={(e) => handleDateChange(e.target.value, to)}
-              className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30"
+              className="min-h-11 rounded-xl border border-cream-dark bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30"
             />
           </div>
           <div>
@@ -135,7 +135,7 @@ export default function PeriodSelector({ value, onChange, label }: PeriodSelecto
               min={minDate}
               max={today}
               onChange={(e) => handleDateChange(from, e.target.value)}
-              className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30"
+              className="min-h-11 rounded-xl border border-cream-dark bg-white px-3 py-2 text-sm font-medium text-charcoal shadow-sm outline-none focus:border-sunset focus:ring-2 focus:ring-sunset/30"
             />
           </div>
           {invalid && (

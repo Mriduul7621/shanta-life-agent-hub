@@ -191,8 +191,6 @@ export function LoginPage() {
         <div className="grid flex-1 place-items-center py-10">
           <div className="animate-hub-page w-full max-w-md">
             <div className="overflow-hidden rounded-3xl bg-white shadow-lift">
-              {/* Soft animated accent: a thin sunset bar drawing in. */}
-              <div aria-hidden className="animate-hub-accent h-1 bg-sunset" />
               <div className="p-6 sm:p-8">
                 <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-sunset">
                   {t('loginPanelEyebrow')}

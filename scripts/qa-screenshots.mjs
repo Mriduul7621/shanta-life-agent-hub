@@ -3022,7 +3022,7 @@ try {
     const cardAnimated = await page.evaluate(() => !!document.querySelector('.animate-hub-page'));
     check(`login visuals ${width}: card entrance animation class present`, cardAnimated);
     const accentPresent = await page.evaluate(() => !!document.querySelector('.animate-hub-accent'));
-    check(`login visuals ${width}: accent bar present`, accentPresent);
+    check(`login visuals ${width}: no accent bar (board-exact, hb02)`, !accentPresent);
     if (width === 1440) {
       const panelImg = await page.evaluate(() => !!document.querySelector('img[src*="field-training-1.jpg"]'));
       check('login visuals 1440: photo panel image element present', panelImg);

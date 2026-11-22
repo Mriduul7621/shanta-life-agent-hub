@@ -92,20 +92,6 @@ body {
 }
 
 /* Login card accent — a thin sunset bar drawing in from the left. */
-@keyframes hub-accent-draw {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-
-.animate-hub-accent {
-  transform-origin: 0 50%;
-  animation: hub-accent-draw 0.5s ease-out 0.15s both;
-}
-
 /* Splash fade-out (JS flips the class; 300ms, matches App.tsx). */
 .splash-fade {
   transition: opacity 300ms ease-out;
@@ -118,8 +104,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-hub-page,
   .animate-hub-splash-pop,
-  .animate-hub-splash-bar,
-  .animate-hub-accent {
+  .animate-hub-splash-bar {
     animation: none;
   }
   .splash-fade {
