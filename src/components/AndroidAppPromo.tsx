@@ -16,6 +16,7 @@
  */
 import { useEffect } from 'react';
 import { useI18n } from '../i18n/I18nContext';
+import { IconDownload } from './icons';
 import { ANDROID_APK_URL, dismissAndroidPromo } from '../data/appDownload';
 
 export function AndroidAppPromo({ onDismiss }: { onDismiss: () => void }) {
@@ -70,8 +71,9 @@ export function AndroidAppPromo({ onDismiss }: { onDismiss: () => void }) {
           rel="noopener"
           data-android-promo-download
           onClick={dismiss}
-          className="mt-4 flex min-h-12 items-center justify-center rounded-xl bg-sunset px-4 text-base font-bold text-white transition-colors hover:bg-sunset-dark"
+          className="mt-4 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-sunset px-4 text-base font-bold text-white transition-colors hover:bg-sunset-dark"
         >
+          <IconDownload className="h-5 w-5 shrink-0" />
           {t('androidPromoDownload')}
         </a>
         <button

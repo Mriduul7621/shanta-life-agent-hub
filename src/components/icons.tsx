@@ -94,3 +94,42 @@ export const IconCheck = (p: P) => (
     <path d="m8.5 12.5 2.5 2.5 4.5-5" />
   </svg>
 );
+
+/**
+ * Board-legend parity (hb11, STRICT_AUDIT §2/S12): the board's
+ * 14-icon "Icons & UI Elements" legend shows Certificate, Time,
+ * Download and Sign out, which did not exist in the app. The paths
+ * below are the board's own glyphs (board.html #i-award, #i-clock,
+ * #i-down, #i-out) drawn in this file's 22px stroke style. Only
+ * IconDownload is rendered today (the Android promo button); the
+ * others complete the set for future use.
+ */
+export const IconCertificate = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="9" r="5.5" />
+    <path d="M8.5 13.5 7 21l5-2.5L17 21l-1.5-7.5" />
+  </svg>
+);
+
+export const IconTime = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </svg>
+);
+
+export const IconDownload = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M12 3v12" />
+    <path d="M7 10l5 5 5-5" />
+    <path d="M4 21h16" />
+  </svg>
+);
+
+export const IconSignOut = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <path d="M16 17l5-5-5-5" />
+    <path d="M21 12H9" />
+  </svg>
+);

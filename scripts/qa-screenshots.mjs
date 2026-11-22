@@ -210,10 +210,12 @@
  *     appears anywhere. Card sub-values and scope labels are kept —
  *     they are data, not title sentences.
  *
- * Checks (Android app download promo — 25):
+ * Checks (Android app download promo — 27):
  * 28. Home popup (Mahadi 2026-11-21): visible on an Android UA at
  *     375 px after the splash, with the Hub download-route href and
  *     target _blank, no horizontal overflow, no console errors;
+ *     the Download button carries the board's download glyph
+ *     (hb11, board phone 11) before the text;
  *     closing it sets the versioned dismissal flag and it stays gone
  *     after a reload; tapping Download also dismisses it. Hidden on
  *     an iOS UA, on desktop, and inside the native app (simulated by
@@ -261,6 +263,17 @@
  *     Android shell.) Native push itself (permission, registration,
  *     tap delivery) cannot run in headless Chrome — it needs the
  *     device build.
+ *
+ * Checks (Redesign Batch D — 11):
+ * 30. Profile board-exact (hb10, verification-only): the four board
+ *     rows (name, Employee ID, role, app version), the language card
+ *     and the sign-out button, at 375 / 768 / 1440; the admin-only
+ *     T&D Console section renders for admins (board extension).
+ *     Board-legend icons (hb11, source needles): IconCertificate,
+ *     IconTime, IconDownload and IconSignOut are exported from
+ *     icons.tsx with the board's glyph paths (board.html #i-award,
+ *     #i-clock, #i-down, #i-out); the promo Download glyph itself
+ *     is checked at runtime in §28.
  *
  * Checks (Tile icons — 6):
  * 18. Tiles show the app's real icon: live icons (PremiumPulse, SDPP,
@@ -971,6 +984,17 @@ try {
     check(`screenshot profile-${width}: no horizontal overflow`, !profOv.overflow, `scrollWidth=${profOv.scrollWidth} innerWidth=${profOv.innerWidth}`);
     await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `profile-${width}.png`), fullPage: true });
+    // hb10 (verification-only): Profile matches board phone 9 —
+    // the four rows, the language card and the sign-out button.
+    const profBoard = await page.evaluate(() => {
+      const text = document.body.textContent ?? '';
+      const rows = ['Test Team Lead', '9990002', 'Team Lead', '0.1.0 (Milestone 1)'].every((s) => text.includes(s));
+      const lang = text.includes('বাংলা / English');
+      const signOut = [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Sign out'));
+      return { rows, lang, signOut };
+    });
+    check(`profile ${width} (hb10): board rows present — name, Employee ID, role, app version`, profBoard.rows);
+    check(`profile ${width} (hb10): language card + sign-out button present`, profBoard.lang && profBoard.signOut);
     // Dashboard (M3) — terminal state (live or error), overflow, screenshot
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
@@ -979,6 +1003,25 @@ try {
     check(`screenshot dashboard-${width}: no horizontal overflow (${dashPath})`, !dashOv.overflow, `scrollWidth=${dashOv.scrollWidth} innerWidth=${dashOv.innerWidth}`);
     await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, `dashboard-${width}.png`), fullPage: true });
+    await ctx.close();
+  }
+
+  // hb10: the admin-only T&D Console section (board extension,
+  // audit §3.1) still renders for admins — 9990004 is the admin
+  // test user.
+  {
+    const { ctx, page } = await newPage(browser, 375);
+    await login(page, '9990004');
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
+    });
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Sign out')), { timeout: 5000 });
+    const consoleShown = await page.evaluate(() => {
+      const sec = document.querySelector('section[aria-label="T&D Console"]');
+      return !!sec && sec.textContent.includes('Coming soon');
+    });
+    check('profile admin (hb10): T&D Console section renders for admins', consoleShown);
     await ctx.close();
   }
 
@@ -3378,6 +3421,19 @@ try {
     check('promo android 375: download href is the Hub download route', href === APK_URL, href ?? 'none');
     const target = await page.$eval('[data-android-promo-download]', (el) => el.getAttribute('target')).catch(() => null);
     check('promo android 375: download opens in a new tab', target === '_blank', target ?? 'none');
+    // hb11: the Download button carries the board's download glyph
+    // (board phone 11) before the text.
+    const dlGlyph = await page.$eval('[data-android-promo-download]', (el) => {
+      const svg = el.querySelector('svg');
+      if (!svg) return null;
+      return [...svg.querySelectorAll('path')].map((p) => p.getAttribute('d')).join('|');
+    }).catch(() => null);
+    check('promo android 375 (hb11): Download button carries a download glyph', dlGlyph !== null, dlGlyph ?? 'no svg');
+    check(
+      'promo android 375 (hb11): glyph is the board download icon (M12 3v12 + tray)',
+      dlGlyph !== null && dlGlyph.includes('M12 3v12') && dlGlyph.includes('M4 21h16'),
+      dlGlyph ?? 'no svg',
+    );
     const ov = await overflowCheck(page);
     check('promo android 375: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await page.screenshot({ path: path.join(QA_DIR, 'android-promo-375.png') });
@@ -3708,6 +3764,30 @@ try {
     });
     check('push web: Capacitor reports non-native in the browser harness (native guard is false)', probe === 'web', probe);
     await ctx.close();
+  }
+
+  // ---- 30. Board-legend icons (hb11) ----
+  // The four icons the board's 14-icon legend shows that the app
+  // lacked (Certificate, Time, Download, Sign out). Only Download
+  // is rendered today (the promo button — checked in §28); the
+  // others complete the set, so these needles pin the exports +
+  // the board's glyph paths in source (board.html #i-award,
+  // #i-clock, #i-down, #i-out).
+  {
+    const iconsSrc = fs.readFileSync(path.join(ROOT, 'src', 'components', 'icons.tsx'), 'utf8');
+    const iconNeedles = [
+      ['IconCertificate', 'M8.5 13.5 7 21l5-2.5L17 21l-1.5-7.5'],
+      ['IconTime', 'M12 7v5l3.5 2'],
+      ['IconDownload', 'M12 3v12'],
+      ['IconSignOut', 'M21 12H9'],
+    ];
+    for (const [name, glyph] of iconNeedles) {
+      check(
+        `icons (hb11): ${name} exported with the board glyph`,
+        iconsSrc.includes(`export const ${name}`) && iconsSrc.includes(glyph),
+        '',
+      );
+    }
   }
 } finally {
   await browser.close();
