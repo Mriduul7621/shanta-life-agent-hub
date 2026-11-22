@@ -158,17 +158,18 @@ function LeadsSummary({
     : retailStatus === 'loading'
       ? t('leadsDuesLoading')
       : t('leadsDuesUnavailable');
+  // hb07: the six own stats live in ONE grid (board phone 5) — 2
+  // columns on phones, 4 from sm up. The team block below stays its
+  // own section.
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <StatBlock label={t('widgetFollowups')} value={String(leadflow.followups.today)} sub={t('followupsDue')} />
         <StatBlock
           label={t('widgetDuesMonth')}
           value={retail ? String(retail.duePolicies) : '—'}
           sub={duesSub}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <StatBlock
           label={t('leadsNewLeads')}
           value={String(leadflow.leads.createdInPeriod)}
@@ -218,10 +219,26 @@ function LearningSummary({
 }) {
   const { t } = useI18n();
   const course = learning.learning.currentCourse;
+  // hb08: board layout (phone 6) — label + percent on one row, the
+  // course title below, then the olive progress bar (same track/fill
+  // as the Dashboard leaderboard bars). The percent keeps its
+  // text-2xl value with the label as its previous sibling, so the
+  // summary readers see it exactly as before. No course in progress:
+  // no bar, the empty text stays.
+  const pct = course ? Math.min(100, Math.max(0, course.percent)) : 0;
   return (
     <>
       {course ? (
-        <StatBlock label={t('widgetLearning')} value={`${course.percent}%`} sub={course.title} />
+        <div>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-xs font-semibold text-charcoal/60">{t('widgetLearning')}</p>
+            <p className="text-2xl font-bold tracking-tight text-charcoal">{course.percent}%</p>
+          </div>
+          <p className="mt-1 text-sm font-bold text-charcoal">{course.title}</p>
+          <div aria-hidden className="mt-2 h-2 overflow-hidden rounded-full bg-cream-dark">
+            <div className="h-full rounded-full bg-olive" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
       ) : (
         <p className="text-base font-medium text-charcoal/70">{t('widgetLearningEmpty')}</p>
       )}

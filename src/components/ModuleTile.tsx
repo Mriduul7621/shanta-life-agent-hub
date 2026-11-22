@@ -24,26 +24,23 @@ export function ModuleTile({ module }: { module: HubModule }) {
   const { token } = useAuth();
   const disabled = !module.url;
 
+  // hb09: horizontal row (board phones 7 + 8) — icon left, name +
+  // desc + "Opens in this tab" middle, sunset "Open →" right. The
+  // disabled tile keeps the same row and puts its chip BELOW it.
   const inner = (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <ModuleIcon module={module} className={`h-11 w-11 ${disabled ? 'opacity-50' : ''}`} />
-        {!disabled && (
-          <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
-            {t('openTool')} →
-          </span>
-        )}
+    <div className="flex items-center gap-3">
+      <ModuleIcon module={module} className={`h-11 w-11 ${disabled ? 'opacity-50' : ''}`} />
+      <div className="min-w-0 flex-1">
+        <h3 className="text-base font-bold text-charcoal">{module.name}</h3>
+        <p className="mt-0.5 text-sm leading-snug text-charcoal/60">{t(module.descKey)}</p>
+        {!disabled && <p className="mt-1 text-xs text-charcoal/45">{t('opensInThisTab')}</p>}
       </div>
-      <h3 className="mt-3 text-base font-bold text-charcoal">{module.name}</h3>
-      <p className="mt-1 text-sm leading-snug text-charcoal/60">{t(module.descKey)}</p>
-      {disabled && module.disabledReasonKey ? (
-        <p className="mt-3 inline-flex items-center rounded-full bg-cream px-2.5 py-1 text-xs font-semibold text-charcoal/70">
-          {t('comingSoon')} · {t(module.disabledReasonKey)}
-        </p>
-      ) : (
-        <p className="mt-3 text-xs text-charcoal/45">{t('opensInThisTab')}</p>
+      {!disabled && (
+        <span className="shrink-0 text-sm font-bold whitespace-nowrap text-sunset">
+          {t('openTool')} →
+        </span>
       )}
-    </>
+    </div>
   );
 
   if (disabled) {
@@ -53,6 +50,11 @@ export function ModuleTile({ module }: { module: HubModule }) {
         className="rounded-2xl border border-dashed border-cream-dark bg-cream/60 p-4 sm:p-5"
       >
         {inner}
+        {module.disabledReasonKey && (
+          <p className="mt-3 inline-flex items-center rounded-full bg-cream px-2.5 py-1 text-xs font-semibold text-charcoal/70">
+            {t('comingSoon')} · {t(module.disabledReasonKey)}
+          </p>
+        )}
       </div>
     );
   }

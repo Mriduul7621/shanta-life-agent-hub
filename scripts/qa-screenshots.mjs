@@ -1952,7 +1952,9 @@ try {
   // cache and no proxy under file://: the summary strip shows the
   // error state + retry — never fixture figures (the demo summary
   // strip is gone with the demo code). The seeded live ready states
-  // are covered in §21b/§21c. Calculators/Proposals pages: unchanged.
+  // are covered in §21b/§21c. Calculators/Proposals pages: the tiles
+  // are horizontal rows now (hb09) — same 3 tiles / disabled tile,
+  // new layout.
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
@@ -2073,7 +2075,9 @@ try {
     );
     check('learning page: no ModuleTile (Go button replaces it)', !(await hasTileNamed('Learning Hub')));
 
-    // Calculators page: unchanged — 3 tiles, no summary, no Go button.
+    // Calculators page: 3 tiles, no summary, no Go button. hb09: the
+    // tiles are horizontal rows (board phone 7) — icon left, name +
+    // desc + "Opens in this tab" middle, sunset "Open →" right.
     await clickNav(page, 'ক্যালকুলেটর', 'Calculators');
     await page.waitForFunction(() => document.body.textContent.includes('PremiumPulse'), { timeout: 5000 });
     const calcTiles = await page.evaluate(() =>
@@ -2081,16 +2085,50 @@ try {
         [...document.querySelectorAll('h3')].some((h) => h.textContent === n),
       ),
     );
-    check('calculators page: unchanged, 3 tiles present', calcTiles);
+    check('calculators page: 3 tiles present', calcTiles);
+    const tileLayout = await page.evaluate(() => {
+      const anchor = [...document.querySelectorAll('a')].find((a) =>
+        [...a.querySelectorAll('h3')].some((h) => h.textContent === 'PremiumPulse'),
+      );
+      if (!anchor) return null;
+      const row = anchor.firstElementChild;
+      const icon = row?.children[0];
+      const middle = row?.children[1];
+      const open = row?.children[2];
+      const iconRect = icon?.getBoundingClientRect();
+      const nameRect = middle?.querySelector('h3')?.getBoundingClientRect();
+      const openRect = open?.getBoundingClientRect();
+      return {
+        flexRow: row ? getComputedStyle(row).flexDirection === 'row' : false,
+        iconLeftOfName: iconRect && nameRect ? iconRect.right <= nameRect.left + 1 : false,
+        nameLeftOfOpen: nameRect && openRect ? nameRect.right <= openRect.left + 1 : false,
+        openText: open?.textContent.trim() ?? null,
+        openSunset: open?.className.includes('text-sunset') ?? false,
+        openNoChip: open ? !open.className.includes('rounded-full') && !open.className.includes('border') : false,
+        opensInTab: middle?.textContent.includes('Opens in this tab') ?? false,
+      };
+    });
+    check(
+      'calculators page (hb09): horizontal tile — icon left, name middle, sunset Open right',
+      tileLayout?.flexRow === true &&
+        tileLayout.iconLeftOfName === true &&
+        tileLayout.nameLeftOfOpen === true &&
+        tileLayout.openText === 'Open →' &&
+        tileLayout.openSunset === true &&
+        tileLayout.openNoChip === true &&
+        tileLayout.opensInTab === true,
+      JSON.stringify(tileLayout),
+    );
     check(
       'calculators page: no summary strip, no Go button',
       (await summaryInfo()) === null && !(await goButton('Go to', 'যান')),
       'summary/go must be absent here',
     );
 
-    // Proposals page: unchanged — disabled tile + Coming soon, no
-    // summary, no Go button. (The "production portal link" callout
-    // note under the title was removed with the other title
+    // Proposals page: disabled tile + Coming soon, no summary, no Go
+    // button. hb09: the disabled tile keeps the same row, with its
+    // chip BELOW it (board phone 8). (The "production portal link"
+    // callout note under the title was removed with the other title
     // sentences — the tile itself still says "Link to confirm with
     // IT".)
     await clickNav(page, 'প্রপোজাল', 'Proposals');
@@ -2101,7 +2139,29 @@ try {
         document.body.textContent.includes('Coming soon') &&
         document.body.textContent.includes('Link to confirm with IT'),
     );
-    check('proposals page: unchanged, disabled tile + Coming soon', proposalsOk);
+    check('proposals page: disabled tile + Coming soon', proposalsOk);
+    const disabledTile = await page.evaluate(() => {
+      const tile = document.querySelector('div[aria-disabled="true"]');
+      if (!tile) return null;
+      const row = tile.firstElementChild;
+      const chip = [...tile.querySelectorAll('p')].find((p) => p.textContent.includes('Coming soon'));
+      const rowRect = row?.getBoundingClientRect();
+      const chipRect = chip?.getBoundingClientRect();
+      return {
+        flexRow: row ? getComputedStyle(row).flexDirection === 'row' : false,
+        chipBelowRow: rowRect && chipRect ? chipRect.top >= rowRect.bottom - 1 : false,
+        noOpen: !tile.textContent.includes('Open →'),
+        dashed: getComputedStyle(tile).borderStyle === 'dashed',
+      };
+    });
+    check(
+      'proposals page (hb09): disabled tile row + chip below, no Open',
+      disabledTile?.flexRow === true &&
+        disabledTile.chipBelowRow === true &&
+        disabledTile.noOpen === true &&
+        disabledTile.dashed === true,
+      JSON.stringify(disabledTile),
+    );
     check(
       'proposals page: no summary strip, no Go button',
       (await summaryInfo()) === null && !(await goButton('Go to', 'যান')),
@@ -2374,6 +2434,27 @@ try {
         JSON.stringify(await readStats('Open leads')) === JSON.stringify(['8', '20']) &&
         JSON.stringify(await readStats('Converted')) === JSON.stringify(['1']),
     );
+    // hb07: the six own stats live in ONE grid (board phone 5) — 2
+    // grids total in the strip (own + team), the first holding all
+    // six stats in board order.
+    const ownGridInfo = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      if (!section) return null;
+      const grids = [...section.querySelectorAll('div.grid')];
+      const first = grids[0];
+      if (!first) return { grids: grids.length, labels: [] };
+      const labels = [...first.querySelectorAll('p.text-2xl')].map(
+        (v) => v.previousElementSibling?.textContent.trim(),
+      );
+      return { grids: grids.length, labels };
+    });
+    check(
+      'leads live (hb07): single 6-stat own grid in board order',
+      ownGridInfo?.grids === 2 &&
+        JSON.stringify(ownGridInfo.labels) ===
+          JSON.stringify(["Today's follow-ups", 'Dues this month', 'New leads', 'Overdue follow-ups', 'Open leads', 'Converted']),
+      JSON.stringify(ownGridInfo),
+    );
     const go = await page.evaluate(() => {
       const a = [...document.querySelectorAll('a')].find((el) => el.textContent.includes('Go to Lead Management'));
       return a ? { href: a.getAttribute('href'), target: a.getAttribute('target') } : null;
@@ -2383,6 +2464,15 @@ try {
     check('leads live 1440: no horizontal overflow', !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await waitForSplashGone(page);
     await page.screenshot({ path: path.join(QA_DIR, 'leads-live-1440.png'), fullPage: true });
+    // hb07: the own grid is 2 columns at phone width.
+    await page.setViewport({ width: 375, height: 900 });
+    await new Promise((r) => setTimeout(r, 200));
+    const cols375 = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      const grid = section?.querySelector('div.grid');
+      return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : -1;
+    });
+    check('leads live (hb07): own grid 2 cols at 375', cols375 === 2, `cols=${cols375}`);
     await ctx.close();
   }
 
@@ -2432,6 +2522,34 @@ try {
         return out;
       }, label);
     check('learning live: progress 80% own + 45% team', JSON.stringify(await readStats('Learning in progress')) === JSON.stringify(['80%', '45%']));
+    // hb08: the olive progress bar (board phone 6) — label + percent
+    // row, course title, then the bar; width = course percent; the
+    // team block carries no bar.
+    const progressBar = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      if (!section) return null;
+      const tracks = [...section.querySelectorAll('div.h-2.overflow-hidden.rounded-full.bg-cream-dark')];
+      const track = tracks[0];
+      if (!track) return { found: false };
+      const fill = track.querySelector('div.bg-olive');
+      const kids = [...(track.parentElement?.children ?? [])];
+      return {
+        found: true,
+        tracks: tracks.length,
+        width: fill?.style.width ?? null,
+        order: kids.map((k) => k.tagName),
+        title: kids[1]?.textContent?.trim() ?? null,
+      };
+    });
+    check(
+      'learning live (hb08): one olive progress bar, 80% wide, title above it',
+      progressBar?.found === true &&
+        progressBar.tracks === 1 &&
+        progressBar.width === '80%' &&
+        JSON.stringify(progressBar.order) === JSON.stringify(['DIV', 'P', 'DIV']) &&
+        (progressBar.title?.length ?? 0) > 0,
+      JSON.stringify(progressBar),
+    );
     check(
       'learning live (today default): enrolled 0, completed 0, certificates 0, credits 0',
       JSON.stringify(await readStats('Courses enrolled')) === JSON.stringify(['0']) &&
@@ -2601,6 +2719,12 @@ try {
       return section ? section.textContent : '';
     });
     check('learning empty live: no course in progress', learningStrip.includes('No course in progress'), learningStrip.slice(0, 200));
+    // hb08: no progress bar when there is no course in progress.
+    const noBar = await page.evaluate(() => {
+      const section = document.querySelector('section[aria-label="Summary"], section[aria-label="সারসংক্ষেপ"]');
+      return section ? !section.querySelector('div.h-2.overflow-hidden.rounded-full.bg-cream-dark') : false;
+    });
+    check('learning empty live (hb08): no progress bar without a course in progress', noBar);
     await ctx.close();
   }
 
