@@ -23,22 +23,27 @@
  * ALL_TIME_SELECTION (follow-ups are day-bucketed, so the period
  * does not change them). Dues and due rows are period-independent
  * snapshots: the dues card shows THIS WEEK's dues (Bangladesh
- * calendar week, Sunday–Saturday, with the week range shown), the
- * Due widget shows the month-to-date totals + the 3 most recent
- * dues, and the Learning card shows THIS MONTH (credits earned this
- * month + courses in progress + courses completed this month).
+ * calendar week, Sunday–Saturday), the Due widget shows the
+ * month-to-date totals + the 3 most recent dues, and the Learning
+ * card shows THIS MONTH (credits earned this month + courses in
+ * progress + courses completed this month).
  *
- * Sales overview (Mahadi 2026-11-20): two THIS-MONTH retail cards —
- * Total policy sales (distinct New policies, same definition as the
- * Dashboard Policies KPI) and Total FYCP with New / Deferred premium
- * in small sub-text, scoped to the caller via the retail proxy.
+ * Sales overview REMOVED (Mahadi 2026-11-22): the section was
+ * redundant — Total FYCP already shows in the upper "This month's
+ * business" card, so the policy sales count moved into that card's
+ * sub ("{count} policies", same this-month summary) and the separate
+ * section is gone.
+ *
+ * Home KPI cards are title + number only (Mahadi 2026-11-22): no
+ * detail sub-texts on the follow-ups, dues, learning or team cards.
+ * The business card keeps its policy-count sub; the Dashboard KPI
+ * subs are unchanged.
  *
  * The retail summary is ONE scoped slice (own for employee, own+team
  * for team_lead, own+subtree for manager, org for admin) — it cannot
  * be split into own vs team, so the own grid's dues card shows the
- * scoped slice (labelled with scope + week range) and the team
- * section is a 2-card grid (follow-ups + learning), with no team
- * Due widget.
+ * scoped slice and the team section is a 2-card grid (follow-ups +
+ * learning), with no team Due widget.
  *
  * No sentence under any title (Mahadi 2026-11-20): page and section
  * titles stand alone — no subtitles, no live/demo notes, no feed
@@ -48,7 +53,6 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { useAuth } from '../auth/AuthContext';
-import type { Lang } from '../i18n/dictionary';
 import { formatBdt } from '../data/format';
 import { shouldShowAndroidPromo } from '../data/appDownload';
 import { loadLeadflowCached, loadLeadflowFresh } from '../data/leadflowData';
@@ -80,36 +84,6 @@ function firstName(fullName: string): string {
   return parts.find((part) => !NAME_PREFIXES.has(part.toLowerCase().replace(/\./g, ''))) ?? fullName;
 }
 
-const fmtCount = (n: number): string => n.toLocaleString('en-IN');
-
-/**
- * 'Sun 15 – Sat 21 Nov' when the week stays in one month, 'Sun 29 Nov –
- * Sat 5 Dec' across months — so the week definition is visible on the
- * dues card (the retail app has no week convention; the Hub's week is
- * the Bangladesh calendar week, Sunday–Saturday).
- */
-function formatWeekRange(start: string, end: string, lang: Lang): string {
-  const locale = lang === 'bn' ? 'bn-BD' : 'en-GB';
-  const s = new Date(`${start}T00:00:00Z`);
-  const e = new Date(`${end}T00:00:00Z`);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return `${start} – ${end}`;
-  const day = (d: Date): string =>
-    d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', timeZone: 'UTC' });
-  const month = (d: Date): string =>
-    d.toLocaleDateString(locale, { month: 'short', timeZone: 'UTC' });
-  if (s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear()) {
-    return `${day(s)} – ${day(e)} ${month(e)}`;
-  }
-  return `${day(s)} ${month(s)} – ${day(e)} ${month(e)}`;
-}
-
-const SCOPE_KEY = {
-  own: 'dashboardScopeOwn',
-  team: 'dashboardScopeTeam',
-  subtree: 'dashboardScopeSubtree',
-  org: 'dashboardScopeOrg',
-} as const;
-
 /**
  * Own widget grid: every card renders from its own feed's state —
  * live figures when loaded (an empty feed shows the plain empty
@@ -137,10 +111,9 @@ function WidgetGrid({
   retailStatus: FeedStatus;
   onRetryRetail: () => void;
 }) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const duesWeek = retail?.duesThisWeek ?? null;
   const dues = retail ? (duesWeek ? duesWeek.count : retail.duePolicies) : 0;
-  const duesAmount = retail ? (duesWeek ? duesWeek.amount : retail.duePremium) : 0;
   const learningMonthly = learning
     ? {
         credits: learning.learning.creditsInPeriod,
@@ -157,7 +130,6 @@ function WidgetGrid({
         <WidgetCard
           title={t('widgetFollowups')}
           value={leadflow.followups.today > 0 ? String(leadflow.followups.today) : null}
-          sub={`${leadflow.followups.today} ${t('followupsDue')}`}
           emptyText={t('widgetFollowupsEmpty')}
           accent="orange"
         />
@@ -170,11 +142,6 @@ function WidgetGrid({
         <WidgetCard
           title={t(duesWeek ? 'widgetDues' : 'widgetDuesMonth')}
           value={dues > 0 ? String(dues) : null}
-          sub={
-            duesWeek
-              ? `${t(SCOPE_KEY[retail.scope])} · ${formatWeekRange(duesWeek.weekStart, duesWeek.weekEnd, lang)} · ${dues} ${t('duesThisWeek')} · ${formatBdt(duesAmount)}`
-              : `${t(SCOPE_KEY[retail.scope])} · ${dues} ${t('duesThisMonth')} · ${formatBdt(duesAmount)}`
-          }
           emptyText={t(duesWeek ? 'widgetDuesEmpty' : 'widgetDuesMonthEmpty')}
           accent="olive"
         />
@@ -187,14 +154,6 @@ function WidgetGrid({
         <WidgetCard
           title={t('widgetLearningMonth')}
           value={learningMonthActive && learningMonthly ? String(learningMonthly.credits) : null}
-          sub={
-            learningMonthly
-              ? t('learningMonthSub', {
-                  inProgress: learningMonthly.inProgress,
-                  completed: learningMonthly.completed,
-                })
-              : ''
-          }
           emptyText={t('widgetLearningMonthEmpty')}
           accent="charcoal"
         />
@@ -207,7 +166,11 @@ function WidgetGrid({
         <WidgetCard
           title={t('widgetBusiness')}
           value={retail.fycp > 0 ? formatBdt(retail.fycp) : null}
-          sub={t('businessThisMonth')}
+          sub={
+            retail.policies === 1
+              ? t('businessPoliciesSubOne', { count: retail.policies })
+              : t('businessPoliciesSub', { count: retail.policies })
+          }
           emptyText={t('widgetBusinessEmpty')}
           accent="orange"
         />
@@ -252,7 +215,6 @@ function TeamGrid({
               ? String(leadflow.team.followups.today)
               : null
           }
-          sub={`${leadflow.team?.followups.today ?? 0} ${t('followupsDue')}`}
           emptyText={t('widgetFollowupsEmpty')}
           accent="orange"
         />
@@ -265,7 +227,6 @@ function TeamGrid({
         <WidgetCard
           title={t('widgetLearning')}
           value={learning.team ? `${learning.team.avgProgress}%` : null}
-          sub={t('teamLearningInProgress', { count: learning.team?.learningMembersCount ?? 0 })}
           emptyText={t('widgetLearningEmpty')}
           accent="charcoal"
         />
@@ -380,43 +341,6 @@ export function HomePage() {
           >
             {t('feedRetry')}
           </button>
-        </section>
-      )}
-
-      {/* Sales overview — this-month retail figures (Total policy sales
-          + Total FYCP with New / Deferred sub-text), scoped to the
-          caller. Shown once the retail feed has loaded; an empty
-          retail scope shows no cards at all (same rule as the
-          Dashboard's empty state). The scope + period chip stays:
-          it tells the user whose data and which month the figures
-          are. */}
-      {retail && !retail.empty && (
-        <section aria-label={t('homeSalesTitle')}>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-charcoal">{t('homeSalesTitle')}</h2>
-            <span className="rounded-full border border-cream-dark px-2.5 py-1 text-xs font-semibold text-charcoal/70">
-              {t(SCOPE_KEY[retail.scope])} · {t('periodThisMonth')}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            <WidgetCard
-              title={t('homeSalesPolicies')}
-              value={fmtCount(retail.policies)}
-              sub={t('homeSalesPoliciesSub')}
-              emptyText=""
-              accent="charcoal"
-            />
-            <WidgetCard
-              title={t('homeSalesFycp')}
-              value={formatBdt(retail.fycp)}
-              sub={t('homeSalesFycpSub', {
-                new: formatBdt(retail.newPremium),
-                deferred: formatBdt(retail.deferredPremium),
-              })}
-              emptyText=""
-              accent="olive"
-            />
-          </div>
         </section>
       )}
 

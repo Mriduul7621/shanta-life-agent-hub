@@ -49,13 +49,12 @@ export type DictKey =
   | 'widgetLearningEmpty'
   | 'widgetLearningMonth'
   | 'widgetLearningMonthEmpty'
-  | 'learningMonthSub'
   | 'widgetBusiness'
   | 'widgetBusinessEmpty'
+  | 'businessPoliciesSub'
+  | 'businessPoliciesSubOne'
   | 'followupsDue'
-  | 'duesThisWeek'
   | 'learningInProgress'
-  | 'businessThisMonth'
   | 'teamSectionTitle'
   | 'modulesTitle'
   | 'openTool'
@@ -170,12 +169,6 @@ export type DictKey =
   | 'periodCustomInvalid'
   | 'snapshotNow'
   | 'kpiSubCumulative'
-  // Home sales overview (this-month retail figures)
-  | 'homeSalesTitle'
-  | 'homeSalesPolicies'
-  | 'homeSalesPoliciesSub'
-  | 'homeSalesFycp'
-  | 'homeSalesFycpSub'
   // Login page (Learning Hub pattern: photo panel + splash)
   | 'loginPanelEyebrow'
   | 'loginPanelHeadline'
@@ -243,13 +236,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     widgetLearningEmpty: 'No course in progress',
     widgetLearningMonth: 'Learning this month',
     widgetLearningMonthEmpty: 'No learning this month',
-    learningMonthSub: 'credits earned · {inProgress} in progress · {completed} completed',
     widgetBusiness: "This month's business",
     widgetBusinessEmpty: 'No business recorded this month',
+    businessPoliciesSub: '{count} policies',
+    businessPoliciesSubOne: '1 policy',
     followupsDue: 'follow-ups due',
-    duesThisWeek: 'premiums due',
     learningInProgress: 'in progress',
-    businessThisMonth: 'FYCP this month',
     teamSectionTitle: 'Your team',
     modulesTitle: 'Your tools',
     openTool: 'Open',
@@ -362,11 +354,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'Pick a valid date range (up to 2 years, ending today).',
     snapshotNow: 'Now',
     kpiSubCumulative: 'Cumulative',
-    homeSalesTitle: 'Sales overview',
-    homeSalesPolicies: 'Total policy sales',
-    homeSalesPoliciesSub: 'New policies · This month',
-    homeSalesFycp: 'Total FYCP',
-    homeSalesFycpSub: 'New {new} · Deferred {deferred}',
     loginPanelEyebrow: 'AGENT HUB',
     loginPanelHeadline: 'From lead to sale — all in one place.',
     loginPanelValue1: 'Every lead, from first call to closed sale',
@@ -431,13 +418,12 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     widgetLearningEmpty: 'কোনো কোর্স চলমান নেই',
     widgetLearningMonth: 'এই মাসের লার্নিং',
     widgetLearningMonthEmpty: 'এই মাসে কোনো লার্নিং নেই',
-    learningMonthSub: 'ক্রেডিট অর্জিত · {inProgress}টি চলমান · {completed}টি সম্পন্ন',
     widgetBusiness: 'এই মাসের ব্যবসা',
     widgetBusinessEmpty: 'এই মাসে কোনো ব্যবসা রেকর্ড হয়নি',
+    businessPoliciesSub: '{count}টি পলিসি',
+    businessPoliciesSubOne: '{count}টি পলিসি',
     followupsDue: 'টি ফলো-আপ বকেয়া',
-    duesThisWeek: 'টি প্রিমিয়াম বকেয়া',
     learningInProgress: 'চলমান',
-    businessThisMonth: 'এই মাসে এফওয়াইসিপি',
     teamSectionTitle: 'আপনার টিম',
     modulesTitle: 'আপনার টুলস',
     openTool: 'খুলুন',
@@ -550,11 +536,6 @@ export const dict: Record<Lang, Record<DictKey, string>> = {
     periodCustomInvalid: 'সঠিক তারিখের পরিসর দিন (সর্বোচ্চ ২ বছর, আজ পর্যন্ত)।',
     snapshotNow: 'এখন',
     kpiSubCumulative: 'সব মিলিয়ে',
-    homeSalesTitle: 'বিক্রয় সারসংক্ষেপ',
-    homeSalesPolicies: 'মোট পলিসি বিক্রয়',
-    homeSalesPoliciesSub: 'নতুন পলিসি · এই মাসে',
-    homeSalesFycp: 'মোট এফওয়াইসিপি',
-    homeSalesFycpSub: 'নতুন {new} · ডেফার্ড {deferred}',
     loginPanelEyebrow: 'এজেন্ট হাব',
     loginPanelHeadline: 'লিড থেকে সেল — সব এক জায়গায়।',
     loginPanelValue1: 'প্রতিটি লিড — প্রথম কল থেকে সেল পর্যন্ত',

@@ -139,10 +139,11 @@
  * 21. Home / Leads / Learning live ready states against seeded session
  *     caches (test fixture summaries computed by the Hub's own
  *     summarizers): exact figures per card (follow-ups 4 own / 12 team
- *     today-only, dues this week 2 / ৳17,000 with the Sun 15 – Sat 21
- *     Nov week range, learning this month 0 credits / 1 in progress /
- *     0 completed, business this-month FYCP ৳35,000, sales 1 policy /
- *     FYCP ৳35,000 this month), the Due widget in summary mode (amount
+ *     today-only, dues this week 2, learning this month 0 credits,
+ *     business this-month FYCP ৳35,000 with the 1 policy sub),
+ *     Home KPI cards title + number only (Mahadi 2026-11-22 — no
+ *     detail sub-texts except the business card's policy count) and
+ *     no Sales overview section (removed the same day), the Due widget in summary mode (amount
  *     + policies + month + scope + full-dashboard link) with the 3
  *     recent dues above the totals, the team section drops to 2 cards
  *     (follow-ups + learning) with no team Due widget, and the
@@ -2248,9 +2249,11 @@ try {
 
   // ---- 21a. Home live ready state (Team Lead): seeded caches ----
   // Test fixture figures, live rendering: exact card figures,
-  // business (this-month FYCP), dues this week with the week range,
-  // monthly learning card, Due widget in summary mode with the 3
-  // recent dues, team section drops to 2 cards, no team Due widget.
+  // business (this-month FYCP with the policy-count sub), dues this
+  // week, monthly learning card, Due widget in summary mode with
+  // the 3 recent dues, team section drops to 2 cards, no team Due
+  // widget. Home KPI cards are title + number only (Mahadi
+  // 2026-11-22) and there is no Sales overview section.
   // No feed chips any more (deleted with the demo code) and no
   // "Live from …" line anywhere. Home loads retail + learning with
   // :this-month and LeadFlow with :all (follow-ups are day-bucketed).
@@ -2309,49 +2312,64 @@ try {
       }
       return out;
     });
-    check('home live own: follow-ups 4 (today only)', cards.own["Today's follow-ups"]?.value === '4', JSON.stringify(cards.own));
     check(
-      'home live own: dues this week 2, Own + team, Sun 15 – Sat 21 Nov, ৳17,000',
-      cards.own['Dues this week']?.value === '2' &&
-        cards.own['Dues this week']?.sub.includes('Own + team') &&
-        cards.own['Dues this week']?.sub.includes('Sun 15 – Sat 21 Nov') &&
-        cards.own['Dues this week']?.sub.includes('2 premiums due') &&
-        cards.own['Dues this week']?.sub.includes('৳17,000'),
+      'home live own: follow-ups 4 (today only), title + number only',
+      cards.own["Today's follow-ups"]?.value === '4' && cards.own["Today's follow-ups"]?.sub === '',
+      JSON.stringify(cards.own),
+    );
+    check(
+      'home live own: dues this week 2, title + number only',
+      cards.own['Dues this week']?.value === '2' && cards.own['Dues this week']?.sub === '',
       JSON.stringify(cards.own['Dues this week']),
     );
     check(
-      'home live own: learning this month 0 credits, 1 in progress, 0 completed',
-      cards.own['Learning this month']?.value === '0' &&
-        cards.own['Learning this month']?.sub.includes('1 in progress') &&
-        cards.own['Learning this month']?.sub.includes('0 completed'),
+      'home live own: learning this month 0 credits, title + number only',
+      cards.own['Learning this month']?.value === '0' && cards.own['Learning this month']?.sub === '',
       JSON.stringify(cards.own['Learning this month']),
     );
     check(
-      'home live own: business this-month FYCP ৳35,000',
-      cards.own["This month's business"]?.value === '৳35,000',
+      'home live own: business this-month FYCP ৳35,000, sub 1 policy',
+      cards.own["This month's business"]?.value === '৳35,000' &&
+        cards.own["This month's business"]?.sub === '1 policy',
       JSON.stringify(cards.own["This month's business"]),
     );
-    // Sales overview (Mahadi 2026-11-20): THIS-MONTH retail figures —
-    // Total policy sales 1 and Total FYCP ৳35,000 with the New
-    // ৳30,000 · Deferred ৳5,000 sub-text, scoped Own + team.
+    // Sales overview REMOVED (Mahadi 2026-11-22): FYCP already shows
+    // in the business card and the policy count moved into its sub —
+    // no separate section, no scope chip, no Total cards.
     check(
-      'home live sales: Total policy sales 1, New policies · This month',
-      cards.own['Total policy sales']?.value === '1' &&
-        cards.own['Total policy sales']?.sub === 'New policies · This month',
-      JSON.stringify(cards.own['Total policy sales']),
+      'home live: no Sales overview section',
+      !body.includes('Sales overview') && !body.includes('Total policy sales') && !body.includes('Total FYCP'),
+    );
+    // Alignment (Mahadi 2026-11-22): the four own-grid cards share
+    // one height and their figures sit on one line — the sub-less
+    // cards reserve the sub line's space, so the business card's
+    // policy-count sub cannot push anything out of line. (At 1440
+    // all four cards are in one row.)
+    const ownCardBoxes = await page.evaluate(() => {
+      const first = document.querySelector('section[aria-label="Today\'s follow-ups"]');
+      const grid = first?.parentElement;
+      if (!grid) return null;
+      return [...grid.children].map((card) => {
+        const r = card.getBoundingClientRect();
+        const value = card.querySelector('p.text-2xl');
+        const vr = value?.getBoundingClientRect();
+        return { height: r.height, valueTop: vr ? vr.top : null };
+      });
+    });
+    check(
+      'home live own: cards share one height, figures on one line',
+      ownCardBoxes?.length === 4 &&
+        ownCardBoxes.every((b) => Math.abs(b.height - ownCardBoxes[0].height) <= 1) &&
+        ownCardBoxes.every((b) => b.valueTop !== null && Math.abs(b.valueTop - ownCardBoxes[0].valueTop) <= 1),
+      JSON.stringify(ownCardBoxes),
     );
     check(
-      'home live sales: Total FYCP ৳35,000, New ৳30,000 · Deferred ৳5,000',
-      cards.own['Total FYCP']?.value === '৳35,000' &&
-        cards.own['Total FYCP']?.sub === 'New ৳30,000 · Deferred ৳5,000',
-      JSON.stringify(cards.own['Total FYCP']),
-    );
-    check('home live sales: scope chip Own + team · This month', body.includes('Own + team · This month'));
-    check(
-      'home live team: 2 cards only (follow-ups 12, learning 45%)',
+      'home live team: 2 cards only (follow-ups 12, learning 45%), title + number only',
       Object.keys(cards.team).length === 2 &&
         cards.team["Today's follow-ups"]?.value === '12' &&
-        cards.team['Learning in progress']?.value === '45%',
+        cards.team["Today's follow-ups"]?.sub === '' &&
+        cards.team['Learning in progress']?.value === '45%' &&
+        cards.team['Learning in progress']?.sub === '',
       JSON.stringify(cards.team),
     );
     check('home live team: size 3 team members', body.includes('3 team members'));
@@ -2742,7 +2760,14 @@ try {
     check('home empty live: follow-ups empty text', cards["Today's follow-ups"] === 'No follow-ups due today', JSON.stringify(cards));
     check('home empty live: dues this week empty text', cards['Dues this week'] === 'No premiums due this week', JSON.stringify(cards));
     check('home empty live: learning this month empty text', cards['Learning this month'] === 'No learning this month', JSON.stringify(cards));
-    check('home empty live: no Sales overview cards (empty retail)', cards['Total policy sales'] === undefined && cards['Total FYCP'] === undefined, JSON.stringify(cards));
+    // No Sales overview section at all (removed Mahadi 2026-11-22) —
+    // not just hidden for an empty scope.
+    const homeBody21e = await page.evaluate(() => document.body.textContent);
+    check(
+      'home empty live: no Sales overview section',
+      !homeBody21e.includes('Sales overview') && !homeBody21e.includes('Total policy sales') && !homeBody21e.includes('Total FYCP'),
+      homeBody21e.slice(0, 200),
+    );
     const dueText = await page.evaluate(() => {
       const el = document.querySelector('section[aria-label="Due premiums"], section[aria-label="বকেয়া প্রিমিয়াম"]');
       return el ? el.textContent : '';
