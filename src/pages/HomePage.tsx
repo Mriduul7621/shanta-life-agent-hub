@@ -65,12 +65,19 @@ import { FeedErrorCard, WidgetCard, WidgetSkeleton } from '../components/WidgetC
 import { AndroidAppPromo } from '../components/AndroidAppPromo';
 import { DuePremiumsWidget } from '../components/DuePremiumsWidget';
 import { QuickActionTile } from '../components/QuickActionTile';
-import { IconCheck, IconCoin, IconLearning, IconPhone } from '../components/icons';
 
 function greetingKey(hour: number) {
   if (hour < 12) return 'greetingMorning' as const;
   if (hour < 18) return 'greetingAfternoon' as const;
   return 'greetingEvening' as const;
+}
+
+const NAME_PREFIXES = new Set(['md', 'mohammad', 'mohammed', 'mr', 'mrs', 'ms', 'dr']);
+
+/** First name for the greeting (board + LH precedent: first name only). */
+function firstName(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return parts.find((part) => !NAME_PREFIXES.has(part.toLowerCase().replace(/\./g, ''))) ?? fullName;
 }
 
 const fmtCount = (n: number): string => n.toLocaleString('en-IN');
@@ -145,7 +152,7 @@ function WidgetGrid({
     learningMonthly !== null &&
     (learningMonthly.credits > 0 || learningMonthly.inProgress > 0 || learningMonthly.completed > 0);
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       {leadflow ? (
         <WidgetCard
           title={t('widgetFollowups')}
@@ -153,12 +160,11 @@ function WidgetGrid({
           sub={`${leadflow.followups.today} ${t('followupsDue')}`}
           emptyText={t('widgetFollowupsEmpty')}
           accent="orange"
-          icon={<IconPhone />}
         />
       ) : leadflowStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} />
+        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" />
       ) : (
-        <FeedErrorCard title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} onRetry={onRetryLeadflow} />
+        <FeedErrorCard title={t('widgetFollowups')} accent="orange" onRetry={onRetryLeadflow} />
       )}
       {retail ? (
         <WidgetCard
@@ -171,12 +177,11 @@ function WidgetGrid({
           }
           emptyText={t(duesWeek ? 'widgetDuesEmpty' : 'widgetDuesMonthEmpty')}
           accent="olive"
-          icon={<IconCoin />}
         />
       ) : retailStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetDues')} accent="olive" icon={<IconCoin />} />
+        <WidgetSkeleton title={t('widgetDues')} accent="olive" />
       ) : (
-        <FeedErrorCard title={t('widgetDues')} accent="olive" icon={<IconCoin />} onRetry={onRetryRetail} />
+        <FeedErrorCard title={t('widgetDues')} accent="olive" onRetry={onRetryRetail} />
       )}
       {learning ? (
         <WidgetCard
@@ -192,12 +197,11 @@ function WidgetGrid({
           }
           emptyText={t('widgetLearningMonthEmpty')}
           accent="charcoal"
-          icon={<IconLearning />}
         />
       ) : learningStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetLearningMonth')} accent="charcoal" icon={<IconLearning />} />
+        <WidgetSkeleton title={t('widgetLearningMonth')} accent="charcoal" />
       ) : (
-        <FeedErrorCard title={t('widgetLearningMonth')} accent="charcoal" icon={<IconLearning />} onRetry={onRetryLearning} />
+        <FeedErrorCard title={t('widgetLearningMonth')} accent="charcoal" onRetry={onRetryLearning} />
       )}
       {retail ? (
         <WidgetCard
@@ -206,12 +210,11 @@ function WidgetGrid({
           sub={t('businessThisMonth')}
           emptyText={t('widgetBusinessEmpty')}
           accent="orange"
-          icon={<IconCheck />}
         />
       ) : retailStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetBusiness')} accent="orange" icon={<IconCheck />} />
+        <WidgetSkeleton title={t('widgetBusiness')} accent="orange" />
       ) : (
-        <FeedErrorCard title={t('widgetBusiness')} accent="orange" icon={<IconCheck />} onRetry={onRetryRetail} />
+        <FeedErrorCard title={t('widgetBusiness')} accent="orange" onRetry={onRetryRetail} />
       )}
     </div>
   );
@@ -240,7 +243,7 @@ function TeamGrid({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       {leadflow ? (
         <WidgetCard
           title={t('widgetFollowups')}
@@ -252,12 +255,11 @@ function TeamGrid({
           sub={`${leadflow.team?.followups.today ?? 0} ${t('followupsDue')}`}
           emptyText={t('widgetFollowupsEmpty')}
           accent="orange"
-          icon={<IconPhone />}
         />
       ) : leadflowStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} />
+        <WidgetSkeleton title={t('widgetFollowups')} accent="orange" />
       ) : (
-        <FeedErrorCard title={t('widgetFollowups')} accent="orange" icon={<IconPhone />} onRetry={onRetryLeadflow} />
+        <FeedErrorCard title={t('widgetFollowups')} accent="orange" onRetry={onRetryLeadflow} />
       )}
       {learning ? (
         <WidgetCard
@@ -266,12 +268,11 @@ function TeamGrid({
           sub={t('teamLearningInProgress', { count: learning.team?.learningMembersCount ?? 0 })}
           emptyText={t('widgetLearningEmpty')}
           accent="charcoal"
-          icon={<IconLearning />}
         />
       ) : learningStatus === 'loading' ? (
-        <WidgetSkeleton title={t('widgetLearning')} accent="charcoal" icon={<IconLearning />} />
+        <WidgetSkeleton title={t('widgetLearning')} accent="charcoal" />
       ) : (
-        <FeedErrorCard title={t('widgetLearning')} accent="charcoal" icon={<IconLearning />} onRetry={onRetryLearning} />
+        <FeedErrorCard title={t('widgetLearning')} accent="charcoal" onRetry={onRetryLearning} />
       )}
     </div>
   );
@@ -319,7 +320,7 @@ export function HomePage() {
       {/* Greeting — no sentence under the title (Mahadi 2026-11-20). */}
       <section>
         <p className="text-sm font-semibold text-sunset">
-          {t(greetingKey(hour))}, {user.name}
+          {t(greetingKey(hour))}, {firstName(user.name)}
         </p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight text-charcoal sm:text-3xl">
           {t('navHome')}
@@ -397,14 +398,13 @@ export function HomePage() {
               {t(SCOPE_KEY[retail.scope])} · {t('periodThisMonth')}
             </span>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <WidgetCard
               title={t('homeSalesPolicies')}
               value={fmtCount(retail.policies)}
               sub={t('homeSalesPoliciesSub')}
               emptyText=""
               accent="charcoal"
-              icon={<IconCheck />}
             />
             <WidgetCard
               title={t('homeSalesFycp')}
@@ -415,7 +415,6 @@ export function HomePage() {
               })}
               emptyText=""
               accent="olive"
-              icon={<IconCoin />}
             />
           </div>
         </section>

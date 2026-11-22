@@ -26,9 +26,9 @@ export function QuickActionTile({ module }: { module: HubModule }) {
 
   const inner = (
     <>
-      <ModuleIcon module={module} className={`h-12 w-12 ${disabled ? 'opacity-50' : ''}`} />
+      <ModuleIcon module={module} className={`h-10 w-10 ${disabled ? 'opacity-50' : ''}`} />
       <h3
-        className={`mt-2 text-center text-sm font-bold leading-tight text-charcoal ${disabled ? 'opacity-50' : ''}`}
+        className={`mt-2 text-center text-[13px] font-bold leading-tight text-charcoal sm:text-sm ${disabled ? 'opacity-50' : ''}`}
       >
         {module.name}
       </h3>
@@ -44,7 +44,7 @@ export function QuickActionTile({ module }: { module: HubModule }) {
     return (
       <div
         aria-disabled="true"
-        className="flex flex-col items-center rounded-2xl border border-dashed border-cream-dark bg-cream/60 p-3 sm:p-4"
+        className="flex flex-col items-center rounded-xl border border-dashed border-cream-dark bg-cream/60 p-2.5 sm:p-3"
       >
         {inner}
       </div>
@@ -58,7 +58,7 @@ export function QuickActionTile({ module }: { module: HubModule }) {
       onMouseEnter={warm}
       onFocus={warm}
       onTouchStart={warm}
-      className="flex flex-col items-center rounded-2xl border border-cream-dark bg-white p-3 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sunset sm:p-4"
+      className="flex flex-col items-center rounded-xl border border-cream-dark bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sunset sm:p-3"
     >
       {inner}
     </a>

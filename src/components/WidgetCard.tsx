@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 
 interface WidgetCardProps {
@@ -9,7 +8,6 @@ interface WidgetCardProps {
   /** Plain-language empty state — the "never empty" rule: a zero says so. */
   emptyText: string;
   accent: 'orange' | 'olive' | 'charcoal';
-  icon: ReactNode;
 }
 
 const ACCENT_BAR: Record<WidgetCardProps['accent'], string> = {
@@ -18,23 +16,30 @@ const ACCENT_BAR: Record<WidgetCardProps['accent'], string> = {
   charcoal: 'bg-charcoal',
 };
 
-export function WidgetCard({ title, value, sub, emptyText, accent, icon }: WidgetCardProps) {
+/**
+ * Widget card (board-exact, hb04): no icon — the board's cards show
+ * title, figure and sub only. Tightened for the 2-column phone grid:
+ * smaller padding and a smaller figure on phones (text-2xl, back to
+ * text-3xl from sm up); the figure wraps instead of clipping on a
+ * long org-wide amount (break-words is a last resort — a figure
+ * that fits stays on one line).
+ */
+export function WidgetCard({ title, value, sub, emptyText, accent }: WidgetCardProps) {
   const isEmpty = value === null;
   return (
     <section
       aria-label={title}
-      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-3 shadow-sm sm:p-5"
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${ACCENT_BAR[accent]}`} />
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold text-charcoal/80">{title}</h3>
-        <span className="shrink-0 text-charcoal/50">{icon}</span>
-      </div>
+      <h3 className="text-sm font-semibold leading-snug text-charcoal/80">{title}</h3>
       {isEmpty ? (
         <p className="mt-3 text-base font-medium text-charcoal/70">{emptyText}</p>
       ) : (
         <>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-charcoal">{value}</p>
+          <p className="mt-2 break-words text-2xl font-bold leading-tight tracking-tight text-charcoal sm:text-3xl">
+            {value}
+          </p>
           <p className="mt-1 text-sm text-charcoal/60">{sub}</p>
         </>
       )}
@@ -43,31 +48,26 @@ export function WidgetCard({ title, value, sub, emptyText, accent, icon }: Widge
 }
 
 /**
- * Loading skeleton in the WidgetCard shell: the title + icon stay,
+ * Loading skeleton in the WidgetCard shell: the title stays,
  * the figure is a pulsing placeholder — NO fake numbers while a
  * feed loads (no placeholder figures, not even briefly).
  */
 export function WidgetSkeleton({
   title,
   accent,
-  icon,
 }: {
   title: string;
   accent: 'orange' | 'olive' | 'charcoal';
-  icon: ReactNode;
 }) {
   return (
     <section
       aria-label={title}
       aria-busy="true"
-      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-3 shadow-sm sm:p-5"
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${ACCENT_BAR[accent]}`} />
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold text-charcoal/80">{title}</h3>
-        <span className="shrink-0 text-charcoal/50">{icon}</span>
-      </div>
-      <div aria-hidden className="mt-3 h-9 w-24 animate-pulse rounded-lg bg-cream-dark/70" />
+      <h3 className="text-sm font-semibold leading-snug text-charcoal/80">{title}</h3>
+      <div aria-hidden className="mt-3 h-8 w-24 animate-pulse rounded-lg bg-cream-dark/70" />
       <div aria-hidden className="mt-2 h-4 w-40 max-w-full animate-pulse rounded bg-cream-dark/50" />
     </section>
   );
@@ -80,25 +80,20 @@ export function WidgetSkeleton({
 export function FeedErrorCard({
   title,
   accent,
-  icon,
   onRetry,
 }: {
   title: string;
   accent: 'orange' | 'olive' | 'charcoal';
-  icon: ReactNode;
   onRetry: () => void;
 }) {
   const { t } = useI18n();
   return (
     <section
       aria-label={title}
-      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-4 shadow-sm sm:p-5"
+      className="relative overflow-hidden rounded-2xl border border-cream-dark bg-white p-3 shadow-sm sm:p-5"
     >
       <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${ACCENT_BAR[accent]}`} />
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold text-charcoal/80">{title}</h3>
-        <span className="shrink-0 text-charcoal/50">{icon}</span>
-      </div>
+      <h3 className="text-sm font-semibold leading-snug text-charcoal/80">{title}</h3>
       <p className="mt-3 text-base font-medium text-charcoal/70">{t('feedLoadError')}</p>
       <button
         type="button"

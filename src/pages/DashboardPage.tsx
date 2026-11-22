@@ -49,14 +49,6 @@ import { formatBdt } from '../data/format';
 import { MODULES } from '../data/modules';
 import { WidgetCard } from '../components/WidgetCard';
 import { ModuleTile } from '../components/ModuleTile';
-import {
-  IconCalculator,
-  IconCheck,
-  IconCoin,
-  IconDashboard,
-  IconLeads,
-  IconProfile,
-} from '../components/icons';
 import type { DictKey, Lang } from '../i18n/dictionary';
 
 type PageState =
@@ -179,9 +171,9 @@ export function DashboardPage() {
             type="button"
             onClick={refresh}
             disabled={refreshing}
-            className="ml-auto min-h-10 rounded-xl border border-cream-dark bg-white px-3.5 text-sm font-semibold text-charcoal shadow-sm transition-colors hover:bg-cream disabled:opacity-50"
+            className="ml-auto min-h-10 px-1 text-sm font-bold text-sunset transition-colors hover:text-sunset-dark disabled:opacity-50"
           >
-            {refreshing ? t('dashboardRefreshing') : t('dashboardRefresh')}
+            ↻ {refreshing ? t('dashboardRefreshing') : t('dashboardRefresh')}
           </button>
         </div>
         <div className="mt-3">
@@ -197,7 +189,7 @@ export function DashboardPage() {
       {state.status === 'loading' && (
         <div aria-busy="true" className="space-y-4">
           <p className="text-sm font-medium text-charcoal/60">{t('dashboardLoading')}</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <div
                 key={i}
@@ -243,8 +235,7 @@ export function DashboardPage() {
         <>
           {/* Business KPIs — retail formulas, scoped to the caller */}
           <section aria-label={t('dashboardBusinessTitle')}>
-            <h2 className="text-lg font-bold text-charcoal">{t('dashboardBusinessTitle')}</h2>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
               <WidgetCard
                 title={t('kpiTotalPremium')}
                 value={formatBdt(summary.totalPremium)}
@@ -258,7 +249,6 @@ export function DashboardPage() {
                 }
                 emptyText=""
                 accent="orange"
-                icon={<IconCoin />}
               />
               <WidgetCard
                 title={t('kpiFycp')}
@@ -266,7 +256,6 @@ export function DashboardPage() {
                 sub={periodLabel}
                 emptyText=""
                 accent="olive"
-                icon={<IconDashboard />}
               />
               <WidgetCard
                 title={t('kpiPolicyQty')}
@@ -274,7 +263,6 @@ export function DashboardPage() {
                 sub={`${periodLabel} · ${t('kpiSubNewPolicies')}`}
                 emptyText=""
                 accent="charcoal"
-                icon={<IconCheck />}
               />
               <WidgetCard
                 title={t('kpiDuePremium')}
@@ -286,7 +274,6 @@ export function DashboardPage() {
                 }
                 emptyText=""
                 accent="orange"
-                icon={<IconCalculator />}
               />
               <WidgetCard
                 title={t('kpiPersistency')}
@@ -298,7 +285,6 @@ export function DashboardPage() {
                 }
                 emptyText=""
                 accent="olive"
-                icon={<IconProfile />}
               />
               <WidgetCard
                 title={t('kpiActiveFas')}
@@ -309,7 +295,6 @@ export function DashboardPage() {
                 sub={t('kpiSubActiveFas')}
                 emptyText=""
                 accent="charcoal"
-                icon={<IconLeads />}
               />
             </div>
           </section>

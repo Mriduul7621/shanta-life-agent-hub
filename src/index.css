@@ -91,7 +91,6 @@ body {
   animation: hub-splash-bar 1.1s linear infinite;
 }
 
-/* Login card accent — a thin sunset bar drawing in from the left. */
 /* Splash fade-out (JS flips the class; 300ms, matches App.tsx). */
 .splash-fade {
   transition: opacity 300ms ease-out;

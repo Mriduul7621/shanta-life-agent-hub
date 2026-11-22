@@ -106,6 +106,9 @@
  *     for all 6 KPIs, the Top team members leaderboard, the scope
  *     label, and the cached-while-refreshing banner. No DEMO badge or
  *     demo note anywhere — those were removed with the demo code.
+ *     Board-exact (hb06): no "Business overview" heading, Refresh is
+ *     plain text with the ↻ glyph, and the KPI grid is 2 columns on
+ *     phones (3 at xl).
  * 16c. Dashboard role views: Employee sees own data only (no leaderboard);
  *     Admin sees Top Business Executives + the Unassigned line + Org-wide;
  *     an empty scope shows the empty state with the no-code note and no
@@ -149,6 +152,9 @@
  *     certificates / credits). Empty live states show the plain empty
  *     text per card. Overflow checks at 375 / 768 / 1440 with
  *     screenshots (home-live-*, leads-live-1440, learning-live-1440).
+ *     Board-exact (hb04/hb05): widget cards carry no icon, the
+ *     greeting is first name only, and the widget grid is 2 columns
+ *     on phones.
  * 27. No-demo rule (Mahadi 2026-11-20 — the demo code is deleted):
  *     a REAL-user session (non-999 id) with a FAILED retail fetch
  *     shows no fixture figures anywhere (error + retry instead); a
@@ -851,7 +857,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll('button')];
       btns.find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
@@ -887,7 +893,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const teamLeadHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('team lead home: team section present', teamLeadHasTeam);
     await ctx.close();
@@ -895,7 +901,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const employeeHasTeam = await page.evaluate(() => document.body.textContent.includes('আপনার টিম') || document.body.textContent.includes('Your team'));
     check('employee home: NO team section', !employeeHasTeam);
     await ctx.close();
@@ -903,7 +909,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await page.evaluate(() => {
       [...document.querySelectorAll('button')].find((b) => b.textContent.includes('প্রোফাইল') || b.textContent.includes('Profile'))?.click();
     });
@@ -950,7 +956,7 @@ try {
     await page.screenshot({ path: path.join(QA_DIR, `login-${width}.png`), fullPage: true });
     // Home as Team Lead (richest view: own + team widgets)
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
     const homeOv = await overflowCheck(page);
     check(`screenshot home-${width}: no horizontal overflow`, !homeOv.overflow, `scrollWidth=${homeOv.scrollWidth} innerWidth=${homeOv.innerWidth}`);
@@ -997,7 +1003,7 @@ try {
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     const dashPath = await waitForDashboardTerminal(page);
     check('dashboard: reaches a terminal state', dashPath === 'live' || dashPath === 'error' || dashPath === 'empty', `path=${dashPath}`);
@@ -1068,7 +1074,7 @@ try {
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -1080,7 +1086,7 @@ try {
       page.evaluate(() => {
         const out = {};
         for (const section of document.querySelectorAll('section[aria-label]')) {
-          const value = section.querySelector('p.text-3xl');
+          const value = section.querySelector('p.text-2xl');
           if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
         }
         return out;
@@ -1096,7 +1102,7 @@ try {
     // Switch the dropdown to All time and assert the all-time figures.
     await page.select('#period-select', 'all');
     await page.waitForFunction(
-      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,64,000'),
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-2xl')].some((el) => el.textContent.trim() === '৳1,64,000'),
       { timeout: 5000 },
     );
     // Wait for the background refresh to fail so the banner is visible.
@@ -1117,6 +1123,21 @@ try {
     check('dashboard ready: no DEMO badge or demo note anywhere', !body.includes('DEMO DATA') && !/demo/i.test(body));
     check('dashboard ready: scope label Own + team', body.includes('Own + team'));
     check('dashboard ready: cached-while-refreshing banner', body.includes('Refresh failed') || body.includes('রিফ্রেশ ব্যর্থ'));
+    // hb06: the board shows the KPIs directly under the period
+    // selector — no "Business overview" heading (the section keeps
+    // its aria-label, which is not visible text).
+    check('dashboard ready (hb06): no Business overview heading', !body.includes('Business overview'));
+    // hb06: Refresh is the board's plain-text "↻ Refresh" (sunset,
+    // bold), not a bordered button.
+    const refreshBtn = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('Refresh'));
+      return b ? { text: b.textContent.trim(), cls: b.className } : null;
+    });
+    check(
+      'dashboard ready (hb06): Refresh is plain text with ↻ glyph, no border',
+      refreshBtn !== null && refreshBtn.text.includes('↻') && !refreshBtn.cls.includes('border'),
+      JSON.stringify(refreshBtn),
+    );
     const readyOv = await overflowCheck(page);
     check('dashboard ready: no horizontal overflow', !readyOv.overflow, `scrollWidth=${readyOv.scrollWidth} innerWidth=${readyOv.innerWidth}`);
     await waitForSplashGone(page);
@@ -1135,7 +1156,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: testSummaryFor('9990001', 'employee', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990001', { leadflow: null, learning: null, retail: testSummaryFor('9990001', 'employee') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -1143,7 +1164,7 @@ try {
     check('dashboard (employee): ready state renders', dashPath === 'live', `path=${dashPath}`);
     await page.select('#period-select', 'all');
     await page.waitForFunction(
-      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳67,000'),
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-2xl')].some((el) => el.textContent.trim() === '৳67,000'),
       { timeout: 5000 },
     );
     const body = await page.evaluate(() => document.body.textContent);
@@ -1157,7 +1178,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: testSummaryFor('9990004', 'admin', 'this-month') }, 'this-month');
     await seedFeedCaches(page, '9990004', { leadflow: null, learning: null, retail: testSummaryFor('9990004', 'admin') }, 'all');
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
@@ -1165,7 +1186,7 @@ try {
     check('dashboard (admin): ready state renders', dashPath === 'live', `path=${dashPath}`);
     await page.select('#period-select', 'all');
     await page.waitForFunction(
-      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳2,41,000'),
+      () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-2xl')].some((el) => el.textContent.trim() === '৳2,41,000'),
       { timeout: 5000 },
     );
     const body = await page.evaluate(() => document.body.textContent);
@@ -1180,7 +1201,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const emptySummary = testSummaryFor('9990001', 'employee', 'this-month');
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
@@ -1205,7 +1226,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     // The retail fetch fails (no proxy under file://) and the single
     // retry fails too — the widget itself must land on the error state.
     await page.waitForFunction(
@@ -1238,7 +1259,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990003');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Manager'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990003', { leadflow: null, learning: null, retail: testSummaryFor('9990003', 'manager', 'this-month') }, 'this-month');
     await page.reload({ waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.body.textContent.includes('৳38,000'), { timeout: 5000 });
@@ -1275,7 +1296,7 @@ try {
     // state, the other column still shows its rows.
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990003');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Manager'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const oneColumn = testSummaryFor('9990003', 'manager', 'this-month');
     oneColumn.dueRowsOverdue = [];
     await seedFeedCaches(page, '9990003', { leadflow: null, learning: null, retail: oneColumn }, 'this-month');
@@ -1297,7 +1318,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990004');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const emptySummary = testSummaryFor('9990004', 'admin', 'this-month');
     emptySummary.empty = true;
     emptySummary.emptyReason = 'no-code';
@@ -1417,7 +1438,7 @@ try {
     const { ctx, page, errors } = await newPage(browser, 1440);
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
 
       // 14. Tile wiring (read-only — no live navigation).
       const wiring = await page.evaluate(() => {
@@ -1549,7 +1570,7 @@ try {
 
           // Back to Hub: same-tab navigation back to the Hub home, still signed in.
           await page.evaluate(() => document.getElementById('back-to-hub')?.click());
-          await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 10000 });
+          await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 10000 });
           const tokenAfterBack = await getToken(page);
           handoffCheck('handoff: Back to Hub returns to the signed-in Hub', tokenAfterBack !== null);
 
@@ -1744,7 +1765,7 @@ try {
     });
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
       await page.waitForFunction(
         (names) => names.every((n) => [...document.querySelectorAll('h3')].some((h) => h.textContent === n)),
         { timeout: 5000 },
@@ -1856,7 +1877,7 @@ try {
     const { ctx, page } = await newPage(browser, 1440);
     try {
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
       const headLinks = await page.evaluate(() => ({
         preconnect: [...document.querySelectorAll('link[rel="preconnect"]')].map((l) => l.getAttribute('href')),
         dnsPrefetch: [...document.querySelectorAll('link[rel="dns-prefetch"]')].map((l) => l.getAttribute('href')),
@@ -1935,7 +1956,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     // Home quick-actions.
     const toolsSection = await page.evaluate(() => {
       const section = document.querySelector('section[aria-label="Your tools"], section[aria-label="আপনার টুলস"]');
@@ -2104,7 +2125,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 375);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await clickNav(page, 'লিডস', 'Leads');
     await page.waitForFunction(() => document.body.textContent.includes('Go to Lead Management') || document.body.textContent.includes('লিড ম্যানেজমেন্টে যান'), { timeout: 5000 });
     await new Promise((r) => setTimeout(r, 300));
@@ -2133,7 +2154,7 @@ try {
   {
     const { ctx, page, errors } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead'),
       learning: null,
@@ -2155,12 +2176,24 @@ try {
         !/demo|ডেমো/i.test(body),
     );
     check('home live: no page-title subtitle', !body.includes('Here is your day at a glance') && !body.includes('Live data from your connected apps.'));
+    // hb05: the greeting is first name only (board + LH precedent) —
+    // the h1's previous sibling is the greeting line.
+    const greeting = await page.evaluate(() => document.querySelector('h1')?.previousElementSibling?.textContent?.trim() ?? '');
+    check('home live (hb05): greeting is first name only', /^(Good morning|Good afternoon|Good evening), Test$/.test(greeting), greeting);
+    // hb04: widget cards carry no icon — no <svg> inside any WidgetCard
+    // (identified by the accent-bar span, as the card reader does).
+    const widgetHasIcon = await page.evaluate(() =>
+      [...document.querySelectorAll('section[aria-label]')]
+        .filter((sec) => sec.querySelector(':scope > span[aria-hidden].w-1'))
+        .some((sec) => sec.querySelector('svg')),
+    );
+    check('home live (hb04): widget cards have no icon', !widgetHasIcon);
     const cards = await page.evaluate(() => {
       const out = { own: {}, team: {} };
       for (const section of document.querySelectorAll('section[aria-label]')) {
         if (!section.querySelector(':scope > span[aria-hidden].w-1')) continue; // direct child — a parent section (e.g. Your team) must not match via a nested card // WidgetCard only
         const title = section.getAttribute('aria-label');
-        const value = section.querySelector('p.text-3xl');
+        const value = section.querySelector('p.text-2xl');
         const sub = value ? value.nextElementSibling : null;
         const empty = section.querySelector('p.text-base');
         const entry = {
@@ -2296,7 +2329,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead', 'today'),
       learning: null,
@@ -2361,7 +2394,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: null,
       learning: learningSummaryFor('9990002', 'team_lead', 'today'),
@@ -2444,7 +2477,7 @@ try {
   for (const width of [375, 768]) {
     const { ctx, page } = await newPage(browser, width);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await seedFeedCaches(page, '9990002', {
       leadflow: leadflowSummaryFor('9990002', 'team_lead'),
       learning: null,
@@ -2489,6 +2522,13 @@ try {
         JSON.stringify(dueLayout),
       );
     }
+    // hb05: the own widget grid is 2 columns on phones (board phone 3).
+    const widgetGridCols = await page.evaluate(() => {
+      const card = document.querySelector('section[aria-label="Today\'s follow-ups"]');
+      const grid = card?.parentElement;
+      return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
+    });
+    check(`home live ${width} (hb05): widget grid is 2 columns`, widgetGridCols === 2, `cols=${widgetGridCols}`);
     const ov = await overflowCheck(page);
     check(`home live ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
     await waitForSplashGone(page);
@@ -2503,7 +2543,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const emptyLeadflow = leadflowSummaryFor('9990001', 'employee');
     emptyLeadflow.empty = true;
     emptyLeadflow.emptyReason = 'no-leadflow-account';
@@ -2534,7 +2574,7 @@ try {
         if (!section.querySelector(':scope > span[aria-hidden].w-1')) continue; // direct child — a parent section (e.g. Your team) must not match via a nested card
         const title = section.getAttribute('aria-label');
         const empty = section.querySelector('p.text-base');
-        out[title] = empty ? empty.textContent.trim() : section.querySelector('p.text-3xl')?.textContent.trim();
+        out[title] = empty ? empty.textContent.trim() : section.querySelector('p.text-2xl')?.textContent.trim();
       }
       return out;
     });
@@ -2829,7 +2869,7 @@ try {
     page.evaluate(() => {
       const out = {};
       for (const section of document.querySelectorAll('section[aria-label]')) {
-        const value = section.querySelector('p.text-3xl');
+        const value = section.querySelector('p.text-2xl');
         if (value) out[section.getAttribute('aria-label')] = value.textContent.trim();
       }
       return out;
@@ -2870,7 +2910,7 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'this-month') }, 'this-month');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', '3m') }, '3m');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead', 'custom', { start: '2026-11-01', end: '2026-11-20' }) }, 'custom:2026-11-01:2026-11-20');
@@ -2883,13 +2923,21 @@ try {
       check(`period dashboard ${width}: this-month total ৳43,000 + FYCP ৳35,000 + policies 1`, kpisThisMonth['Total premium received'] === '৳43,000' && kpisThisMonth.FYCP === '৳35,000' && kpisThisMonth.Policies === '1', JSON.stringify(kpisThisMonth));
       await page.select('#period-select', '3m');
       await page.waitForFunction(
-        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳1,08,000'),
+        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-2xl')].some((el) => el.textContent.trim() === '৳1,08,000'),
         { timeout: 5000 },
       );
       const kpis3m = await readKpis(page);
       check(`period dashboard ${width}: 3m total ৳1,08,000 + FYCP ৳1,00,000 + policies 3`, kpis3m['Total premium received'] === '৳1,08,000' && kpis3m.FYCP === '৳1,00,000' && kpis3m.Policies === '3', JSON.stringify(kpis3m));
       check(`period dashboard ${width}: due ৳34,000 + persistency 83.3% unchanged`, kpis3m['Due premium — this month'] === '৳34,000' && kpis3m.Persistency === '83.3%', JSON.stringify(kpis3m));
       check(`period dashboard ${width}: dropdown value tracks 3m`, (await selectValue()) === '3m');
+      // hb06: the KPI grid is 2 columns on phones (board phone 4),
+      // 3 columns at xl.
+      const kpiGridCols = await page.evaluate(() => {
+        const card = document.querySelector('section[aria-label="Total premium received"]');
+        const grid = card?.parentElement;
+        return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
+      });
+      check(`period dashboard ${width} (hb06): KPI grid is ${width === 1440 ? 3 : 2} columns`, kpiGridCols === (width === 1440 ? 3 : 2), `cols=${kpiGridCols}`);
       const ov = await overflowCheck(page);
       check(`period dashboard ${width}: no horizontal overflow`, !ov.overflow, `scrollWidth=${ov.scrollWidth} innerWidth=${ov.innerWidth}`);
       await waitForSplashGone(page);
@@ -2901,7 +2949,7 @@ try {
       await setDateInput(page, '#period-custom-from', '2026-11-01');
       await setDateInput(page, '#period-custom-to', '2026-11-20');
       await page.waitForFunction(
-        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-3xl')].some((el) => el.textContent.trim() === '৳43,000'),
+        () => [...document.querySelectorAll('section[aria-label="Total premium received"] p.text-2xl')].some((el) => el.textContent.trim() === '৳43,000'),
         { timeout: 5000 },
       );
       const kpisCustom = await readKpis(page);
@@ -2928,7 +2976,7 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990002');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
       await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', 'today'), learning: null, retail: null }, 'today');
       await seedFeedCaches(page, '9990002', { leadflow: leadflowSummaryFor('9990002', 'team_lead', '3m'), learning: null, retail: null }, '3m');
       await seedFeedCaches(page, '9990002', { leadflow: null, learning: null, retail: testSummaryFor('9990002', 'team_lead') }, 'all');
@@ -2958,7 +3006,7 @@ try {
     {
       const { ctx, page } = await newPage(browser, width);
       await login(page, '9990004');
-      await page.waitForFunction(() => document.body.textContent.includes('Test Admin'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
       await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', 'today'), retail: null }, 'today');
       await seedFeedCaches(page, '9990004', { leadflow: null, learning: learningSummaryFor('9990004', 'admin', '3m'), retail: null }, '3m');
       await clickNav(page, 'লার্নিং', 'Learning');
@@ -2995,7 +3043,7 @@ try {
   ]) {
     const { ctx, page } = await newPage(browser, 1440);
     await login(page, id, role, name);
-    await page.waitForFunction((n) => document.body.textContent.includes(n), { timeout: 5000 }, name);
+    await page.waitForFunction((n) => document.body.textContent.includes(n), { timeout: 5000 }, `, ${name.split(' ')[0]}`);
     const headerText = await page.evaluate(() => document.querySelector('header')?.textContent ?? '');
     check(`header ${id}: no DEMO badge`, !headerText.includes('DEMO DATA') && !headerText.includes('ডেমো ডেটা'), headerText.slice(0, 120));
     await ctx.close();
@@ -3145,7 +3193,7 @@ try {
   for (const width of [375, 1440]) {
     const { ctx, page } = await newPage(browser, width);
     await login(page, '9990002');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Team Lead'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await checkNoSubtitle(page, 'Home', width);
     await clickNav(page, 'ড্যাশবোর্ড', 'Dashboard');
     await checkNoSubtitle(page, 'Dashboard', width);
@@ -3196,7 +3244,7 @@ try {
     const { ctx, page, errors } = await newPage(browser, 375);
     await page.setUserAgent(ANDROID_UA);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const seen = await page
       .waitForSelector('[data-android-promo]', { timeout: 5000 })
       .then(() => true)
@@ -3228,7 +3276,7 @@ try {
     const { ctx, page } = await newPage(browser, 375);
     await page.setUserAgent(ANDROID_UA);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await page.waitForSelector('[data-android-promo]', { timeout: 5000 });
     await page.click('[data-android-promo-download]');
     await page.waitForFunction(() => !document.querySelector('[data-android-promo]'), { timeout: 3000 });
@@ -3247,7 +3295,7 @@ try {
     const { ctx, page } = await newPage(browser, 375);
     await page.setUserAgent(IOS_UA);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await waitPastPromoTrigger(page);
     const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
     check('promo ios 375: hidden on iOS', !shown);
@@ -3258,7 +3306,7 @@ try {
     await page.setUserAgent(ANDROID_UA);
     await stubNativeBridge(page);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await waitPastPromoTrigger(page);
     const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
     check('promo native 375: hidden inside the native app', !shown);
@@ -3269,7 +3317,7 @@ try {
   {
     const { ctx, page } = await newPage(browser, 375);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await waitPastPromoTrigger(page);
     const shown = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
     check('promo desktop 375: hidden on desktop', !shown);
@@ -3287,7 +3335,7 @@ try {
     await page.setUserAgent(ANDROID_UA);
     await page.evaluateOnNewDocument(() => localStorage.setItem('hub-lang', 'bn'));
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const seen = await page
       .waitForSelector('[data-android-promo]', { timeout: 5000 })
       .then(() => true)
@@ -3330,7 +3378,7 @@ try {
     const flag = await page.evaluate(() => localStorage.getItem('hub-android-promo-dismissed-v1'));
     check('promo login android: close dismisses and sets the dismissal flag', flag === '1', flag);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     await waitPastPromoTrigger(page);
     const backOnHome = await page.evaluate(() => !!document.querySelector('[data-android-promo]'));
     check('promo login android: dismissing on login hides it on Home too', !backOnHome);
@@ -3528,7 +3576,7 @@ try {
     // what this check asserts: the function exists and returns false.
     const { ctx, page } = await newPage(browser, 375);
     await login(page, '9990001');
-    await page.waitForFunction(() => document.body.textContent.includes('Test Agent'), { timeout: 5000 });
+    await page.waitForFunction(() => document.body.textContent.includes(', Test'), { timeout: 5000 });
     const probe = await page.evaluate(() => {
       const cap = window.Capacitor;
       if (!cap || typeof cap.isNativePlatform !== 'function') return 'missing';
