@@ -2,7 +2,7 @@
  * Due-premium widget (Milestone 3, live mode in Phase 2) — Home.
  *
  * The real due summary from the retail proxy — count + amount for
- * the month to date, scoped to the caller — plus the due rows above
+ * the full calendar month, scoped to the caller — plus the due rows above
  * the totals, split into two columns (Mahadi 2026-11-20): LEFT the
  * 3 nearest upcoming dues (due today included), RIGHT the 3 most
  * overdue dues (most overdue first). On a phone the columns stack,
@@ -131,9 +131,9 @@ export function DuePremiumsWidget({ live }: { live: DueLiveSummary }) {
   const upcoming = live.dueRowsUpcoming ?? [];
   // Either list present means the proxy sends the split rows; when
   // neither is present (older proxy) the widget shows only the
-  // totals. The month totals are month-to-date; the rows are
-  // window-independent, so rows can exist while the MTD totals are
-  // 0 (all dues later this month, or all overdue).
+  // totals. The month totals cover the full calendar month; the rows
+  // are window-independent, so rows can exist while the totals are
+  // 0 (all dues overdue from earlier months).
   const hasRowLists = live.dueRowsOverdue !== undefined || live.dueRowsUpcoming !== undefined;
   const empty = live.duePolicies === 0 && live.duePremium === 0 && overdue.length === 0 && upcoming.length === 0;
   const today = localIso(new Date());

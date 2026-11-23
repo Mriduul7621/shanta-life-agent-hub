@@ -24,7 +24,7 @@
  * does not change them). Dues and due rows are period-independent
  * snapshots: the dues card shows THIS WEEK's dues (Bangladesh
  * calendar week, Sunday–Saturday), the Due widget shows the
- * month-to-date totals + the 3 most recent dues, and the Learning
+ * full-month totals + the 3 most recent dues, and the Learning
  * card shows THIS MONTH (credits earned this month + courses in
  * progress + courses completed this month).
  *
@@ -303,7 +303,7 @@ export function HomePage() {
 
       {/* Due premiums — own dues. A loaded retail feed shows the
           summary widget (upcoming + overdue due columns above the
-          month-to-date totals, or the plain empty text when there
+          full-month totals, or the plain empty text when there
           are none); a loading feed shows a skeleton, a failed fetch
           an error state with retry. */}
       {retail ? (

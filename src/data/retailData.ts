@@ -71,7 +71,7 @@ export interface RetailSummary {
   duePolicies: number;
   /** 'YYYY-MM' — the month the Due Premium figure covers. */
   dueMonth: string;
-  /** The month-to-date window Due Premium covers ({ start, end } ISO
+  /** The full-month window Due Premium covers ({ start, end } ISO
    *  dates). Absent from older proxy responses — the UI falls back
    *  to the due month label. */
   dueWindow?: { start: string; end: string };

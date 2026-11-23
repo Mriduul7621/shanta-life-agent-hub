@@ -1142,7 +1142,7 @@ try {
     check('dashboard ready (this-month): due ৳34,000 + persistency 83.3% + active 3 of 3', kpisThisMonth['Due premium — this month'] === '৳34,000' && kpisThisMonth.Persistency === '83.3%' && kpisThisMonth['Active field FAs'] === '3 of 3', JSON.stringify(kpisThisMonth));
     const bodyThisMonth = await page.evaluate(() => document.body.textContent);
     check('dashboard ready (this-month): leaders still listed (35,000 / 0 / 0)', bodyThisMonth.includes('Test Agent') && bodyThisMonth.includes('Test FA Eleven') && bodyThisMonth.includes('Test FA Twelve'));
-    check('dashboard ready (this-month): due card shows the MTD window', bodyThisMonth.includes('1 – 20 Nov 2026'));
+    check('dashboard ready (this-month): due card shows the full-month window', bodyThisMonth.includes('1 – 30 Nov 2026'));
     // Switch the dropdown to All time and assert the all-time figures.
     await page.select('#period-select', 'all');
     await page.waitForFunction(
@@ -1263,7 +1263,7 @@ try {
   // (a) unseeded Team Lead — the retail fetch fails under file://, so
   // the widget shows the error state + retry, never fixture figures;
   // (b) Manager with a seeded cache — the two-column live widget
-  // (Upcoming + Overdue) + MTD totals; (c) Admin with a seeded EMPTY
+  // (Upcoming + Overdue) + full-month totals; (c) Admin with a seeded EMPTY
   // summary — the plain empty state. The old demo rows ("DEMO-"
   // policies) and the "showing 5 of 31" line are gone with the demo
   // code.
@@ -1314,7 +1314,7 @@ try {
       return el ? el.textContent : '';
     });
     check(
-      'due widget (manager, seeded): MTD totals 5 policies + ৳38,000',
+      'due widget (manager, seeded): full-month totals 5 policies + ৳38,000',
       widget.includes('5 policies') && widget.includes('৳38,000'),
       widget.slice(0, 200),
     );

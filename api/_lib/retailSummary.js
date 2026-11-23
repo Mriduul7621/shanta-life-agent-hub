@@ -22,16 +22,23 @@
  *
  * Reconciliation with the retail app (2026-11-20, Mahadi: the Hub's
  * Due Premium and Active FA did not match his Retail Dashboard):
- * Due Premium is MONTH-TO-DATE — the retail app's Due KPI uses the
- * selected range and its default preset is MTD (dist/index.html,
+ * Due Premium was MONTH-TO-DATE then — the retail app's Due KPI uses
+ * the selected range and its default preset is MTD (dist/index.html,
  * `pdDueRowsForWindow` + the MTD default). Full Nov 2026 was 249
  * pol / ৳16,53,216; MTD (to 2026-11-20) is 84 pol / ৳8,33,491.
+ * 2026-11-24 Mahadi restored the FULL CALENDAR MONTH (his decision):
+ * Due Premium now covers every Inforce due falling due anywhere in
+ * the current month — dues already passed this month and unpaid, PLUS
+ * dues coming up later this month. The Hub therefore differs from
+ * the retail app's MTD default view by design — do not "fix" it
+ * back to MTD. The overdue backlog (dues from BEFORE this month)
+ * is still NOT in the figure; it shows in the overdue row list.
  * Active FAs is EVER-SOLD — the retail app's headline KPI counts
  * producers whose `activity` is 'Active', which is exactly "has any
  * PR row" (api/sales-data.js); the Hub rebuilds the same set from
  * the records (everSet), verified equal on live data (537 of 629).
- * The old Hub definitions (full calendar month; sold in the last
- * 6 months = 360 of 629) were dropped, not kept as options: the
+ * The old Hub definition for Active FAs (sold in the last
+ * 6 months = 360 of 629) was dropped, not kept as an option: the
  * retail app is authoritative for retail figures.
  *
  * Time-frame filter: buildRetailIndex takes a period ('today' /
@@ -42,12 +49,12 @@
  * (FA / direct / residual / BE totals / org) are built from the
  * PR rows whose `date` falls in the window, so Total Premium / FYCP /
  * Policies / the leaderboard / the Unassigned line all follow the
- * period. Due Premium (month-to-date), Persistency (cumulative)
+ * period. Due Premium (full calendar month), Persistency (cumulative)
  * and Active FAs (ever-sold) keep their OWN windows — they are
  * computed from the unfiltered records / due sheet, so they never move
  * with the period selector. The summary also exposes the raw
  * newPremium / deferredPremium sums (FYCP = new + deferred) for the
- * Home FYCP card's sub-text, the `dueWindow` MTD range, `duesThisWeek`
+ * Home FYCP card's sub-text, the `dueWindow` full-month range, `duesThisWeek`
  * (Inforce dues inside the current Bangladesh calendar week,
  * Sunday–Saturday, with its week range) and the Home Due widget's
  * two due-row lists (`dueRowsOverdue`: the 3 most overdue dues,
@@ -158,7 +165,11 @@ const num = (v) => Number(v) || 0;
 // year-1 = Deferred, year-2+ = Renewal; SDPP grace 3 months, others 30
 // days). Only used for the Due Premium ledger fallback (§3.3) — policies
 // the Due sheet does not cover (in practice all T-series).
-function buildLedgers(records, asOf) {
+// Two horizons: receipts count only if received by `paidAsOf` (today —
+// a payment dated in the future has not happened yet), while the
+// schedule runs to `scheduleAsOf` (the end of the Due Premium window,
+// so instalments falling due later in the month are in the fallback).
+function buildLedgers(records, paidAsOf, scheduleAsOf) {
   const groups = new Map();
   for (const r of records || []) {
     if (!r.policy) continue;
@@ -175,7 +186,6 @@ function buildLedgers(records, asOf) {
     const term = Math.max(0, Number(first.term) || 0);
     if (!frequency || !term) continue;
     const maturity = addMonthsIso(first.date, Math.round(term * 12));
-    const limit = asOf;
     const product = first.product || '';
     const isSDPP =
       product.toLowerCase().includes('depositor') && product.toLowerCase().includes('protection');
@@ -184,7 +194,7 @@ function buildLedgers(records, asOf) {
     const receipts = { deferred: [], renewal: [] };
     for (const r of history) {
       const kind = receiptKind(r);
-      if (kind && r.date >= first.date && r.date <= limit) {
+      if (kind && r.date >= first.date && r.date <= paidAsOf) {
         receipts[kind].push({ date: r.date, amount: num(kind === 'deferred' ? r.deferred : r.renewal) });
       }
     }
@@ -193,7 +203,7 @@ function buildLedgers(records, asOf) {
     const schedule = [];
     for (let n = frequency; n < Math.round(term * 12); n += frequency) {
       const dueDate = addMonthsIso(first.date, n);
-      if (dueDate >= maturity || dueDate > limit) break;
+      if (dueDate >= maturity || dueDate > scheduleAsOf) break;
       const kind = n < 12 ? 'deferred' : 'renewal';
       sequence[kind]++;
       const prior = history
@@ -248,9 +258,12 @@ function buildLedgers(records, asOf) {
 export function buildRetailIndex(payload, todayIso, period = 'all', customRange = null) {
   const today = todayIso || dhakaToday();
   const monthStart = `${today.slice(0, 7)}-01`;
-  // Due window: MONTH-TO-DATE [monthStart, today] — the retail app's
-  // default view (see the header note). monthEndIso is NOT used for
-  // dues any more.
+  const monthEnd = monthEndIso(today);
+  // Due window: the FULL CALENDAR MONTH [monthStart, monthEnd]
+  // (Mahadi 2026-11-24 — the original plan, restored): dues already
+  // passed this month and unpaid, PLUS dues coming up later this
+  // month. This deliberately differs from the retail app's MTD
+  // default view (see the header note).
   const week = weekWindowIso(today);
   const records = payload.records || [];
   const duePolicies = payload.duePolicies || [];
@@ -460,10 +473,13 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     directByOwner.get(owner).push(bucket);
   }
 
-  // Ledgers as of today (for the Due Premium ledger fallback — the
-  // fallback only counts instalments inside the MTD window, so the
-  // schedule never needs to run past today).
-  const ledgers = buildLedgers(records, today);
+  // Ledgers for the Due Premium ledger fallback: receipts counted
+  // only if received by today, schedules projected to the end of
+  // the full-month due window, so the fallback follows the window
+  // (a sheet-absent instalment due later in the month counts).
+  // The week fallback (scopeDuesThisWeek) reads the same ledgers;
+  // its window is unchanged.
+  const ledgers = buildLedgers(records, today, monthEnd);
 
   // Org totals (independent of scoping — the Admin / reconciliation base).
   const orgBucket = emptyBucket();
@@ -475,7 +491,7 @@ export function buildRetailIndex(payload, todayIso, period = 'all', customRange 
     period,
     periodWindow,
     dueStart: monthStart,
-    dueEnd: today,
+    dueEnd: monthEnd,
     weekStart: week.start,
     weekEnd: week.end,
     records,
@@ -664,13 +680,15 @@ function dueRowVisible(index, scope, d) {
   return false;
 }
 
-// Due Premium, MONTH-TO-DATE (retail pdDueRowsForWindow with the MTD
-// default preset): sheet Inforce rows whose nextDue falls in
-// [dueStart, dueEnd] = [monthStart, today] (one instalment = Premium),
-// + the ledger fallback for sheet-absent policies (unpaid only, same
-// window). Dues later in the month and the overdue backlog are NOT in
-// the figure — that is the retail app's default view, not a Hub
-// omission (reconciled 2026-11-20).
+// Due Premium, FULL CALENDAR MONTH (Mahadi 2026-11-24 — the original
+// plan, restored; the retail app's MTD default is NOT followed any
+// more, by his decision): sheet Inforce rows whose nextDue falls in
+// [dueStart, dueEnd] = [monthStart, monthEnd] (one instalment =
+// Premium), + the ledger fallback for sheet-absent policies (unpaid
+// only, same window). Dues later in the month ARE in the figure —
+// the agent sees the whole month's collection target. The overdue
+// backlog (nextDue before this month) is NOT in the figure; it
+// shows in the overdue row list instead.
 function scopeDuePremium(index, scope) {
   const { dueStart, dueEnd } = index;
   let total = 0;
@@ -702,8 +720,9 @@ function scopeDuePremium(index, scope) {
 // Dues this week: the same Inforce dues inside the current Bangladesh
 // calendar week (Sunday–Saturday, index.weekStart/weekEnd) — the
 // Due Premium definition with a week window, ledger fallback
-// included, so the week figure is a true subset of the MTD figure.
-// Count = distinct policies.
+// included. (The week can extend past month end, so the week figure
+// is not strictly a subset of the month figure.) Count = distinct
+// policies.
 function scopeDuesThisWeek(index, scope) {
   const { weekStart, weekEnd } = index;
   let amount = 0;
@@ -958,7 +977,7 @@ export function summarizeWithIndex(index, user) {
     duePremium: due.total,
     duePolicies: due.policies,
     dueMonth: index.today.slice(0, 7),
-    // The MTD window Due Premium covers, so the UI can show it.
+    // The full-month window Due Premium covers, so the UI can show it.
     dueWindow: { start: index.dueStart, end: index.dueEnd },
     // This week's dues (Bangladesh calendar week) + the Home Due
     // widget's two due-row lists (3 most overdue, 3 nearest

@@ -27,7 +27,7 @@
  *
  * Time-frame filter: Total Premium / FYCP / Policies and the
  * leaderboard follow the selected period (PR row date); Due Premium
- * stays month-to-date, Persistency stays cumulative, Active FAs stay
+ * stays full-month, Persistency stays cumulative, Active FAs stay
  * ever-sold — each labelled as such. Default is This Month (retail
  * data lags a day, so Today shows ৳0 — Mahadi 2026-11-20); Leads
  * and Learning keep Today. The selector is a dropdown with a Custom
@@ -74,7 +74,7 @@ function fmtSynced(syncedAt: number): string {
   });
 }
 
-/** '1 – 20 Nov 2026' — the month-to-date window the Due Premium KPI covers. */
+/** '1 – 30 Nov 2026' — the full-month window the Due Premium KPI covers. */
 function formatDueWindow(start: string, end: string, lang: Lang): string {
   const locale = lang === 'bn' ? 'bn-BD' : 'en-GB';
   const s = new Date(`${start}T00:00:00Z`);

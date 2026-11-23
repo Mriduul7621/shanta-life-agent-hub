@@ -12,7 +12,7 @@
  * The slice goes through the SAME summarizer as live data, so
  * scoping is exercised identically. All dates are relative to
  * `todayIso` so the fixture never goes stale (Due Premium =
- * month-to-date, Active FA = ever-sold). Amounts are round numbers
+ * full calendar month, Active FA = ever-sold). Amounts are round numbers
  * with hand-computed expectations — scripts/qa-retail-live.mjs
  * asserts them exactly:
  *
@@ -23,7 +23,10 @@
  * pol) · orphan row 7,000 (1 pol). Org total 2,41,000 · FYCP 2,33,000 ·
  * 9 policies · Unassigned 7,000 · DMO 2,34,000 (8 pol).
  * Due this month: sheet 17,000 (3 pol) + T-series ledger fallback 21,000
- * (T9001 12,000 + T9002 9,000) = 38,000 (5 pol). Conventional policies
+ * (T9001 12,000 + T9002 9,000) = 38,000 (5 pol). All five fall
+ * on/before the 20th, so the figure is the same under the old MTD
+ * window and the full-month window — §9 in qa-retail-live.mjs is
+ * what distinguishes the two. Conventional policies
  * are all sheet-covered (as in the real data — only T-series are
  * sheet-absent), so the fallback is purely T-series. Persistency 8/9 =
  * 88.9% org-wide. Active FAs: ever-sold — all 4 FAs have a sale

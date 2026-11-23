@@ -57,12 +57,16 @@
  *     still reject bad shapes. Also asserts the service-worker cache
  *     name is v2.
  *  9. Retail-app reconciliation (stubbed payload): the Due Premium
- *     and Active FA definitions reconciled with the retail app
- *     (2026-11-20, Mahadi) — Due is month-to-date (a due later in
- *     the month is NOT in the figure; `premium` is summed, NOT
- *     `duePrem`), Active FAs is ever-sold (a never-sold FA counts
+ *     and Active FA definitions (2026-11-20, Mahadi) — Due is the
+ *     FULL CALENDAR MONTH since 2026-11-24 (Mahadi restored the
+ *     original plan: a due later in the month IS in the figure;
+ *     `premium` is summed, NOT `duePrem`; the overdue backlog
+ *     stays out), Active FAs is ever-sold (a never-sold FA counts
  *     in the universe but not as active). Proved on a mutated
- *     fixture copy so the expectations are exact.
+ *     fixture copy so the expectations are exact. NOTE: the
+ *     full-month definition deliberately differs from the retail
+ *     app's MTD default view — that is Mahadi's decision, not a
+ *     mismatch to fix.
  *
  * Read-only: one GET to the public retail endpoint, no writes. The proxy
  * section never touches the network (stubbed fetch). Exits non-zero if
@@ -71,7 +75,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { summarizeRetail, summarizeWithIndex, buildRetailIndex, dhakaToday } from '../api/_lib/retailSummary.js';
+import { summarizeRetail, summarizeWithIndex, buildRetailIndex, dhakaToday, monthEndIso } from '../api/_lib/retailSummary.js';
 import { buildTestPayload } from './test-fixtures/testFixture.js';
 import { periodDateWindow } from '../api/_lib/periods.js';
 
@@ -114,23 +118,26 @@ check(
   admin.persistency ? `${admin.persistency.pct.toFixed(1)}% (${admin.persistency.inf}/${admin.persistency.all})` : 'null',
 );
 if (today.startsWith('2026-11')) {
-  // MTD sheet part (independent of the summarizer): Inforce rows with
-  // nextDue in [monthStart, today], amount = premium (NOT duePrem).
-  // The summary's Due Premium = this sheet part + the ledger
-  // fallback for sheet-absent policies (0 for Nov 2026 — the live
-  // T-series instalments fall in May 2027), so the two agree within
-  // a small tolerance; the full-month figure (249 pol / ৳16,53,216)
-  // is NOT the expectation any more (reconciled 2026-11-20: the
-  // retail app's default view is MTD).
+  // Full-month sheet part (independent of the summarizer): Inforce
+  // rows with nextDue in [monthStart, monthEnd], amount = premium
+  // (NOT duePrem). The summary's Due Premium = this sheet part +
+  // the ledger fallback for sheet-absent policies (0 for Nov 2026
+  // — the live T-series instalments fall in May 2027), so the two
+  // agree within a small tolerance. (History: the figure was MTD
+  // 2026-11-20 → 2026-11-24 to match the retail app's default
+  // preset — 84 pol / ৳8,33,491 on 2026-11-20. Mahadi restored
+  // the full calendar month on 2026-11-24, so the MTD figure is
+  // NOT the expectation any more.)
   const monthStart = `${today.slice(0, 7)}-01`;
-  const sheetMtdRows = payload.duePolicies.filter(
-    (d) => String(d.status || '').trim().toLowerCase() === 'inforce' && d.nextDue >= monthStart && d.nextDue <= today && num(d.premium) > 0,
+  const monthEnd = monthEndIso(today);
+  const sheetMonthRows = payload.duePolicies.filter(
+    (d) => String(d.status || '').trim().toLowerCase() === 'inforce' && d.nextDue >= monthStart && d.nextDue <= monthEnd && num(d.premium) > 0,
   );
-  const sheetMtd = sheetMtdRows.reduce((a, d) => a + num(d.premium), 0);
-  const sheetMtdPolicies = new Set(sheetMtdRows.map((d) => String(d.policy))).size;
-  check('admin due MTD within 5% of the recomputed sheet MTD part', withinPct(admin.duePremium, sheetMtd, 5), `${fmt(admin.duePremium)} (${admin.duePolicies} pol) vs sheet ${fmt(sheetMtd)} (${sheetMtdPolicies} pol)`);
-  check('admin due MTD policies >= sheet MTD policies (fallback only adds)', admin.duePolicies >= sheetMtdPolicies, `${admin.duePolicies} vs ${sheetMtdPolicies}`);
-  check('admin due window is MTD [monthStart, today]', admin.dueWindow?.start === monthStart && admin.dueWindow?.end === today, JSON.stringify(admin.dueWindow));
+  const sheetMonth = sheetMonthRows.reduce((a, d) => a + num(d.premium), 0);
+  const sheetMonthPolicies = new Set(sheetMonthRows.map((d) => String(d.policy))).size;
+  check('admin due full-month within 5% of the recomputed sheet full-month part', withinPct(admin.duePremium, sheetMonth, 5), `${fmt(admin.duePremium)} (${admin.duePolicies} pol) vs sheet ${fmt(sheetMonth)} (${sheetMonthPolicies} pol)`);
+  check('admin due full-month policies >= sheet full-month policies (fallback only adds)', admin.duePolicies >= sheetMonthPolicies, `${admin.duePolicies} vs ${sheetMonthPolicies}`);
+  check('admin due window is full-month [monthStart, monthEnd]', admin.dueWindow?.start === monthStart && admin.dueWindow?.end === monthEnd, JSON.stringify(admin.dueWindow));
 } else {
   check('admin due this month positive (spec value is Nov 2026 only)', admin.duePremium > 0 && admin.duePolicies > 0, `${fmt(admin.duePremium)} (${admin.duePolicies} pol, ${admin.dueMonth})`);
 }
@@ -348,7 +355,7 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   check('fixture emp upcoming D1002 (only 1)', JSON.stringify(emp.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-12-08', 2000]]), JSON.stringify(emp.dueRowsUpcoming));
   check('fixture due rows carry only owner/nextDue/premium', [adm, mgr, lead, emp].every((s) => [...s.dueRowsOverdue, ...s.dueRowsUpcoming].every((r) => Object.keys(r).sort().join(',') === 'nextDue,owner,premium')), JSON.stringify(adm.dueRowsOverdue[0]));
   check('fixture no legacy dueRows field', [adm, mgr, lead, emp].every((s) => !('dueRows' in s)));
-  check('fixture dueWindow is MTD 11-01..11-20', adm.dueWindow?.start === '2026-11-01' && adm.dueWindow?.end === '2026-11-20', JSON.stringify(adm.dueWindow));
+  check('fixture dueWindow is full-month 11-01..11-30', adm.dueWindow?.start === '2026-11-01' && adm.dueWindow?.end === '2026-11-30', JSON.stringify(adm.dueWindow));
 }
 
 // ---- 5b. Time-frame filter (fixture, pinned date) ----
@@ -833,14 +840,18 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
 
 // ---- 9. Retail-app reconciliation (stubbed payload) ----
 {
-  // The fixture cannot distinguish the MTD window (all its dues fall
+  // The fixture cannot distinguish the due window (all its dues fall
   // on/before the 20th) or the ever-sold rule (all 4 FAs have sold),
   // so §9 mutates a fixture COPY: a due AFTER today but inside the
-  // month, a due inside the window with premium != duePrem, and a
-  // never-sold FA in the directory. The retail app is authoritative
-  // for retail figures — these are its definitions (dist/index.html
-  // pdDueRowsForWindow + the MTD default preset; api/sales-data.js
-  // producers `activity`).
+  // month, a due inside the window with premium != duePrem, a
+  // sheet-absent T-series instalment AFTER today but inside the
+  // month (proving the ledger fallback follows the full-month
+  // window), and a never-sold FA in the directory. Due Premium is
+  // the FULL CALENDAR MONTH (Mahadi 2026-11-24, the original plan
+  // restored): a due later in the month IS in the figure. The
+  // overdue backlog (before this month) stays out. `premium` is
+  // summed, NOT `duePrem` (retail pdDueRowsForWindow); Active FAs
+  // is ever-sold (api/sales-data.js producers `activity`).
   const fx = buildTestPayload(FIXTURE_TODAY);
   const dueStub = ({ policy, faCode, nextDue, premium, duePrem }) => ({
     policy,
@@ -862,10 +873,10 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
     commDate: '2025-06-15',
   });
   // A due on Nov 25 — inside the month, AFTER today (Nov 20): the
-  // MTD figure must NOT include it (the old full-month definition
-  // would have: 48,000 / 6 pol).
+  // full-month figure MUST include it (the old MTD definition
+  // would have excluded it: 45,000 / 6 pol).
   fx.duePolicies.push(dueStub({ policy: 'X9025', faCode: '9990001', nextDue: '2026-11-25', premium: 10000, duePrem: 0 }));
-  // A due inside the MTD window with premium != duePrem: the figure
+  // A due inside the window with premium != duePrem: the figure
   // sums `premium` (7,000), NOT `duePrem` (70,000). Nov 18 is also
   // inside the week (Sun 15 – Sat 21), so the week figure moves too.
   fx.duePolicies.push(dueStub({ policy: 'X9018', faCode: '9990001', nextDue: '2026-11-18', premium: 7000, duePrem: 70000 }));
@@ -874,20 +885,39 @@ check('scope staff ID as employee: empty, no-code', staff.empty === true && staf
   fx.producerDirectory.push({ code: '9990099', name: 'Test FA Never Sold', tier: 'FA', selfCode: '', beCode: 'DMO', be: 'Test BE', ownerCode: '9990099', ownerName: 'Test FA Never Sold', ownerTier: 'FA', ownerBeCode: 'DMO', ownerBe: 'Test BE', parentOwnerCode: '9990002', parentOwnerTier: 'UM' });
   fx.producers.push({ code: '9990099', aliases: ['9990099'], name: 'Test FA Never Sold', beCode: 'DMO', be: 'Test BE', beSource: 'recruit', district: '', designation: 'FA', activity: 'Inactive', reason: '', joined: '2025-01-10', lastPremiumDate: '', lastPremiumMonth: '' });
 
+  // Sheet part first (no T9025 yet): base 38,000 + X9018 7,000 +
+  // X9025 10,000 = 55,000 (7 pol).
+  const admBase = summarizeRetail(fx, { employeeId: '9990004', role: 'admin' }, FIXTURE_TODAY);
+  check('recon full-month: Nov 25 due included (due 55000, 7 pol)', admBase.duePremium === 55000 && admBase.duePolicies === 7, `${admBase.duePremium} (${admBase.duePolicies})`);
+
+  // A sheet-absent T-series policy whose +6-month ledger instalment
+  // lands on Nov 25 — AFTER today, inside the month. The ledger
+  // fallback must follow the full-month window and count it
+  // (11,000); under the old MTD window (schedules truncated at
+  // today) it would have been missed entirely.
+  fx.records.push({
+    policy: 'T9025', owner: 'Test Customer', receipt: 'R-T9025', date: '2026-05-25',
+    faCode: '9990001', fa: '', zone: 'DHAKA', umCode: '', um: '', bmCode: '', bm: '',
+    agmCode: '', agm: '', dgmCode: '', dgm: '', gmCode: '', gm: '', beCode: 'DMO', be: 'Test BE',
+    type: 'New', term: '1', mode: 'Half-Yearly', premium: 11000, month: '', year: '2026',
+    product: 'Shanta Assurance Plan', sbu: false, new: 11000, deferred: 0, renewal: 0,
+    fycp: 11000, total: 11000, category: 'Term',
+  });
+
   const adm = summarizeRetail(fx, { employeeId: '9990004', role: 'admin' }, FIXTURE_TODAY);
-  check('recon MTD: Nov 25 due excluded (due 45000, 6 pol)', adm.duePremium === 45000 && adm.duePolicies === 6, `${adm.duePremium} (${adm.duePolicies})`);
-  check('recon MTD: premium summed, not duePrem (7000 not 70000)', adm.duePremium === 38000 + 7000, String(adm.duePremium));
-  check('recon MTD: overdue Oct due still excluded', adm.duePremium === 45000, String(adm.duePremium));
+  check('recon full-month: ledger fallback follows the window (T9025 Nov 25 instalment, due 66000, 8 pol)', adm.duePremium === 66000 && adm.duePolicies === 8, `${adm.duePremium} (${adm.duePolicies})`);
+  check('recon full-month: premium summed, not duePrem (7000 not 70000)', adm.duePremium === 38000 + 7000 + 10000 + 11000, String(adm.duePremium));
+  check('recon full-month: overdue Oct due still excluded', adm.duePremium === 66000, String(adm.duePremium));
   check('recon week: Nov 18 due inside the week (24000, 3 pol)', adm.duesThisWeek.count === 3 && adm.duesThisWeek.amount === 24000, JSON.stringify(adm.duesThisWeek));
   check('recon week: Nov 25 due outside the week', adm.duesThisWeek.amount === 17000 + 7000, String(adm.duesThisWeek.amount));
   check('recon ever-sold: never-sold FA in universe, not active (4 of 5)', adm.activeFas.active === 4 && adm.activeFas.total === 5, JSON.stringify(adm.activeFas));
   check('recon dueRowsOverdue: top 3 unchanged by the later dues', JSON.stringify(adm.dueRowsOverdue.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-10-10', 3000], ['2026-11-10', 5000], ['2026-11-12', 4000]]), JSON.stringify(adm.dueRowsOverdue));
-  check('recon dueRowsUpcoming: D1011/X9025/D1013 (Nov 25 due is upcoming, not MTD)', JSON.stringify(adm.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-11-25', 10000], ['2026-12-05', 6000]]), JSON.stringify(adm.dueRowsUpcoming));
+  check('recon dueRowsUpcoming: D1011/X9025/D1013 (Nov 25 due is upcoming)', JSON.stringify(adm.dueRowsUpcoming.map((r) => [r.nextDue, r.premium])) === JSON.stringify([['2026-11-20', 8000], ['2026-11-25', 10000], ['2026-12-05', 6000]]), JSON.stringify(adm.dueRowsUpcoming));
 
   const lead = summarizeRetail(fx, { employeeId: '9990002', role: 'team_lead' }, FIXTURE_TODAY);
   check('recon lead: never-sold FA in team universe (3 of 4)', lead.activeFas.active === 3 && lead.activeFas.total === 4, JSON.stringify(lead.activeFas));
   const emp = summarizeRetail(fx, { employeeId: '9990001', role: 'employee' }, FIXTURE_TODAY);
-  check('recon emp: due 24000 (3 pol) — Nov 18 in, Nov 25 out', emp.duePremium === 24000 && emp.duePolicies === 3, `${emp.duePremium} (${emp.duePolicies})`);
+  check('recon emp: due 45000 (5 pol) — Nov 18, Nov 25 + T9025 fallback in', emp.duePremium === 45000 && emp.duePolicies === 5, `${emp.duePremium} (${emp.duePolicies})`);
   check('recon emp: week 7000 (1 pol) — only the Nov 18 due', emp.duesThisWeek.count === 1 && emp.duesThisWeek.amount === 7000, JSON.stringify(emp.duesThisWeek));
 }
 
